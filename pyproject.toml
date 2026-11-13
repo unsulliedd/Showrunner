@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "showrunner"
+dynamic = ["version"]
+description = "Takes TV shows and movies to finished: subtitles, tracks, MKV, metadata, names, cover and chapters."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+dependencies = [
+    "PySide6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[project.scripts]
+showrunner-cli = "showrunner.cli.main:main"
+
+# A GUI script is launched without a console window on Windows.
+[project.gui-scripts]
+showrunner = "showrunner.ui.app:main"
+
+[tool.hatch.version]
+path = "src/showrunner/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/showrunner"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Test modules in mirrored folders may share a file name.
+addopts = "--import-mode=importlib"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "N", "PT", "RUF"]
