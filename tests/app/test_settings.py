@@ -75,3 +75,19 @@ def test_default_location_is_the_platform_user_data_folder(monkeypatch: pytest.M
 def test_empty_home_variable_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(HOME_ENV_VAR, "")
     assert data_dir().name == "Showrunner"
+
+
+def test_tool_paths_round_trip(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    settings = replace(AppSettings(), tool_paths={"tesseract": "D:/OCR/tesseract.exe"})
+    save_settings(settings, path)
+    assert json.loads(path.read_text(encoding="utf-8"))["tool_paths"] == {"tesseract": "D:/OCR/tesseract.exe"}
+    assert load_settings(path).value == settings
+
+
+def test_bad_tool_paths_fall_back_with_a_warning(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"format": 1, "tool_paths": {"tesseract": 3}}), encoding="utf-8")
+    loaded = load_settings(path)
+    assert loaded.value.tool_paths == {}
+    assert loaded.warnings == [LoadWarning(WarningKind.WRONG_TYPE, "settings.tool_paths")]

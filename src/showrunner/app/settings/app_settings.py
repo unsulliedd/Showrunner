@@ -29,6 +29,8 @@ class AppSettings:
     window_geometry: str = ""
     ui_language: str = "en"
     theme_mode: ThemeMode = ThemeMode.SYSTEM
+    # External programs the user located by hand: program id to the program file or its folder.
+    tool_paths: dict[str, str] = field(default_factory=dict)
 
 
 def load_settings(path: Path | None = None) -> Loaded[AppSettings]:

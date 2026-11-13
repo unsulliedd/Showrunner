@@ -30,3 +30,8 @@ def settings_path() -> Path:
 
 def theme_path() -> Path:
     return data_dir() / "theme.json"
+
+
+def tools_dir() -> Path:
+    """Where downloaded programs go, one folder per program."""
+    return data_dir() / "tools"

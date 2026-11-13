@@ -216,6 +216,8 @@ SIZES: dict[str, int] = {
     "space_lg": 12,
     "space_xl": 16,
     "swatch_width": 96,
+    "dialog_width": 760,
+    "dialog_height": 680,
     "window_width": 1200,
     "window_height": 800,
 }

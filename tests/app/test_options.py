@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
@@ -87,3 +87,33 @@ class _BadType:
 def test_registry_rejects_invalid_declarations(registry: OptionsRegistry, cls: type) -> None:
     with pytest.raises(TypeError):
         registry.register("bad")(cls)
+
+
+@dataclass(frozen=True)
+class _WithDict:
+    enabled: bool = True
+    paths: dict[str, str] = field(default_factory=dict)
+    modes: dict[str, list[int]] = field(default_factory=dict)
+
+
+def test_dicts_round_trip_and_bad_values_are_reported() -> None:
+    value = _WithDict(paths={"a": "x"}, modes={"b": [1, 2]})
+    data = to_sparse(value)
+    assert data == {"paths": {"a": "x"}, "modes": {"b": [1, 2]}}
+    warnings: list[LoadWarning] = []
+    assert from_sparse(_WithDict, data, "w", warnings) == value
+    assert warnings == []
+    assert from_sparse(_WithDict, {"paths": {"a": 1}, "modes": [1]}, "w", warnings) == _WithDict()
+    assert warnings == [LoadWarning(WarningKind.WRONG_TYPE, "w.paths"), LoadWarning(WarningKind.WRONG_TYPE, "w.modes")]
+
+
+@dataclass(frozen=True)
+class _IntKeys:
+    enabled: bool = True
+    value: dict[int, str] = field(default_factory=dict)
+
+
+def test_dict_keys_must_be_strings(registry: OptionsRegistry) -> None:
+    registry.register("with_dict")(_WithDict)
+    with pytest.raises(TypeError):
+        registry.register("int_keys")(_IntKeys)

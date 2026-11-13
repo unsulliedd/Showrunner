@@ -1,7 +1,7 @@
 """Conversion between frozen option dataclasses and sparse, forgiving JSON values.
 
-Supported field types: bool, int, float, str, enums and lists of those. A dataclass converted here
-needs a default for every field.
+Supported field types: bool, int, float, str, enums, and lists of those or dicts from str to those.
+A dataclass converted here needs a default for every field.
 """
 
 from __future__ import annotations
@@ -44,6 +44,11 @@ def _decode(tp: Any, raw: Any) -> Any:
             raise _MismatchError
         (item_type,) = get_args(tp)
         return [_decode(item_type, item) for item in raw]
+    if origin is dict:
+        if not isinstance(raw, dict):
+            raise _MismatchError
+        _, value_type = get_args(tp)
+        return {key: _decode(value_type, value) for key, value in raw.items()}
     # bool is a subclass of int in Python, so each check has to rule it in or out explicitly.
     if tp is bool:
         if isinstance(raw, bool):
@@ -70,6 +75,8 @@ def _encode(value: Any) -> Any:
         return value.value
     if isinstance(value, list):
         return [_encode(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _encode(item) for key, item in value.items()}
     return value
 
 
@@ -85,6 +92,13 @@ def _check_type(tp: Any) -> None:
     if get_origin(tp) is list:
         (item_type,) = get_args(tp)
         _check_type(item_type)
+        return
+    if get_origin(tp) is dict:
+        key_type, value_type = get_args(tp)
+        # JSON object keys are always strings.
+        if key_type is not str:
+            raise TypeError(f"unsupported option type: {tp!r}")
+        _check_type(value_type)
         return
     raise TypeError(f"unsupported option type: {tp!r}")
 
