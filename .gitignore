@@ -11,7 +11,7 @@ dist/
 htmlcov/
 
 # External programs downloaded by the app
-tools/
+/tools/
 
 # Editors and OS
 .vscode/
