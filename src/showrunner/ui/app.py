@@ -6,9 +6,9 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 from showrunner import APP_NAME, __version__
-from showrunner.app.options.serialization import LoadWarning
 from showrunner.app.settings.app_settings import load_settings
 from showrunner.app.storage.paths import theme_path
+from showrunner.core.options.serialization import LoadWarning
 from showrunner.ui.i18n.catalog import set_language
 from showrunner.ui.main_window import MainWindow
 from showrunner.ui.theme.manager import ThemeManager

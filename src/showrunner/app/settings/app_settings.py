@@ -7,10 +7,10 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
-from showrunner.app.options.serialization import Loaded, LoadWarning, WarningKind, from_sparse, to_sparse
 from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME
 from showrunner.app.storage.files import write_json_atomic
 from showrunner.app.storage.paths import settings_path
+from showrunner.core.options.serialization import Loaded, LoadWarning, WarningKind, from_sparse, to_sparse
 
 FORMAT_VERSION = 1
 

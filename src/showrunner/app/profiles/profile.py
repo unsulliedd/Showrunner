@@ -5,15 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from showrunner.app.options.registry import REGISTRY, OptionsRegistry
-from showrunner.app.options.serialization import (
+from showrunner.app.profiles.errors import UnreadableProfileError
+from showrunner.core.options.registry import REGISTRY, OptionsRegistry
+from showrunner.core.options.serialization import (
     Loaded,
     LoadWarning,
     WarningKind,
     from_sparse,
     to_sparse,
 )
-from showrunner.app.profiles.errors import UnreadableProfileError
 
 FORMAT_VERSION = 1
 

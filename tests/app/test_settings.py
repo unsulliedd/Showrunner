@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from showrunner.app.options.serialization import LoadWarning, WarningKind
 from showrunner.app.settings.app_settings import AppSettings, load_settings, save_settings
 from showrunner.app.storage.paths import HOME_ENV_VAR, data_dir, profiles_dir, settings_path
+from showrunner.core.options.serialization import LoadWarning, WarningKind
 
 
 def test_missing_file_gives_defaults_without_warnings(tmp_path: Path) -> None:

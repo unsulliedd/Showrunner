@@ -6,8 +6,6 @@ from typing import Any
 
 import pytest
 
-from showrunner.app.options.registry import OptionsRegistry
-from showrunner.app.options.serialization import LoadWarning, WarningKind
 from showrunner.app.profiles.errors import (
     InvalidProfileNameError,
     ProfileExistsError,
@@ -17,6 +15,8 @@ from showrunner.app.profiles.errors import (
 )
 from showrunner.app.profiles.profile import Profile, profile_from_json, profile_to_json
 from showrunner.app.profiles.store import ProfileStore
+from showrunner.core.options.registry import OptionsRegistry
+from showrunner.core.options.serialization import LoadWarning, WarningKind
 
 
 @pytest.fixture

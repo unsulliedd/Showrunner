@@ -20,8 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from showrunner.app.options.serialization import WarningKind
 from showrunner.app.settings.app_settings import ThemeMode
+from showrunner.core.options.serialization import WarningKind
 from showrunner.ui.i18n.catalog import tr
 from showrunner.ui.theme.manager import ThemeManager
 from showrunner.ui.theme.qt_theme import build_stylesheet

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from showrunner.app.options.serialization import Loaded, LoadWarning, WarningKind
+from showrunner.core.options.serialization import Loaded, LoadWarning, WarningKind
 from showrunner.ui.theme.theme_file import MAX_THEME_BYTES, load_theme_file, save_theme_file
 from showrunner.ui.theme.tokens import DEFAULT_BASES, Base, ColorSet, ThemeColors, with_base, with_role
 

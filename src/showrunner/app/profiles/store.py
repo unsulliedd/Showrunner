@@ -10,8 +10,6 @@ import re
 from dataclasses import replace
 from pathlib import Path
 
-from showrunner.app.options.registry import REGISTRY, OptionsRegistry
-from showrunner.app.options.serialization import Loaded
 from showrunner.app.profiles.errors import (
     InvalidProfileNameError,
     ProfileExistsError,
@@ -22,6 +20,8 @@ from showrunner.app.profiles.errors import (
 from showrunner.app.profiles.profile import Profile, profile_from_json, profile_to_json
 from showrunner.app.storage.files import write_json_atomic
 from showrunner.app.storage.paths import profiles_dir
+from showrunner.core.options.registry import REGISTRY, OptionsRegistry
+from showrunner.core.options.serialization import Loaded
 
 DEFAULT_PROFILE_NAME = "Default"
 BUILTIN_NAMES = (DEFAULT_PROFILE_NAME,)

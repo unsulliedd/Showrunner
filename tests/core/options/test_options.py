@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from showrunner.app.options.registry import OptionsRegistry
-from showrunner.app.options.serialization import LoadWarning, WarningKind, from_sparse, to_sparse
+from showrunner.core.options.registry import OptionsRegistry
+from showrunner.core.options.serialization import LoadWarning, WarningKind, from_sparse, to_sparse
 
 
 def test_defaults_serialize_to_nothing(example: Any) -> None:

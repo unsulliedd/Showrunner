@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from showrunner.app.options.serialization import Loaded, LoadWarning, WarningKind
 from showrunner.app.storage.files import write_json_atomic
+from showrunner.core.options.serialization import Loaded, LoadWarning, WarningKind
 from showrunner.ui.theme.color import parse_hex
 from showrunner.ui.theme.tokens import ROLE, Base, ColorSet, ThemeColors, with_base, with_role
 

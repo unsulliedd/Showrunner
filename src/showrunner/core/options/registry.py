@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import fields
 from typing import Any, get_type_hints
 
-from showrunner.app.options.serialization import validate_declaration
+from showrunner.core.options.serialization import validate_declaration
 
 
 class OptionsRegistry:
