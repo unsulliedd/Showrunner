@@ -13,6 +13,8 @@ license-files = ["LICENSE"]
 dependencies = [
     "PySide6",
     "babelfish",
+    "charset-normalizer",
+    "langdetect",
     "platformdirs",
 ]
 
