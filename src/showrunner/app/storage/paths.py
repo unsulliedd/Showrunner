@@ -26,3 +26,7 @@ def profiles_dir() -> Path:
 
 def settings_path() -> Path:
     return data_dir() / "settings.json"
+
+
+def theme_path() -> Path:
+    return data_dir() / "theme.json"

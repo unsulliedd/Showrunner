@@ -1,0 +1,87 @@
+/* The application style sheet. Each name after a dollar sign is a color role or a size token, filled in by the theme. */
+
+QLabel { color: $ink; }
+
+QToolTip {
+    background: $tip;
+    color: $tip_ink;
+    border: none;
+    padding: ${space_sm}px ${space_md}px;
+}
+
+QMenuBar { background: $chrome; color: $ink; }
+QMenuBar::item { padding: ${space_sm}px ${space_md}px; background: transparent; }
+QMenuBar::item:selected { background: $chrome_2; }
+QMenu { background: $surface; color: $ink; border: 1px solid $line; padding: ${space_sm}px; }
+QMenu::item { padding: ${space_sm}px ${space_xl}px ${space_sm}px ${space_md}px; border-radius: ${radius_sm}px; }
+QMenu::item:selected { background: $control_soft; color: $control_soft_ink; }
+QMenu::separator { height: 1px; background: $line; margin: ${space_sm}px 0; }
+
+QToolBar { background: $chrome; border: none; min-height: ${height_lg}px; spacing: ${space_sm}px; }
+QToolButton { min-height: ${height_sm}px; border-radius: ${radius_md}px; padding: 0 ${space_sm}px; }
+QToolButton:hover { background: $chrome_2; }
+QStatusBar { background: $chrome; color: $muted; font-size: ${text_sm}px; }
+
+QPushButton {
+    min-height: ${height_md}px;
+    padding: 0 ${space_lg}px;
+    border: 1px solid $line_strong;
+    border-radius: ${radius_md}px;
+    background: $surface;
+    color: $ink;
+}
+QPushButton:hover { background: $chrome_2; }
+QPushButton:pressed { background: $control_soft; color: $control_soft_ink; }
+QPushButton:focus { border-color: $focus; }
+QPushButton:disabled { color: $muted; border-color: $line; background: $chrome; }
+QPushButton[primary="true"] { background: $control_fill; color: $control_ink; border-color: $control_fill; }
+
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+    min-height: ${height_md}px;
+    padding: 0 ${space_md}px;
+    border: 1px solid $line_strong;
+    border-radius: ${radius_md}px;
+    background: $surface;
+    color: $ink;
+    selection-background-color: $select;
+    selection-color: $ink;
+}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus { border-color: $control; }
+QComboBox QAbstractItemView {
+    background: $surface;
+    border: 1px solid $line;
+    selection-background-color: $control_soft;
+    selection-color: $control_soft_ink;
+}
+
+QAbstractItemView {
+    background: $surface;
+    alternate-background-color: $chrome;
+    color: $ink;
+    border: 1px solid $line;
+    selection-background-color: $control_soft;
+    selection-color: $control_soft_ink;
+}
+QHeaderView::section { background: $chrome; color: $muted; border: none; border-bottom: 1px solid $line; padding: ${space_sm}px ${space_md}px; }
+
+QScrollBar:vertical { background: transparent; width: ${space_lg}px; margin: 0; }
+QScrollBar:horizontal { background: transparent; height: ${space_lg}px; margin: 0; }
+QScrollBar::handle { background: $scroll_thumb; border-radius: ${radius_sm}px; margin: ${space_xs}px; }
+QScrollBar::handle:vertical { min-height: ${height_md}px; }
+QScrollBar::handle:horizontal { min-width: ${height_md}px; }
+QScrollBar::handle:hover { background: $scroll_thumb_hover; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: none; }
+
+/* Styling hooks a widget opts into with setProperty. */
+QFrame[role="page"] { background: $surface; border: 1px solid $line; border-radius: ${radius_lg}px; }
+*[role="muted"] { color: $muted; }
+*[role="link"] { color: $link; }
+*[role="notice"] { color: $accent_ink; }
+*[role="danger"] { color: $danger; }
+*[role="selected"] { background: $control_soft; color: $control_soft_ink; border-radius: ${radius_md}px; padding: ${space_sm}px ${space_md}px; }
+*[heading="true"] { font-size: ${text_lg}px; font-weight: 600; }
+*[text_size="xs"] { font-size: ${text_xs}px; }
+*[text_size="sm"] { font-size: ${text_sm}px; }
+*[text_size="lg"] { font-size: ${text_lg}px; }
+*[text_size="xl"] { font-size: ${text_xl}px; }

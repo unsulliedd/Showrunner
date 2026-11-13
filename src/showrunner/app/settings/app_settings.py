@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 
 from showrunner.app.options.serialization import Loaded, LoadWarning, WarningKind, from_sparse, to_sparse
@@ -14,12 +15,20 @@ from showrunner.app.storage.paths import settings_path
 FORMAT_VERSION = 1
 
 
+class ThemeMode(StrEnum):
+    SYSTEM = "system"
+    LIGHT = "light"
+    DARK = "dark"
+
+
 @dataclass(frozen=True)
 class AppSettings:
     active_profile: str = DEFAULT_PROFILE_NAME
     last_folders: list[str] = field(default_factory=list)
     # Opaque to this layer: whatever string the window produces and later restores.
     window_geometry: str = ""
+    ui_language: str = "en"
+    theme_mode: ThemeMode = ThemeMode.SYSTEM
 
 
 def load_settings(path: Path | None = None) -> Loaded[AppSettings]:
