@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# External programs downloaded by the app
+tools/
+
+# Editors and OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
