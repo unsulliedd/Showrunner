@@ -1,0 +1,144 @@
+{
+ "attachments": [
+  {
+   "content_type": "font/ttf",
+   "description": "A font",
+   "file_name": "font.txt",
+   "id": 1,
+   "properties": {},
+   "size": 17
+  }
+ ],
+ "chapters": [
+  {
+   "num_entries": 3
+  }
+ ],
+ "container": {
+  "properties": {
+   "container_type": 17,
+   "duration": 10432000000,
+   "is_providing_timestamps": true,
+   "timestamp_scale": 1000000,
+   "title": "Sample Title"
+  },
+  "recognized": true,
+  "supported": true,
+  "type": "Matroska"
+ },
+ "errors": [],
+ "file_name": "episode.mkv",
+ "global_tags": [],
+ "identification_format_version": 20,
+ "track_tags": [],
+ "tracks": [
+  {
+   "codec": "HEVC/H.265/MPEG-H",
+   "id": 0,
+   "properties": {
+    "codec_id": "V_MPEGH/ISO/HEVC",
+    "codec_private_length": 2416,
+    "default_duration": 41708333,
+    "default_track": true,
+    "display_dimensions": "1920x1080",
+    "display_unit": 0,
+    "enabled_track": true,
+    "forced_track": false,
+    "language": "und",
+    "language_ietf": "und",
+    "minimum_timestamp": 0,
+    "num_index_entries": 1,
+    "number": 1,
+    "packetizer": "mpegh_p2_video",
+    "pixel_dimensions": "1920x1080"
+   },
+   "type": "video"
+  },
+  {
+   "codec": "TrueHD",
+   "id": 1,
+   "properties": {
+    "audio_channels": 6,
+    "audio_sampling_frequency": 48000,
+    "codec_id": "A_TRUEHD",
+    "codec_private_length": 0,
+    "default_track": true,
+    "enabled_track": true,
+    "flag_original": true,
+    "forced_track": false,
+    "language": "eng",
+    "language_ietf": "en",
+    "minimum_timestamp": 0,
+    "num_index_entries": 0,
+    "number": 2,
+    "track_name": "TrueHD 5.1"
+   },
+   "type": "audio"
+  },
+  {
+   "codec": "AC-3",
+   "id": 2,
+   "properties": {
+    "audio_channels": 6,
+    "audio_sampling_frequency": 48000,
+    "codec_id": "A_AC3",
+    "codec_private_length": 0,
+    "default_duration": 32000000,
+    "default_track": false,
+    "enabled_track": true,
+    "flag_visual_impaired": true,
+    "forced_track": false,
+    "language": "por",
+    "language_ietf": "pt-BR",
+    "minimum_timestamp": 0,
+    "num_index_entries": 0,
+    "number": 3,
+    "track_name": "Descricao"
+   },
+   "type": "audio"
+  },
+  {
+   "codec": "AC-3",
+   "id": 3,
+   "properties": {
+    "audio_channels": 2,
+    "audio_sampling_frequency": 48000,
+    "codec_id": "A_AC3",
+    "codec_private_length": 0,
+    "default_duration": 32000000,
+    "default_track": false,
+    "enabled_track": true,
+    "flag_commentary": true,
+    "forced_track": false,
+    "language": "eng",
+    "language_ietf": "en",
+    "minimum_timestamp": 0,
+    "num_index_entries": 0,
+    "number": 4,
+    "track_name": "Commentary by the creators"
+   },
+   "type": "audio"
+  },
+  {
+   "codec": "HDMV PGS",
+   "id": 4,
+   "properties": {
+    "codec_id": "S_HDMV/PGS",
+    "codec_private_length": 0,
+    "content_encoding_algorithms": "0",
+    "default_track": false,
+    "enabled_track": true,
+    "flag_hearing_impaired": true,
+    "forced_track": true,
+    "language": "eng",
+    "language_ietf": "en",
+    "minimum_timestamp": 9009000000,
+    "num_index_entries": 1,
+    "number": 5,
+    "track_name": "English (SDH)"
+   },
+   "type": "subtitles"
+  }
+ ],
+ "warnings": []
+}

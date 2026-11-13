@@ -1,0 +1,322 @@
+{
+ "streams": [
+  {
+   "index": 0,
+   "codec_name": "hevc",
+   "codec_long_name": "H.265 / HEVC (High Efficiency Video Coding)",
+   "profile": "Main 10",
+   "codec_type": "video",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "width": 1920,
+   "height": 1080,
+   "coded_width": 1920,
+   "coded_height": 1080,
+   "has_b_frames": 2,
+   "sample_aspect_ratio": "1:1",
+   "display_aspect_ratio": "16:9",
+   "pix_fmt": "yuv420p10le",
+   "level": 120,
+   "color_range": "tv",
+   "color_space": "bt709",
+   "color_transfer": "bt709",
+   "color_primaries": "bt709",
+   "chroma_location": "left",
+   "view_ids_available": "",
+   "view_pos_available": "",
+   "r_frame_rate": "24000/1001",
+   "avg_frame_rate": "24000/1001",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "extradata_size": 2416,
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {}
+  },
+  {
+   "index": 1,
+   "codec_name": "truehd",
+   "codec_long_name": "TrueHD",
+   "codec_type": "audio",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "sample_fmt": "s32",
+   "sample_rate": "48000",
+   "channels": 6,
+   "channel_layout": "5.1(side)",
+   "bits_per_sample": 0,
+   "initial_padding": 0,
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "bits_per_raw_sample": "24",
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "eng",
+    "title": "TrueHD 5.1"
+   }
+  },
+  {
+   "index": 2,
+   "codec_name": "ac3",
+   "codec_long_name": "ATSC A/52A (AC-3)",
+   "codec_type": "audio",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "mime_codec_string": "ac-3",
+   "sample_fmt": "fltp",
+   "sample_rate": "48000",
+   "channels": 6,
+   "channel_layout": "5.1(side)",
+   "bits_per_sample": 0,
+   "initial_padding": 0,
+   "dmix_mode": "0",
+   "ltrt_cmixlev": "0.000000",
+   "ltrt_surmixlev": "0.000000",
+   "loro_cmixlev": "0.000000",
+   "loro_surmixlev": "0.000000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "bit_rate": "640000",
+   "disposition": {
+    "default": 0,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "eng",
+    "title": "AC-3 5.1"
+   }
+  },
+  {
+   "index": 3,
+   "codec_name": "ac3",
+   "codec_long_name": "ATSC A/52A (AC-3)",
+   "codec_type": "audio",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "mime_codec_string": "ac-3",
+   "sample_fmt": "fltp",
+   "sample_rate": "48000",
+   "channels": 2,
+   "channel_layout": "stereo",
+   "bits_per_sample": 0,
+   "initial_padding": 0,
+   "dmix_mode": "0",
+   "ltrt_cmixlev": "0.000000",
+   "ltrt_surmixlev": "0.000000",
+   "loro_cmixlev": "0.000000",
+   "loro_surmixlev": "0.000000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "bit_rate": "224000",
+   "disposition": {
+    "default": 0,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "eng",
+    "title": "Commentary by the creators"
+   }
+  },
+  {
+   "index": 4,
+   "codec_name": "hdmv_pgs_subtitle",
+   "codec_long_name": "HDMV Presentation Graphic Stream subtitles",
+   "codec_type": "subtitle",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 1327618,
+   "duration": "1327.618000",
+   "disposition": {
+    "default": 0,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "eng",
+    "title": "English (SDH)"
+   }
+  }
+ ],
+ "chapters": [
+  {
+   "time_base": "1/1000000000",
+   "start": 0,
+   "start_time": "0.000000",
+   "end": 33116000000,
+   "end_time": "33.116000",
+   "tags": {
+    "title": "00:00:00.000"
+   }
+  },
+  {
+   "time_base": "1/1000000000",
+   "start": 33116000000,
+   "start_time": "33.116000",
+   "end": 503962000000,
+   "end_time": "503.962000",
+   "tags": {
+    "title": "00:00:33.116"
+   }
+  },
+  {
+   "time_base": "1/1000000000",
+   "start": 503962000000,
+   "start_time": "503.962000",
+   "end": 905238000000,
+   "end_time": "905.238000",
+   "tags": {
+    "title": "00:08:23.962"
+   }
+  },
+  {
+   "time_base": "1/1000000000",
+   "start": 905238000000,
+   "start_time": "905.238000",
+   "end": 1119577000000,
+   "end_time": "1119.577000",
+   "tags": {
+    "title": "00:15:05.238"
+   }
+  },
+  {
+   "time_base": "1/1000000000",
+   "start": 1119577000000,
+   "start_time": "1119.577000",
+   "end": 1305137000000,
+   "end_time": "1305.137000",
+   "tags": {
+    "title": "00:18:39.577"
+   }
+  },
+  {
+   "time_base": "1/1000000000",
+   "start": 1305137000000,
+   "start_time": "1305.137000",
+   "end": 1327618000000,
+   "end_time": "1327.618000",
+   "tags": {
+    "title": "00:21:45.137"
+   }
+  }
+ ],
+ "format": {
+  "filename": "episode.mkv",
+  "nb_streams": 5,
+  "nb_programs": 0,
+  "nb_stream_groups": 0,
+  "format_name": "matroska,webm",
+  "format_long_name": "Matroska / WebM",
+  "start_time": "0.000000",
+  "duration": "1327.618000",
+  "size": "952382046",
+  "bit_rate": "5738892",
+  "probe_score": 100,
+  "tags": {
+   "title": "Example Show S01E02 Second Episode"
+  }
+ }
+}

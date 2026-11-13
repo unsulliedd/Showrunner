@@ -1,0 +1,239 @@
+{
+ "streams": [
+  {
+   "index": 0,
+   "codec_name": "hevc",
+   "codec_long_name": "H.265 / HEVC (High Efficiency Video Coding)",
+   "profile": "Main 10",
+   "codec_type": "video",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "width": 1920,
+   "height": 1080,
+   "coded_width": 1920,
+   "coded_height": 1080,
+   "has_b_frames": 2,
+   "sample_aspect_ratio": "1:1",
+   "display_aspect_ratio": "16:9",
+   "pix_fmt": "yuv420p10le",
+   "level": 120,
+   "color_range": "tv",
+   "color_space": "bt709",
+   "color_transfer": "bt709",
+   "color_primaries": "bt709",
+   "chroma_location": "left",
+   "view_ids_available": "",
+   "view_pos_available": "",
+   "r_frame_rate": "24000/1001",
+   "avg_frame_rate": "24000/1001",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "extradata_size": 2416,
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "eng",
+    "title": "Example Show (2000) - 1x01 - Pilot (1080p Bluray)"
+   }
+  },
+  {
+   "index": 1,
+   "codec_name": "ac3",
+   "codec_long_name": "ATSC A/52A (AC-3)",
+   "codec_type": "audio",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "mime_codec_string": "ac-3",
+   "sample_fmt": "fltp",
+   "sample_rate": "48000",
+   "channels": 6,
+   "channel_layout": "5.1(side)",
+   "bits_per_sample": 0,
+   "initial_padding": 0,
+   "dmix_mode": "0",
+   "ltrt_cmixlev": "0.000000",
+   "ltrt_surmixlev": "0.000000",
+   "loro_cmixlev": "0.000000",
+   "loro_surmixlev": "0.000000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "bit_rate": "640000",
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "eng",
+    "title": "Example Show (2000) - 1x01 - Pilot (Dolby Digital PLus 5.1)"
+   }
+  },
+  {
+   "index": 2,
+   "codec_name": "subrip",
+   "codec_long_name": "SubRip subtitle",
+   "codec_type": "subtitle",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_tag": "0x0000",
+   "r_frame_rate": "0/0",
+   "avg_frame_rate": "0/0",
+   "time_base": "1/1000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 1465923,
+   "duration": "1465.923000",
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0,
+    "multilayer": 0
+   },
+   "tags": {
+    "language": "tur",
+    "title": "Example Show (2000) - 1x01 - Pilot"
+   }
+  }
+ ],
+ "chapters": [
+  {
+   "time_base": "1/1000000000",
+   "start": 0,
+   "start_time": "0.000000",
+   "end": 139056000000,
+   "end_time": "139.056000",
+   "tags": {
+    "title": "00:00:00.000"
+   }
+  },
+  {
+   "time_base": "1/1000000000",
+   "start": 139056000000,
+   "start_time": "139.056000",
+   "end": 172422000000,
+   "end_time": "172.422000",
+   "tags": {
+    "title": "00:02:19.056"
+   }
+  },
+  {
+   "time_base": "1/1000000000",
+   "start": 172422000000,
+   "start_time": "172.422000",
+   "end": 577535000000,
+   "end_time": "577.535000",
+   "tags": {
+    "title": "00:02:52.422"
+   }
+  },
+  {
+   "time_base": "1/1000000000",
+   "start": 577535000000,
+   "start_time": "577.535000",
+   "end": 841049000000,
+   "end_time": "841.049000",
+   "tags": {
+    "title": "00:09:37.535"
+   }
+  },
+  {
+   "time_base": "1/1000000000",
+   "start": 841049000000,
+   "start_time": "841.049000",
+   "end": 1377376000000,
+   "end_time": "1377.376000",
+   "tags": {
+    "title": "00:14:01.049"
+   }
+  },
+  {
+   "time_base": "1/1000000000",
+   "start": 1377376000000,
+   "start_time": "1377.376000",
+   "end": 1437978000000,
+   "end_time": "1437.978000",
+   "tags": {
+    "title": "00:22:57.376"
+   }
+  },
+  {
+   "time_base": "1/1000000000",
+   "start": 1437978000000,
+   "start_time": "1437.978000",
+   "end": 1465923000000,
+   "end_time": "1465.923000",
+   "tags": {
+    "title": "00:23:57.978"
+   }
+  }
+ ],
+ "format": {
+  "filename": "episode.mkv",
+  "nb_streams": 3,
+  "nb_programs": 0,
+  "nb_stream_groups": 0,
+  "format_name": "matroska,webm",
+  "format_long_name": "Matroska / WebM",
+  "start_time": "0.000000",
+  "duration": "1465.923000",
+  "size": "718065279",
+  "bit_rate": "3918706",
+  "probe_score": 100,
+  "tags": {
+   "title": "Example Show (2000) - 1x01 - Pilot"
+  }
+ }
+}

@@ -9,7 +9,7 @@ from showrunner.app.dependencies import service
 from showrunner.app.settings.app_settings import load_settings
 from showrunner.app.storage.paths import HOME_ENV_VAR, tools_dir
 from showrunner.tools.dependencies import install as install_module
-from showrunner.tools.dependencies.detect import State
+from showrunner.tools.dependencies.detect import DependencyStatus, State
 from showrunner.tools.dependencies.install import Asset, DownloadPlan
 from showrunner.tools.dependencies.specs import SPEC_BY_ID
 
@@ -56,3 +56,15 @@ def test_installing_puts_the_program_in_the_tools_folder_and_clears_the_user_pat
     assert status.state is State.FOUND
     assert status.path == tools_dir() / "libmpv" / "libmpv-2.dll"
     assert service.user_path("libmpv") is None
+
+
+def test_media_programs_use_only_programs_that_are_usable(monkeypatch: pytest.MonkeyPatch) -> None:
+    statuses = {
+        "mkvtoolnix": DependencyStatus("mkvtoolnix", State.FOUND, Path("mkv/mkvmerge.exe")),
+        "ffmpeg": DependencyStatus("ffmpeg", State.OUTDATED, Path("ff/ffmpeg.exe"), version="5.0"),
+    }
+    monkeypatch.setattr(service, "check", lambda spec, cancel=None: statuses[spec.id])
+    programs = service.media_programs()
+    assert programs.mkvmerge == Path("mkv/mkvmerge.exe")
+    assert programs.mkvextract == Path("mkv/mkvextract.exe")
+    assert programs.ffprobe is None

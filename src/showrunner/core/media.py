@@ -48,6 +48,9 @@ class MediaFile:
     tracks: tuple[Track, ...] = ()
     chapters: tuple[Chapter, ...] = ()
     attachments: tuple[Attachment, ...] = ()
+    # False when mkvmerge was not available and the track and attachment IDs are positions counted from
+    # ffprobe's stream list; such IDs mean nothing to mkvmerge, so muxing and property editing refuse the file.
+    ids_from_mkvmerge: bool = True
 
     def _of_kind(self, kind: TrackKind) -> tuple[Track, ...]:
         return tuple(t for t in self.tracks if t.kind is kind)
