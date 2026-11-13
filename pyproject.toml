@@ -12,6 +12,7 @@ license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 dependencies = [
     "PySide6",
+    "babelfish",
 ]
 
 [project.optional-dependencies]
