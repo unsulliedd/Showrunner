@@ -1,4 +1,4 @@
-"""Appearance: theme mode, the three base colors, a live preview, and theme file import and export."""
+"""The Appearance page: theme mode, the three base colors, a live preview, and theme file import and export."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QColorDialog,
     QComboBox,
-    QDialog,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -55,16 +54,15 @@ class _Preview(QFrame):
         self.setStyleSheet(build_stylesheet(roles))
 
 
-class AppearanceDialog(QDialog):
+class AppearancePage(QWidget):
     """Every change applies to the whole app at once and is saved; there is nothing to confirm."""
 
     def __init__(self, theme: ThemeManager, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._theme = theme
-        self.setWindowTitle(tr("appearance.title"))
         layout = QVBoxLayout(self)
         layout.setSpacing(SIZES["space_lg"])
-        layout.setContentsMargins(*[SIZES["space_xl"]] * 4)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         form = QFormLayout()
         form.setSpacing(SIZES["space_md"])
@@ -113,15 +111,11 @@ class AppearanceDialog(QDialog):
         import_button.clicked.connect(self._import)
         export_button = QPushButton(tr("appearance.export"))
         export_button.clicked.connect(self._export)
-        close_button = QPushButton(tr("common.close"))
-        close_button.setProperty("primary", True)
-        close_button.setDefault(True)
-        close_button.clicked.connect(self.accept)
         buttons.addWidget(import_button)
         buttons.addWidget(export_button)
         buttons.addStretch()
-        buttons.addWidget(close_button)
         layout.addLayout(buttons)
+        layout.addStretch()
 
         theme.changed.connect(self._refresh)
         self._refresh()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from babelfish import LANGUAGE_MATRIX
 from babelfish import Language as _Babelfish
 from babelfish.exceptions import Error as _BabelfishError
 
@@ -56,3 +57,8 @@ class Language:
                 found.script.code if found.script else None,
             )
         return None
+
+
+def common_codes() -> tuple[str, ...]:
+    """The 3-letter codes of the languages that also have a 2-letter one: the ones a typo most likely meant."""
+    return tuple(sorted(row.alpha3 for row in LANGUAGE_MATRIX if row.alpha2))

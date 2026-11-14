@@ -11,9 +11,9 @@ from PySide6.QtWidgets import QApplication
 from showrunner.app.dependencies import service
 from showrunner.tools.dependencies.detect import DependencyStatus, Location, State
 from showrunner.tools.dependencies.specs import SPECS
-from showrunner.ui.dialogs.dependencies import DependenciesDialog
 from showrunner.ui.i18n.catalog import STRINGS_DIR, tr
 from showrunner.ui.main_window import MainWindow
+from showrunner.ui.settings.programs import ProgramsPage as DependenciesDialog
 from showrunner.ui.theme.manager import ThemeManager
 
 
@@ -74,14 +74,13 @@ def test_strings_of_the_page_exist() -> None:
         assert f"dependencies.location.{location.value}" in strings
 
 
-def test_the_tools_menu_opens_the_page(
-    qapp: QApplication, theme: ThemeManager, fake_statuses: dict[str, DependencyStatus], monkeypatch: pytest.MonkeyPatch
+def test_the_empty_state_opens_settings_at_programs(
+    qapp: QApplication, theme: ThemeManager, fake_statuses: dict[str, DependencyStatus]
 ) -> None:
-    opened: list[DependenciesDialog] = []
-    monkeypatch.setattr(DependenciesDialog, "exec", lambda self: opened.append(self) or 0)
     window = MainWindow(theme)
-    window.dependencies_action.trigger()
-    assert len(opened) == 1
-    wait_until(lambda: not opened[0].busy)
-    opened[0].close()
+    window.empty.open_dependencies.emit()
+    assert window.settings_window is not None
+    assert window.settings_window.current_page() == "programs"
+    page = window.settings_window.programs
+    wait_until(lambda: not page.busy)
     window.close()

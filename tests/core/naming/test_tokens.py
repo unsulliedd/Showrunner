@@ -94,7 +94,14 @@ def test_audio_tokens(make_item: MakeItem, video: Build, audio: Build) -> None:
     assert value("language", context) == "English"
     assert value("language_code", context) == "en"
     assert value("track_name", context) == "Original Name"
-    assert value("flags", context) == "Default Forced"
+    assert value("flags", context) == "Forced"
+
+
+def test_flags_name_what_the_track_name_implies(make_item: MakeItem, video: Build, audio: Build) -> None:
+    track = replace(audio(default=True), name="Commentary by the director")
+    item = make_item(video(), track)
+    assert value("flags", NamingContext(item, track)) == "Commentary"
+    assert value("flags", NamingContext(item, track, flags_from_names=False)) == ""
 
 
 def test_atmos_and_flags_are_empty_for_plain_audio(make_item: MakeItem, video: Build, audio: Build) -> None:

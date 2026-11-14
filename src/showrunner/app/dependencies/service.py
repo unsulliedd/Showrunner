@@ -72,17 +72,27 @@ def start_installer(path: Path) -> None:
 
 
 def media_programs(cancel: threading.Event | None = None) -> Programs:
-    """The programs that read media files, found the way the Dependencies page finds them. An outdated
+    """The programs that read media files, found the way the Programs page finds them. An outdated
     program counts as missing, like everywhere else."""
-    mkvtoolnix = check(SPEC_BY_ID["mkvtoolnix"], cancel)
-    ffmpeg = check(SPEC_BY_ID["ffmpeg"], cancel)
-    usable_mkv = mkvtoolnix.state is State.FOUND
-    usable_ffmpeg = ffmpeg.state is State.FOUND
+    return programs_from({spec_id: check(SPEC_BY_ID[spec_id], cancel) for spec_id in ("mkvtoolnix", "ffmpeg")})
+
+
+def programs_from(statuses: dict[str, DependencyStatus]) -> Programs:
+    """The reading programs among statuses already checked; a program not checked counts as missing."""
+    mkvtoolnix, ffmpeg = statuses.get("mkvtoolnix"), statuses.get("ffmpeg")
+    usable_mkv = mkvtoolnix is not None and mkvtoolnix.state is State.FOUND
+    usable_ffmpeg = ffmpeg is not None and ffmpeg.state is State.FOUND
     return Programs(
         mkvmerge=mkvtoolnix.path if usable_mkv else None,
         mkvextract=mkvtoolnix.executable("mkvextract") if usable_mkv else None,
         ffprobe=ffmpeg.executable("ffprobe") if usable_ffmpeg else None,
     )
+
+
+def mkvpropedit_from(statuses: dict[str, DependencyStatus]) -> Path | None:
+    """mkvpropedit sits beside mkvmerge; None when MKVToolNix is missing or outdated."""
+    status = statuses.get("mkvtoolnix")
+    return status.executable("mkvpropedit") if status is not None and status.state is State.FOUND else None
 
 
 def probe_file(path: Path, programs: Programs | None = None, cancel: threading.Event | None = None) -> MediaFile:

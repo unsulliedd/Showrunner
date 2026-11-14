@@ -7,7 +7,7 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 
 from showrunner.app.library.library import Mark
-from showrunner.ui.library.model import MARK_COLUMN, MARK_ROLE, SUMMARY_COLUMN
+from showrunner.ui.library.model import DOT_ROLE, MARK_COLUMN, SUMMARY_COLUMN
 from showrunner.ui.theme.manager import ThemeManager
 from showrunner.ui.theme.tokens import SIZES
 
@@ -48,17 +48,25 @@ class MarkDot(QWidget):
         super().__init__(parent)
         self._theme = theme
         self._mark = Mark.NONE
+        self._role: str | None = None  # a color role that wins over the mark
         size = SIZES["mark_size"]
         self.setFixedSize(size, size)
         theme.changed.connect(self.update)
 
     def set_mark(self, mark: Mark) -> None:
         self._mark = mark
+        self._role = None
         self.setVisible(mark is not Mark.NONE)
         self.update()
 
+    def set_role(self, role: str | None) -> None:
+        """Show the dot in a color role, such as `control` for changes planned; None hides it."""
+        self._role = role
+        self.setVisible(role is not None)
+        self.update()
+
     def paintEvent(self, _event: object) -> None:  # noqa: N802  # Qt's name
-        color = mark_color(self._theme, self._mark)
+        color = self._theme.roles[self._role] if self._role else mark_color(self._theme, self._mark)
         if color:
             painter = QPainter(self)
             draw_dot(painter, self.width() / 2, self.height() / 2, color)
@@ -93,7 +101,8 @@ class LibraryDelegate(QStyledItemDelegate):
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
         roles = self._theme.roles
         if index.column() == MARK_COLUMN:
-            color = mark_color(self._theme, Mark(index.data(MARK_ROLE)))
+            dot = index.data(DOT_ROLE)
+            color = self._theme.roles[dot] if dot else None
             if color:
                 rect: QRect = opt.rect
                 draw_dot(painter, rect.center().x() + 0.5, rect.center().y() + 0.5, color)

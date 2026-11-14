@@ -73,6 +73,7 @@ class LibraryPanel(QWidget):
         layout.addWidget(self.tree, 1)
 
         model.library_changed.connect(self._update_count)
+        model.marks_changed.connect(self._update_count)
         theme.changed.connect(self._update_icon)
         self._update_count()
         self._update_icon()
@@ -120,7 +121,7 @@ class LibraryPanel(QWidget):
         self.selection_changed.emit(self.proxy.mapToSource(current))
 
     def _update_count(self) -> None:
-        self.needs_look.setText(tr("library.needs_look", count=self._model.library.counts().needs_look))
+        self.needs_look.setText(tr("library.needs_look", count=self._model.needs_look_count()))
 
     def _update_icon(self) -> None:
         color = mark_color(self._theme, Mark.UNSURE)

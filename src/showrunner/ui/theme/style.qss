@@ -104,3 +104,35 @@ QPushButton[flat="true"]:hover { background: $chrome_2; }
 *[text_size="lg"] { font-size: ${text_lg}px; }
 *[text_size="xl"] { font-size: ${text_xl}px; }
 *[text_size="2xl"] { font-size: ${text_2xl}px; font-weight: 600; }
+
+/* The Settings window and the stage controls. */
+QDialog[role="settings"] { background: $chrome; }
+QFrame[role="page"] QStackedWidget { background: transparent; }
+QListWidget[role="settings_nav"] { background: $chrome; border: none; outline: none; }
+QListWidget[role="settings_nav"]::item { height: ${row_lg}px; border-radius: ${radius_md}px; padding: 0 ${space_md}px; color: $ink; }
+QListWidget[role="settings_nav"]::item:hover { background: $chrome_2; }
+QListWidget[role="settings_nav"]::item:selected { background: $control_soft; color: $control_soft_ink; }
+QListWidget[role="settings_nav"]::item:disabled { color: $muted; background: transparent; }
+QPlainTextEdit[role="problem_field"] { border: 1px solid $line_strong; border-radius: ${radius_md}px; background: $surface; color: $ink; padding: 0 ${space_sm}px; }
+QPlainTextEdit[role="problem_field"]:focus { border-color: $control; }
+QPlainTextEdit[role="problem_field"][problem="true"] { border-color: $danger; }
+QPushButton[segment] { border-radius: 0; margin-left: -1px; }
+QPushButton[segment="first"] { border-top-left-radius: ${radius_md}px; border-bottom-left-radius: ${radius_md}px; margin-left: 0; }
+QPushButton[segment="last"] { border-top-right-radius: ${radius_md}px; border-bottom-right-radius: ${radius_md}px; }
+QPushButton[segment]:checked { background: $control_soft; color: $control_soft_ink; border-color: $control_fill; font-weight: 600; }
+QPushButton[danger="true"] { color: $danger; }
+QToolButton[role="stage"] { border: none; background: transparent; color: $muted; padding: 0 ${space_sm}px; }
+QToolButton[role="stage"]:checked { color: $ink; }
+QToolButton[role="stage"]:hover { background: $chrome_2; }
+QToolButton[role="stage"]::menu-button { border: none; width: 18px; }
+QListWidget[role="rules"], QListWidget[role="profiles"] { border: 1px solid $line; border-radius: ${radius_md}px; background: $surface; outline: none; }
+QListWidget[role="rules"]::item, QListWidget[role="profiles"]::item { border-radius: ${radius_md}px; color: $ink; padding: ${space_sm}px ${space_md}px; }
+QListWidget[role="rules"]::item:selected, QListWidget[role="profiles"]::item:selected { background: $control_soft; color: $control_soft_ink; }
+QTableWidget[role="settings_table"] { border: none; background: transparent; gridline-color: transparent; }
+QTableWidget[role="settings_table"]::item { border-bottom: 1px solid $line; }
+QTreeView[role="tokens"] { border: none; background: transparent; }
+QWidget[role="footer"] { border-top: 1px solid $line; }
+QFrame[role="page"] QFrame[role="side_panel"] { background: $chrome; border: none; border-radius: ${radius_md}px; }
+*[role="notice_strip"] { background: $chrome; color: $accent_ink; border-radius: ${radius_md}px; padding: ${space_md}px ${space_lg}px; }
+*[role="danger_strip"] { background: $danger_soft; color: $danger; border-radius: ${radius_md}px; padding: ${space_md}px ${space_lg}px; }
+*[role="preview_strip"] { background: $chrome; color: $muted; border-radius: ${radius_md}px; padding: ${space_md}px ${space_lg}px; }

@@ -115,6 +115,10 @@ class ProfileStore:
     def export(self, name: str, destination: Path) -> None:
         write_json_atomic(destination, profile_to_json(self.load(name).value, self._registry))
 
+    def file_path(self, name: str) -> Path | None:
+        """The file of a saved profile; None for a built-in one, which has no file."""
+        return None if self.is_builtin(name) else self._path(name)
+
     def _path(self, name: str) -> Path:
         validate_name(name)
         return self._root / f"{name}{_SUFFIX}"

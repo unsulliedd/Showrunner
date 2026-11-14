@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QHeaderView, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 
 from showrunner.core.media import MediaFile
 from showrunner.core.track import Track, TrackFlags, TrackKind
+from showrunner.stages.tracks import PlannedTrack, TrackPlan
 from showrunner.ui.i18n.catalog import tr
 from showrunner.ui.sheet.format import language_code, track_summary
 from showrunner.ui.sheet.widgets import FitTreeView
@@ -40,32 +43,69 @@ def _cell(text: str, align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignLeft) -> QS
     return cell
 
 
-class TrackModel(QStandardItemModel):
-    """One group row per kind that has tracks, with the tracks below it."""
+@dataclass(frozen=True, slots=True)
+class TablePlan:
+    """What a preview plans for the tracks of one file: the track plan, the names Metadata writes by track ID,
+    and the colors of the theme to draw them with."""
 
-    def __init__(self, media: MediaFile, parent: QWidget | None = None) -> None:
+    tracks: TrackPlan | None
+    names: dict[int, str]
+    roles: dict[str, str]
+
+
+class TrackModel(QStandardItemModel):
+    """One group row per kind that has tracks, with the tracks below it. With a plan, a dropped track is struck
+    out and muted, an added subtitle file is listed with `+`, and a new name is drawn in the `control` color with
+    the old one as its tooltip."""
+
+    def __init__(self, media: MediaFile, plan: TablePlan | None = None, parent: QWidget | None = None) -> None:
         super().__init__(0, 5, parent)
         self.setHorizontalHeaderLabels([tr(f"sheet.tracks.{c}") for c in ("id", "language", "codec", "name", "flags")])
+        self._plan = plan
+        tracks = plan.tracks if plan else None
+        self._dropped = {d.track.id for d in tracks.dropped if d.external is None} if tracks else set()
+        self._kept = {k.track.id: k for k in tracks.kept if k.external is None} if tracks else {}
+        added = [k for k in tracks.kept if k.external is not None] if tracks else []
         for kind in _KINDS:
-            tracks = [t for t in media.tracks if t.kind is kind]
-            if tracks:
-                self._add_group(kind, tracks)
+            rows = [(t, None) for t in media.tracks if t.kind is kind]
+            rows += [(k.track, k) for k in added if k.track.kind is kind]
+            if rows:
+                self._add_group(kind, rows)
 
-    def _add_group(self, kind: TrackKind, tracks: list[Track]) -> None:
-        group = _cell(tr(f"sheet.kind.{kind.value}", count=len(tracks)))
+    def _add_group(self, kind: TrackKind, rows: list[tuple[Track, PlannedTrack | None]]) -> None:
+        group = _cell(tr(f"sheet.kind.{kind.value}", count=len(rows)))
         font = QFont(group.font())
         font.setWeight(QFont.Weight.DemiBold)
         group.setFont(font)
         self.appendRow([group, *(_cell("") for _ in range(4))])
-        for track in tracks:
+        plan = self._plan
+        for track, added in rows:
+            planned = added or self._kept.get(track.id)
+            new_name = plan.names.get(track.id) if plan and added is None else None
+            dropped = track.id in self._dropped
+            changed = bool(planned and planned.flag_changes) or new_name is not None
+            mark = "+" if added else "\N{MINUS SIGN}" if dropped else "\N{BULLET}" if changed else ""
+            number = f"{mark} {track.id}" if mark and not added else (mark or str(track.id))
+            name = added.external.path.name if added and added.external else (new_name or track.name)
             cells = [
-                _cell(str(track.id), Qt.AlignmentFlag.AlignRight),
+                _cell(number, Qt.AlignmentFlag.AlignRight),
                 _cell(language_code(track.language)),
                 _cell(track_summary(track)),
-                _cell(track.name or tr("common.none")),
+                _cell(name or tr("common.none")),
                 _cell(""),
             ]
-            cells[FLAGS_COLUMN].setData(flag_names(track.flags), FLAGS_ROLE)
+            flags = planned.flags if planned is not None else track.flags
+            cells[FLAGS_COLUMN].setData([] if dropped else flag_names(flags), FLAGS_ROLE)
+            if plan is not None and dropped:
+                for cell in cells:
+                    struck = QFont(cell.font())
+                    struck.setStrikeOut(True)
+                    cell.setFont(struck)
+                    cell.setForeground(QColor(plan.roles["muted"]))
+                cells[FLAGS_COLUMN].setText(tr("sheet.dropped"))
+            elif plan is not None and new_name is not None:
+                cells[NAME_COLUMN].setForeground(QColor(plan.roles["control"]))
+                cells[NAME_COLUMN].setToolTip(tr("sheet.old_name", name=track.name or tr("common.none")))
             group.appendRow(cells)
 
 
@@ -91,6 +131,7 @@ class FlagsDelegate(QStyledItemDelegate):
     ) -> None:
         names = index.data(FLAGS_ROLE) or []
         if not names:
+            super().paint(painter, option, index)
             return
         roles = self._theme.roles
         painter.save()
@@ -122,8 +163,8 @@ class TracksView(FitTreeView):
         self._flags = FlagsDelegate(theme, self)
         self.setItemDelegateForColumn(FLAGS_COLUMN, self._flags)
 
-    def show_media(self, media: MediaFile) -> None:
-        self.setModel(TrackModel(media, self))
+    def show_media(self, media: MediaFile, plan: TablePlan | None = None) -> None:
+        self.setModel(TrackModel(media, plan, self))
         self.expandAll()
         for row in range(self.model().rowCount()):
             self.setFirstColumnSpanned(row, QModelIndex(), True)

@@ -3,6 +3,7 @@
 import logging
 import sys
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from showrunner import APP_NAME, __version__
@@ -35,4 +36,7 @@ def main() -> int:
     theme = ThemeManager(settings.value.theme_mode, colors.value)
     window = MainWindow(theme)
     window.show()
+    # After the first paint, so the window is on screen while the folders are read and before any question.
+    QTimer.singleShot(0, window.restore_workspace)
+    QTimer.singleShot(0, window.offer_unfinished_jobs)
     return app.exec()

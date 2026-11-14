@@ -30,17 +30,21 @@ class SummaryBar(QWidget):
 
     def set_counts(self, counts: Counts | None) -> None:
         """Show the counts of a library, or "no library" for None."""
+        if counts is None or counts.videos == 0:
+            self.set_parts([(tr("status.empty"), "")])
+        else:
+            self.set_parts(count_parts(counts))
+
+    def set_parts(self, parts: list[tuple[str, str]]) -> None:
+        """Texts with their color roles, joined by the separator."""
         while self._layout.count():
             item = self._layout.takeAt(0)
             if item.widget() is not None:
                 item.widget().hide()
                 item.widget().deleteLater()
-        if counts is None or counts.videos == 0:
-            self._layout.addWidget(_label(tr("status.empty")))
-        else:
-            for number, (text, role) in enumerate(count_parts(counts)):
-                prefix = tr("status.separator") + " " if number else ""
-                self._layout.addWidget(_label(prefix + text, role))
+        for number, (text, role) in enumerate(parts):
+            prefix = tr("status.separator") + " " if number else ""
+            self._layout.addWidget(_label(prefix + text, role))
         self._layout.addStretch()
 
     def texts(self) -> list[str]:

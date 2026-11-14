@@ -1,4 +1,4 @@
-"""Dependencies: every external program with its status, and the actions to locate, download or look it up.
+"""The Programs page: every external program with its status, and the actions to locate, download or look it up.
 
 Checking and downloading run on a pool thread; results come back through signals, which Qt delivers on
 the UI thread, so the window keeps painting and Cancel stays clickable.
@@ -13,9 +13,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from PySide6.QtCore import QObject, Qt, QThreadPool, QUrl, Signal
-from PySide6.QtGui import QCloseEvent, QDesktopServices
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -60,7 +59,7 @@ class _Bridge(QObject):
 
 
 class _Row(QFrame):
-    def __init__(self, spec: DependencySpec, dialog: DependenciesDialog) -> None:
+    def __init__(self, spec: DependencySpec, dialog: ProgramsPage) -> None:
         super().__init__()
         self.spec = spec
         self.setProperty("role", "page")
@@ -142,11 +141,13 @@ class _Row(QFrame):
         self.forget.setVisible(has_user_path)
 
 
-class DependenciesDialog(QDialog):
+class ProgramsPage(QWidget):
+    """`programs_changed` fires after a program was checked, located, forgotten or installed."""
+
+    programs_changed = Signal()
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(tr("dependencies.title"))
-        self.resize(SIZES["dialog_width"], SIZES["dialog_height"])
         self._cancel = threading.Event()
         self._bridge: _Bridge | None = None
         self._job_name = ""
@@ -156,11 +157,7 @@ class DependenciesDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setSpacing(SIZES["space_lg"])
-        layout.setContentsMargins(*[SIZES["space_xl"]] * 4)
-        intro = QLabel(tr("dependencies.intro"))
-        intro.setProperty("role", "muted")
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         rows = QWidget()
         rows_layout = QVBoxLayout(rows)
@@ -192,13 +189,9 @@ class DependenciesDialog(QDialog):
         self.cancel_button.hide()
         self.recheck_button = QPushButton(tr("dependencies.recheck"))
         self.recheck_button.clicked.connect(self.check_all)
-        close_button = QPushButton(tr("common.close"))
-        close_button.setProperty("primary", True)
-        close_button.clicked.connect(self.accept)
         buttons.addWidget(self.cancel_button)
         buttons.addStretch()
         buttons.addWidget(self.recheck_button)
-        buttons.addWidget(close_button)
         layout.addLayout(buttons)
 
         self.check_all()
@@ -289,24 +282,20 @@ class DependenciesDialog(QDialog):
 
     def _show(self, statuses: dict[str, DependencyStatus]) -> None:
         self.statuses.update(statuses)
+        self.programs_changed.emit()
         for spec_id, status in statuses.items():
             self.rows[spec_id].show_status(status, service.user_path(spec_id) is not None)
 
-    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802  # Qt's name
+    def stop(self) -> None:
+        """Stop a running download; the job then removes its own staging folder."""
         self._cancel.set()
-        super().closeEvent(event)
-
-    def done(self, result: int) -> None:
-        # Closing stops a running download; the job then removes its own staging folder.
-        self._cancel.set()
-        super().done(result)
 
     # Actions
 
     def check_all(self) -> None:
         self._say("")
         self._start(
-            tr("dependencies.title"),
+            tr("settings.page.programs"),
             tr("dependencies.busy.checking"),
             lambda _: service.check_all(self._cancel),
             self._on_checked,

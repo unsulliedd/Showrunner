@@ -9,13 +9,20 @@ from PySide6.QtCore import QModelIndex, QObject, Qt, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 
 from showrunner.app.library.library import Library, LibraryLoad, Mark
-from showrunner.core.media import Episode, MediaItem, SubtitleFile
+from showrunner.core.media import Episode, MediaFile, MediaItem, SubtitleFile
 from showrunner.ui.i18n.catalog import tr
 from showrunner.ui.sheet.format import episode_name, movie_name
 
 KIND_ROLE = Qt.ItemDataRole.UserRole + 1
 PATH_ROLE = Qt.ItemDataRole.UserRole + 2
 MARK_ROLE = Qt.ItemDataRole.UserRole + 3
+# The color role of the row's dot: the library's own mark, else the mark of the last preview; a parent's
+# is the worst of its rows.
+DOT_ROLE = Qt.ItemDataRole.UserRole + 4
+
+# Worst first: could not be read, needs a decision (unsure pairing or a refused plan), changes planned.
+DOT_RANK = {"danger": 3, "accent_ink": 2, "control": 1}
+_LIBRARY_DOTS = {Mark.FAILED: "danger", Mark.UNSURE: "accent_ink"}
 
 NAME_COLUMN, SUMMARY_COLUMN, MARK_COLUMN = range(3)
 
@@ -38,12 +45,15 @@ class LibraryModel(QStandardItemModel):
 
     # After any change of the library, whether a rebuild or one pairing.
     library_changed = Signal()
+    # After the dots changed without the library changing: a preview's marks were set or cleared.
+    marks_changed = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(0, 3, parent)
         self._library = Library()
         self._videos: dict[Path, QStandardItem] = {}
         self._order: list[Path] = []  # the videos in tree order
+        self._plan: dict[Path, str] = {}  # video -> dot color role from the last preview
 
     @property
     def library(self) -> Library:
@@ -69,6 +79,20 @@ class LibraryModel(QStandardItemModel):
         if self.kind(index).is_video:
             return [self.path(index)]
         return [p for row in range(self.rowCount(index)) for p in self.video_paths(self.index(row, 0, index))]
+
+    def dot(self, path: Path) -> str | None:
+        return _LIBRARY_DOTS.get(self._library.mark(path)) or self._plan.get(path)
+
+    def needs_look_count(self) -> int:
+        """Videos that need a decision: the library's marks plus the refused plans of the last preview."""
+        return sum(self.dot(p) in ("danger", "accent_ink") for p in self._order)
+
+    def set_plan_marks(self, marks: dict[Path, str]) -> None:
+        """Dots from a preview, by video path; an empty dict clears them."""
+        self._plan = dict(marks)
+        for path in self._order:
+            self._refresh_dot(path)
+        self.marks_changed.emit()
 
     def first_marked(self) -> QModelIndex:
         """The first video in tree order that needs a look, or an invalid index."""
@@ -104,7 +128,7 @@ class LibraryModel(QStandardItemModel):
             for item in sorted(movies, key=lambda i: (i.identity.title.casefold(), i.identity.year or 0)):
                 self._add_video(group, item, movie_name(item.identity))
         for path in self._order:
-            if library.mark(path) is not Mark.NONE:
+            if self.dot(path) is not None:
                 self._bubble_up(self._videos[path])
         self.library_changed.emit()
 
@@ -119,6 +143,10 @@ class LibraryModel(QStandardItemModel):
 
     def pair_instead(self, video: Path, subtitle: SubtitleFile) -> None:
         self._replace(self._library.pair_instead(video, subtitle))
+
+    def replace_files(self, files: dict[Path, MediaFile]) -> None:
+        """Take the files read again after Apply in place of the ones the library holds."""
+        self._replace(self._library.with_files(files))
 
     def _replace(self, library: Library) -> None:
         """Take a library with the same videos in the same order and update only the rows that differ."""
@@ -171,16 +199,30 @@ class LibraryModel(QStandardItemModel):
         mark = self._library.mark(path)
         (cell.parent() or self.invisibleRootItem()).child(cell.row(), SUMMARY_COLUMN).setText(self._languages(item))
         self._set_mark(cell, mark)
+        self._refresh_dot(path, bubble=False)
         if mark is Mark.FAILED:
             cell.setToolTip(tr("library.tip.failed", reason=self._library.failure(path)))
         else:
             cell.setToolTip(tr("library.tip.unsure") if mark is Mark.UNSURE else "")
         self._bubble_up(cell)
 
+    def _set_dot(self, cell: QStandardItem, dot: str | None) -> None:
+        parent = cell.parent() or self.invisibleRootItem()
+        for column in range(self.columnCount()):
+            parent.child(cell.row(), column).setData(dot, DOT_ROLE)
+
+    def _refresh_dot(self, path: Path, *, bubble: bool = True) -> None:
+        cell = self._videos[path]
+        self._set_dot(cell, self.dot(path))
+        if bubble:
+            self._bubble_up(cell)
+
     def _bubble_up(self, cell: QStandardItem) -> None:
-        """Give each ancestor of `cell` the worst mark among its rows."""
+        """Give each ancestor of `cell` the worst mark and the worst dot among its rows."""
         parent = cell.parent()
         while parent is not None:
             marks = (Mark(parent.child(row, NAME_COLUMN).data(MARK_ROLE)) for row in range(parent.rowCount()))
             self._set_mark(parent, max(marks, default=Mark.NONE))
+            dots = [parent.child(row, NAME_COLUMN).data(DOT_ROLE) for row in range(parent.rowCount())]
+            self._set_dot(parent, max(dots, key=lambda d: DOT_RANK.get(d, 0), default=None))
             parent = parent.parent()

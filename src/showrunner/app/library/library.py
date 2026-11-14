@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from enum import IntEnum
 from pathlib import Path
 
-from showrunner.core.media import Episode, MediaItem, Movie, SubtitleFile
+from showrunner.core.media import Episode, MediaFile, MediaItem, Movie, SubtitleFile
 from showrunner.stages.scan import Alternatives, ProbeFailure, attach, detach, move_subtitle
 from showrunner.stages.scan.scanner import natural_key
 
@@ -110,6 +110,12 @@ class Library:
             (*self.failures, *load.failures),
             tuple(dict.fromkeys((*self.roots, *load.roots))),
         )
+
+    def with_files(self, files: dict[Path, MediaFile]) -> Library:
+        """The library with these files, read again after they were written, in place of the ones at their
+        paths."""
+        items = tuple(replace(i, file=files[i.file.path]) if i.file.path in files else i for i in self.items)
+        return replace(self, items=items)
 
     def pair(self, subtitle: SubtitleFile, video: Path) -> Library:
         """Give an unpaired file to a video."""

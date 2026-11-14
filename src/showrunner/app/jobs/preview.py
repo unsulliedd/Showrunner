@@ -25,6 +25,9 @@ class FileOutcome(StrEnum):
     NEEDS_REMUX = "needs-remux"  # a plan needs a new file and no stage that writes one is on: nothing is written
     REFUSED = "refused"  # a stage refused the file; the stages that did plan it still apply
     CHANGES = "changes"
+    # A stage planned changes that no switched-on stage writes, such as flags the track rules move while
+    # Metadata is off; nothing is written.
+    UNWRITTEN = "unwritten"
     UNCHANGED = "unchanged"
 
 
@@ -123,4 +126,6 @@ def _outcome(plans: Sequence[StagePlan], can_remux: bool) -> FileOutcome:
         return FileOutcome.REFUSED
     if any(p.writes for p in plans):
         return FileOutcome.CHANGES
+    if any(p.state is PlanState.CHANGES for p in plans):
+        return FileOutcome.UNWRITTEN
     return FileOutcome.UNCHANGED

@@ -136,7 +136,13 @@ def test_implied_flags_come_from_the_name_the_file_has_now(b: SimpleNamespace) -
     # The default template replaces "English SDH", so the flag has to be read before that.
     result = changes(plan(b.item(b.subtitle(0, "English SDH"))))
     assert (Property.FLAG_HEARING_IMPAIRED, 0, False, True) in result
-    assert (Property.NAME, 0, "English SDH", "Show Name - S01E01") in result
+    assert (Property.NAME, 0, "English SDH", "Show Name - S01E01 (SDH)") in result
+
+
+def test_a_renamed_track_plans_nothing_more(b: SimpleNamespace) -> None:
+    # Resuming a job counts a step as done when its plan made again on the edited file is empty.
+    renamed = b.subtitle(0, "Show Name - S01E01 (SDH)", hearing_impaired=True)
+    assert changes(plan(b.item(renamed, title="Show Name - S01E01"))) == []
 
 
 def test_a_forced_flag_the_rules_assign_is_not_added_to_by_names(b: SimpleNamespace) -> None:
@@ -195,12 +201,13 @@ def test_a_disabled_stage_refuses_nothing(b: SimpleNamespace) -> None:
     assert result == MetadataPlan(Path("Show Name - S01E01.mkv"), ())
 
 
-def test_a_refused_track_plan_is_reported_not_planned(b: SimpleNamespace) -> None:
-    result = plan(b.item(b.video(0), b.audio(1)), tracks=rules(drop(kind=KindTest.AUDIO)))
-    assert isinstance(result, MetadataRefused)
-    (problem,) = result.problems
-    assert problem.kind is MetadataProblemKind.TRACKS_REFUSED
-    assert problem.refused is not None
+def test_a_refused_track_plan_leaves_the_tracks_as_they_are_and_names_them(b: SimpleNamespace) -> None:
+    # The rules would drop the only audio track and move the default flag; the file keeps both as they are.
+    tracks = rules(drop(kind=KindTest.AUDIO), TrackRule(match=TrackMatch(kind=KindTest.VIDEO), default=FlagShape.FIRST))
+    result = plan(b.item(b.video(0), b.audio(1)), tracks=tracks)
+    assert isinstance(result, MetadataPlan)
+    assert not result.needs_remux
+    assert [c.prop for c in result.changes] == [Property.TITLE, Property.NAME, Property.NAME]
 
 
 def test_template_problems_are_reported_once_instead_of_changes(b: SimpleNamespace) -> None:

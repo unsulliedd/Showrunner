@@ -24,7 +24,7 @@ from showrunner.ui.library.marks import MarkDot
 from showrunner.ui.sheet.details import DetailsPanel, file_row
 from showrunner.ui.sheet.format import SEPARATOR, count_parts, duration_text, item_title, size_text
 from showrunner.ui.sheet.lists import attachments_view, chapters_view
-from showrunner.ui.sheet.tracks import TracksView
+from showrunner.ui.sheet.tracks import TablePlan, TracksView
 from showrunner.ui.sheet.widgets import ElidedLabel, heading, replace_content
 from showrunner.ui.shell.splitter import SavedSplitter
 from showrunner.ui.theme.manager import ThemeManager
@@ -120,7 +120,17 @@ class Sheet(QFrame):
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._set_group(hint)
 
-    def show_item(self, library: Library, path: Path) -> None:
+    def show_item(
+        self,
+        library: Library,
+        path: Path,
+        *,
+        plan: QWidget | None = None,
+        table_plan: TablePlan | None = None,
+        state: tuple[str, str | None] | None = None,
+    ) -> None:
+        """`plan` is the planned-changes section, `table_plan` what it does to the tracks, `state` the title
+        row's words and dot role after a preview; a mark of the library itself wins over that state."""
         item = library.item(path)
         if item is None:
             self.show_placeholder()
@@ -137,7 +147,14 @@ class Sheet(QFrame):
         mark = library.mark(path)
         self.dot.set_mark(mark)
         self._set_state(mark, library.failure(path))
-        replace_content(self.sections, self._sections(item.file, library.failure(path)))
+        if state is not None and mark is Mark.NONE:
+            words, role = state
+            self.dot.set_role(role)
+            self.state.setText(words)
+            self.state.setProperty("role", "notice" if role == "accent_ink" else "")
+            self.state.style().unpolish(self.state)
+            self.state.style().polish(self.state)
+        replace_content(self.sections, self._sections(item.file, library.failure(path), plan, table_plan))
         self.details.show_item(library, path)
 
     def show_group(self, name: str, library: Library, paths: list[Path]) -> None:
@@ -182,16 +199,21 @@ class Sheet(QFrame):
         self.state.style().unpolish(self.state)
         self.state.style().polish(self.state)
 
-    def _sections(self, media: MediaFile, failure: str | None) -> QWidget:
+    def _sections(
+        self, media: MediaFile, failure: str | None, plan: QWidget | None, table_plan: TablePlan | None
+    ) -> QWidget:
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setContentsMargins(0, 0, SIZES["space_xl"], 0)
         layout.setSpacing(SIZES["space_md"])
+        if plan is not None:
+            layout.addWidget(plan)
+            layout.addSpacing(SIZES["space_lg"])
 
         layout.addWidget(heading(tr("sheet.tracks"), len(media.tracks)))
         if media.tracks:
             view = TracksView(self._theme)
-            view.show_media(media)
+            view.show_media(media, table_plan)
             layout.addWidget(view)
         elif failure:
             reason = QLabel(tr("sheet.tracks_failed", reason=failure))

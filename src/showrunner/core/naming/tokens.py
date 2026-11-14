@@ -21,7 +21,7 @@ from showrunner.core.naming.names import (
     hdr_display,
     resolution,
 )
-from showrunner.core.track import ObjectAudio, Track, TrackKind
+from showrunner.core.track import ObjectAudio, Track, TrackKind, flags_with_name
 
 
 class Scope(StrEnum):
@@ -41,6 +41,8 @@ class NamingContext:
     # The user's own tokens and value maps (token name -> value read -> text to use).
     custom: Sequence[CustomToken] = ()
     value_maps: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    # `{flags}` also names the flags the track's name implies, as the track rules read them.
+    flags_from_names: bool = True
 
     @property
     def video(self) -> Track | None:
@@ -143,8 +145,8 @@ def _track_name(c: NamingContext) -> str | None:
     return c.track.name if c.track else None
 
 
+# Default is left out: it is about which track a player picks, not about what the track holds.
 _FLAG_NAMES = (
-    ("default", "Default"),
     ("forced", "Forced"),
     ("hearing_impaired", "SDH"),
     ("visual_impaired", "Visual Impaired"),
@@ -156,7 +158,8 @@ _FLAG_NAMES = (
 def _flags(c: NamingContext) -> str | None:
     if not c.track:
         return None
-    return " ".join(label for attribute, label in _FLAG_NAMES if getattr(c.track.flags, attribute))
+    flags = flags_with_name(c.track) if c.flags_from_names else c.track.flags
+    return " ".join(label for attribute, label in _FLAG_NAMES if getattr(flags, attribute))
 
 
 _TOKENS = (
@@ -186,7 +189,7 @@ _TOKENS = (
     Token("language", Scope.TRACK, "Turkish", _language),
     Token("language_code", Scope.TRACK, "tr", _language_code),
     Token("track_name", Scope.TRACK, "Original Name", _track_name),
-    Token("flags", Scope.TRACK, "Default Forced", _flags),
+    Token("flags", Scope.TRACK, "Forced", _flags),
 )
 
 TOKENS: dict[str, Token] = {token.name: token for token in _TOKENS}

@@ -6,7 +6,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from showrunner.app.settings.app_settings import ThemeMode
-from showrunner.ui.dialogs.appearance import AppearanceDialog
+from showrunner.ui.settings.appearance import AppearancePage as AppearanceDialog
 from showrunner.ui.theme.manager import ThemeManager
 from showrunner.ui.theme.tokens import DEFAULT_BASES, Base, ThemeColors, with_base
 

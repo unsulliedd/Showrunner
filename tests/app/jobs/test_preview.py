@@ -14,7 +14,7 @@ from showrunner.core.language import Language
 from showrunner.core.media import MediaFile, MediaItem, Movie
 from showrunner.core.track import AudioProperties, SubtitleProperties, Track, TrackKind, VideoProperties
 from showrunner.stages.metadata import MetadataOptions, MetadataPlan
-from showrunner.stages.tracks import KindTest, TrackMatch, TrackRule, TracksOptions, Verdict
+from showrunner.stages.tracks import FlagShape, KindTest, TrackMatch, TrackRule, TracksOptions, Verdict
 from showrunner.tools.probe import Programs
 
 STAGES = (TracksStage(), MetadataStage(Path("mkvpropedit"), Programs()))
@@ -93,8 +93,21 @@ def test_a_stage_that_remuxes_carries_a_dropped_track(tmp_path: Path, profile: P
 def test_rules_that_leave_no_audio_refuse_the_file(tmp_path: Path, profile: Profile) -> None:
     (file,) = preview([movie(tmp_path)], with_rule(profile, KindTest.AUDIO), STAGES).files
     assert file.outcome is FileOutcome.REFUSED
-    assert {plan.state for plan in file.plans} == {PlanState.REFUSED}
+    tracks, metadata = file.plan_for("tracks"), file.plan_for("metadata")
+    assert tracks is not None
+    assert tracks.state is PlanState.REFUSED
+    # The other stages still apply to the file, with its tracks as they are.
+    assert file.writes == (metadata,)
+
+
+def test_flags_that_no_stage_writes_are_named_as_such(tmp_path: Path, profile: Profile) -> None:
+    rule = TrackRule(match=TrackMatch(kind=KindTest.AUDIO), default=FlagShape.FIRST)
+    flags_only = profile.with_options("tracks", TracksOptions(enabled=True, rules=[rule]))
+    (file,) = preview([movie(tmp_path)], headers_only(flags_only, enabled=False), STAGES).files
+    assert file.outcome is FileOutcome.UNWRITTEN
     assert file.writes == ()
+    (written,) = preview([movie(tmp_path)], flags_only, STAGES).files
+    assert written.outcome is FileOutcome.CHANGES
 
 
 def test_a_blocked_stage_is_planned_for_no_file_and_seen_as_off(tmp_path: Path, profile: Profile) -> None:

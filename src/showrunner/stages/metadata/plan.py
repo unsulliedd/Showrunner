@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 
@@ -11,7 +11,7 @@ from showrunner.core.media import MediaItem
 from showrunner.core.naming import NamingContext, NamingOptions, Problem, preview
 from showrunner.core.track import TrackKind, flags_with_name
 from showrunner.stages.metadata.options import MetadataOptions
-from showrunner.stages.tracks import FlagShape, PlannedTrack, PlanRefused, TracksOptions, plan_tracks
+from showrunner.stages.tracks import FlagShape, PlannedTrack, PlanRefused, TrackPlan, TracksOptions, plan_tracks
 from showrunner.tools.mkvtoolnix.propedit import Edit, Property
 
 # The flag properties and the `TrackFlags` field each one reads.
@@ -37,6 +37,7 @@ class MetadataProblemKind(StrEnum):
     NOT_MATROSKA = "not-matroska"  # detail: the container
     TEMPLATE = "template"  # `template` is the option's name, `template_problems` what is wrong in it
     INVALID_LANGUAGE = "invalid-language"  # detail: the tag
+    # No longer produced: a file the track rules refuse is planned with its tracks as they are.
     TRACKS_REFUSED = "tracks-refused"  # `refused` holds the reasons of the track plan
 
 
@@ -104,15 +105,23 @@ def plan_metadata(
         refusals.append(MetadataProblem(MetadataProblemKind.NOT_MATROSKA, detail=file.container))
     track_plan = plan_tracks(item, tracks)
     if isinstance(track_plan, PlanRefused):
-        refusals.append(MetadataProblem(MetadataProblemKind.TRACKS_REFUSED, refused=track_plan))
+        # The file keeps its tracks as they are, so names and languages are planned for those tracks and the
+        # rules' flag changes are left out with the rest of the refused plan.
+        tracks = replace(tracks, enabled=False)
+        track_plan = plan_tracks(item, tracks)
+        assert isinstance(track_plan, TrackPlan)
     language = _language(options.untagged_language, refusals)
-    if refusals or isinstance(track_plan, PlanRefused):
+    if refusals:
         return MetadataRefused(tuple(refusals))
 
     found: dict[str, dict[Problem, None]] = {}  # template option -> its problems, without repeats
 
     def render(template: str, track: PlannedTrack | None) -> str:
-        context = NamingContext(item, track.track if track else None, source, naming.custom_tokens, naming.value_maps)
+        # The flags after the rules, so `{flags}` names what the track will be.
+        named = replace(track.track, flags=track.flags) if track else None
+        context = NamingContext(
+            item, named, source, naming.custom_tokens, naming.value_maps, flags_from_names=tracks.flags_from_names
+        )
         result = preview(getattr(naming, template), context)
         found.setdefault(template, {}).update(dict.fromkeys(result.problems))
         return result.text

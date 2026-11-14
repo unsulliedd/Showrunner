@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QModelIndex, QObject, QPersistentModelIndex, QSortFilterProxyModel
 
-from showrunner.app.library.library import Mark
-from showrunner.ui.library.model import MARK_ROLE
+from showrunner.ui.library.model import DOT_ROLE
 
 
 class LibraryFilter(QSortFilterProxyModel):
@@ -36,7 +35,7 @@ class LibraryFilter(QSortFilterProxyModel):
     def filterAcceptsRow(self, row: int, parent: QModelIndex | QPersistentModelIndex) -> bool:  # noqa: N802  # Qt's name
         model = self.sourceModel()
         index = model.index(row, 0, parent)
-        if self._needs_look and index.data(MARK_ROLE) == Mark.NONE:
+        if self._needs_look and index.data(DOT_ROLE) not in ("danger", "accent_ink"):
             return False
         if not self._text:
             return True

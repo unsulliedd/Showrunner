@@ -8,7 +8,7 @@ from string import Template
 
 from PySide6.QtGui import QColor, QFont, QPalette
 
-from showrunner.ui.theme.tokens import FONT_FAMILIES, SIZES
+from showrunner.ui.theme.tokens import FONT_FAMILIES, MONO_FAMILIES, SIZES
 
 _TEMPLATE = Template((Path(__file__).parent / "style.qss").read_text(encoding="utf-8"))
 
@@ -63,4 +63,12 @@ def build_font() -> QFont:
     font = QFont()
     font.setFamilies(list(FONT_FAMILIES))
     font.setPixelSize(SIZES["text_md"])
+    return font
+
+
+def build_mono_font() -> QFont:
+    font = QFont()
+    font.setFamilies(list(MONO_FAMILIES))
+    font.setStyleHint(QFont.StyleHint.Monospace)
+    font.setPixelSize(SIZES["text_sm"])
     return font

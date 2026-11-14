@@ -79,7 +79,7 @@ def test_a_plan_is_applied_to_a_real_file_and_found_there_afterwards(episode: Me
         "Show Name - S01E01 (480p WEB-DL)",
         "Show Name - S01E01 (AAC 1.0)",
         "Show Name - S01E01 (AAC 1.0)",
-        "Show Name - S01E01",
+        "Show Name - S01E01 (SDH)",
     ]
     # Both language elements are written; the probe reads the IETF one, so the legacy one is read raw.
     legacy = subprocess.run([str(MKVMERGE), "-J", str(episode.file.path)], check=True, capture_output=True, text=True)

@@ -210,6 +210,7 @@ SIZES: dict[str, int] = {
     "height_lg": 40,  # the toolbar
     "row_sm": 24,  # library tree rows
     "row_md": 28,  # track, chapter and attachment rows
+    "row_lg": 32,  # the Settings window's section list
     "radius_sm": 4,  # chips, scrollbar thumbs
     "radius_md": 6,  # buttons, fields and rows
     "radius_lg": 10,  # panels
@@ -219,8 +220,11 @@ SIZES: dict[str, int] = {
     "space_lg": 12,
     "space_xl": 16,
     "swatch_width": 96,
-    "dialog_width": 760,
-    "dialog_height": 680,
+    "dialog_width": 960,  # the Settings window
+    "dialog_height": 720,
+    "settings_nav_width": 200,  # the Settings window's section list
+    "rule_list_width": 284,  # the track rule list beside the rule editor
+    "token_picker_width": 252,  # the token list beside the naming templates
     "library_width": 288,
     "details_width": 320,
     "progress_width": 160,  # the progress bar in the status bar
@@ -236,3 +240,5 @@ SIZES: dict[str, int] = {
 
 # Tried in order; the first one installed is used.
 FONT_FAMILIES: tuple[str, ...] = ("Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Helvetica Neue", "Arial")
+# Templates, token names, patterns and language lists, where braces, brackets and backslashes must read apart.
+MONO_FAMILIES: tuple[str, ...] = ("Cascadia Mono", "Consolas", "DejaVu Sans Mono")

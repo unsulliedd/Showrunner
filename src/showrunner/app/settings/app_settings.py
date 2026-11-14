@@ -21,10 +21,21 @@ class ThemeMode(StrEnum):
     DARK = "dark"
 
 
+class Startup(StrEnum):
+    LAST_WORKSPACE = "last-workspace"  # read the last folders again and select what was selected
+    EMPTY = "empty"
+
+
 @dataclass(frozen=True)
 class AppSettings:
     active_profile: str = DEFAULT_PROFILE_NAME
+    startup: Startup = Startup.LAST_WORKSPACE
+    # The workspace: what the window had open when it closed, for the next start.
     last_folders: list[str] = field(default_factory=list)
+    last_selection: str = ""  # the path of the selected video
+    # The `{source}` of the batch (BluRay, WEB-DL, ...); empty guesses it from each file's name. Kept with the
+    # workspace, not the profile, since it describes the files rather than how to treat them.
+    batch_source: str = ""
     # Opaque to this layer: whatever string the window produces and later restores.
     window_geometry: str = ""
     # Widths of the panes of the main window, as the splitters report them; empty until the user has moved one.
