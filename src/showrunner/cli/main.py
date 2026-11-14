@@ -4,6 +4,7 @@ import argparse
 from collections.abc import Sequence
 
 from showrunner import __version__
+from showrunner.app.profiles import registered  # noqa: F401  # registers every stage's options
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -6,6 +6,7 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 from showrunner import APP_NAME, __version__
+from showrunner.app.profiles import registered  # noqa: F401  # registers every stage's options
 from showrunner.app.settings.app_settings import load_settings
 from showrunner.app.storage.paths import theme_path
 from showrunner.core.options.serialization import LoadWarning
