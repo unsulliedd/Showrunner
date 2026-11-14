@@ -32,6 +32,11 @@ def theme_path() -> Path:
     return data_dir() / "theme.json"
 
 
+def jobs_path() -> Path:
+    """The database of job progress."""
+    return data_dir() / "jobs.sqlite3"
+
+
 def tools_dir() -> Path:
     """Where downloaded programs go, one folder per program."""
     return data_dir() / "tools"
