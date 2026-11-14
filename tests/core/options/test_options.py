@@ -117,3 +117,51 @@ def test_dict_keys_must_be_strings(registry: OptionsRegistry) -> None:
     registry.register("with_dict")(_WithDict)
     with pytest.raises(TypeError):
         registry.register("int_keys")(_IntKeys)
+
+
+@dataclass(frozen=True)
+class Entry:
+    name: str = ""
+    mode: str = "a"
+
+
+@dataclass(frozen=True)
+class WithEntries:
+    enabled: bool = True
+    entries: list[Entry] = field(default_factory=list)
+
+
+def test_nested_dataclasses_round_trip_in_full() -> None:
+    options = WithEntries(entries=[Entry("x", "b"), Entry("y")])
+    sparse = to_sparse(options)
+    assert sparse == {"entries": [{"name": "x", "mode": "b"}, {"name": "y", "mode": "a"}]}
+    warnings: list[LoadWarning] = []
+    assert from_sparse(WithEntries, sparse, "w", warnings) == options
+    assert warnings == []
+
+
+def test_nested_dataclass_with_bad_data_is_rejected_with_a_warning() -> None:
+    for bad in ([{"name": "x", "gone": 1}], [{"name": 3}], ["x"], "x"):
+        warnings: list[LoadWarning] = []
+        assert from_sparse(WithEntries, {"entries": bad}, "w", warnings) == WithEntries()
+        assert warnings == [LoadWarning(WarningKind.WRONG_TYPE, "w.entries")]
+
+
+def test_nested_dataclass_missing_a_key_takes_its_default() -> None:
+    assert from_sparse(WithEntries, {"entries": [{"name": "x"}]}, "w", []).entries == [Entry("x")]
+
+
+@dataclass(frozen=True)
+class NoDefault:
+    name: str
+
+
+@dataclass(frozen=True)
+class Holder:
+    enabled: bool = True
+    entries: list[NoDefault] = field(default_factory=list)
+
+
+def test_registry_rejects_a_nested_dataclass_without_defaults() -> None:
+    with pytest.raises(TypeError):
+        OptionsRegistry().register("holder")(Holder)
