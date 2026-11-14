@@ -8,6 +8,10 @@ with a companion command line, licensed GPL-3.0-or-later.
 
 Requires Python 3.12 or newer.
 
+Showrunner reads tracks with [MKVToolNix](https://mkvtoolnix.download/) and
+[FFmpeg](https://ffmpeg.org/). Both are optional and found automatically when installed; Tools >
+Dependencies shows what was found and can download what is missing from its official source.
+
 ```bash
 python -m venv .venv
 .venv\Scripts\activate          # Windows; on Linux and macOS: source .venv/bin/activate
