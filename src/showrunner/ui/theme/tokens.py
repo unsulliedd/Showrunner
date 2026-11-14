@@ -31,7 +31,7 @@ class ColorSet(StrEnum):
     DARK = "dark"
 
 
-DEFAULT_BASES: dict[Base, str] = {Base.PRIMARY: "#2b3a8f", Base.SECONDARY: "#6fc3d8", Base.ACCENT: "#e0a43a"}
+DEFAULT_BASES: dict[Base, str] = {Base.PRIMARY: "#1f4f8f", Base.SECONDARY: "#6fc3d8", Base.ACCENT: "#e0a43a"}
 
 
 @dataclass(frozen=True)
@@ -204,9 +204,12 @@ SIZES: dict[str, int] = {
     "text_md": 13,  # everything else
     "text_lg": 14,  # headings inside dialogs
     "text_xl": 16,  # page titles
+    "text_2xl": 20,  # the title of the sheet
     "height_sm": 24,  # small icon buttons
     "height_md": 28,  # buttons and fields
-    "height_lg": 32,  # the toolbar
+    "height_lg": 40,  # the toolbar
+    "row_sm": 24,  # library tree rows
+    "row_md": 28,  # track, chapter and attachment rows
     "radius_sm": 4,  # chips, scrollbar thumbs
     "radius_md": 6,  # buttons, fields and rows
     "radius_lg": 10,  # panels
@@ -218,8 +221,16 @@ SIZES: dict[str, int] = {
     "swatch_width": 96,
     "dialog_width": 760,
     "dialog_height": 680,
-    "window_width": 1200,
+    "library_width": 288,
+    "details_width": 320,
+    "progress_width": 160,  # the progress bar in the status bar
+    "mark_size": 8,  # the status dot of a row
+    "empty_width": 560,  # the block in the middle of the empty state
+    "library_min_width": 220,
+    "window_width": 1280,
     "window_height": 800,
+    "window_min_width": 1024,
+    "window_min_height": 640,
 }
 
 # Tried in order; the first one installed is used.

@@ -74,3 +74,8 @@ def set_language(language: str) -> None:
 def tr(key: str, **values: object) -> str:
     """The UI text for `key` in the active language. Every widget gets its text through this function."""
     return _catalog.text(key, **values)
+
+
+def tr_plural(key: str, count: int, **values: object) -> str:
+    """The text for `key.one` when `count` is 1 and `key.other` otherwise, with `{count}` filled in."""
+    return _catalog.text(f"{key}.{'one' if count == 1 else 'other'}", count=count, **values)

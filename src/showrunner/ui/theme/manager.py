@@ -32,6 +32,7 @@ class ThemeManager(QObject):
         self._app = app
         self._mode = mode
         self._colors = colors
+        self._roles: dict[str, str] = {}
         # The native Windows 11 style draws its own colors and ignores most of the palette; Fusion uses it all.
         app.setStyle("Fusion")
         app.setFont(build_font())
@@ -54,6 +55,11 @@ class ThemeManager(QObject):
             dark = self._mode is ThemeMode.DARK
         return ColorSet.DARK if dark else ColorSet.LIGHT
 
+    @property
+    def roles(self) -> dict[str, str]:
+        """The resolved color of every role in the active set, for widgets that paint themselves."""
+        return self._roles
+
     def set_mode(self, mode: ThemeMode) -> None:
         if mode is self._mode:
             return
@@ -75,7 +81,7 @@ class ThemeManager(QObject):
         self.apply()
 
     def apply(self) -> None:
-        roles = resolve(self._colors, self.color_set)
+        roles = self._roles = resolve(self._colors, self.color_set)
         self._app.setPalette(build_palette(roles))
         self._app.setStyleSheet(build_stylesheet(roles))
         self.changed.emit()

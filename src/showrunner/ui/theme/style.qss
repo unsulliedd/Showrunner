@@ -1,5 +1,6 @@
 /* The application style sheet. Each name after a dollar sign is a color role or a size token, filled in by the theme. */
 
+QMainWindow, QStackedWidget { background: $chrome; }
 QLabel { color: $ink; }
 
 QToolTip {
@@ -17,7 +18,7 @@ QMenu::item { padding: ${space_sm}px ${space_xl}px ${space_sm}px ${space_md}px; 
 QMenu::item:selected { background: $control_soft; color: $control_soft_ink; }
 QMenu::separator { height: 1px; background: $line; margin: ${space_sm}px 0; }
 
-QToolBar { background: $chrome; border: none; min-height: ${height_lg}px; spacing: ${space_sm}px; }
+QToolBar { background: $chrome; border: none; min-height: ${height_lg}px; spacing: ${space_sm}px; padding: 0 ${space_md}px; }
 QToolButton { min-height: ${height_sm}px; border-radius: ${radius_md}px; padding: 0 ${space_sm}px; }
 QToolButton:hover { background: $chrome_2; }
 QStatusBar { background: $chrome; color: $muted; font-size: ${text_sm}px; }
@@ -75,6 +76,23 @@ QScrollBar::add-page, QScrollBar::sub-page { background: none; }
 
 /* Styling hooks a widget opts into with setProperty. */
 QFrame[role="page"] { background: $surface; border: 1px solid $line; border-radius: ${radius_lg}px; }
+QFrame[role="page"][drop="idle"] { border-style: dashed; border-color: $line_strong; }
+QFrame[role="page"][drop="over"] { border: 2px solid $control; background: $drop_soft; }
+QFrame[role="page"] QHeaderView::section { background: $surface; }
+QTreeView[role="library"] { background: $chrome; border: none; }
+QTreeView[role="library"]::item { height: ${row_sm}px; }
+QTreeView[role="library"]::item:hover { background: $chrome_2; }
+QTreeView[role="library"]::item:selected { background: $control_soft; color: $control_soft_ink; }
+QTreeView[role="tracks"], QTreeView[role="sheet_list"] { border: none; }
+QTreeView[role="tracks"]::item, QTreeView[role="sheet_list"]::item { height: ${row_md}px; border-bottom: 1px solid $line; }
+QSplitter::handle { background: $chrome; }
+QFrame[role="page"] QSplitter::handle { background: transparent; border-right: 1px solid $line; }
+QFrame[role="page"] QScrollArea, QFrame[role="page"] QScrollArea > QWidget > QWidget { background: transparent; }
+QPushButton:checked { background: $control_soft; color: $control_soft_ink; border-color: $control; }
+QProgressBar { background: $chrome_2; border: none; border-radius: ${radius_sm}px; max-height: 6px; }
+QProgressBar::chunk { background: $control_fill; border-radius: ${radius_sm}px; }
+QPushButton[flat="true"] { border: none; background: transparent; color: $link; padding: 0 ${space_sm}px; min-height: ${height_sm}px; }
+QPushButton[flat="true"]:hover { background: $chrome_2; }
 *[role="muted"] { color: $muted; }
 *[role="link"] { color: $link; }
 *[role="notice"] { color: $accent_ink; }
@@ -85,3 +103,4 @@ QFrame[role="page"] { background: $surface; border: 1px solid $line; border-radi
 *[text_size="sm"] { font-size: ${text_sm}px; }
 *[text_size="lg"] { font-size: ${text_lg}px; }
 *[text_size="xl"] { font-size: ${text_xl}px; }
+*[text_size="2xl"] { font-size: ${text_2xl}px; font-weight: 600; }

@@ -1,9 +1,6 @@
 # ruff: noqa: RUF001 (Turkish letters are the point of this data)
 from __future__ import annotations
 
-from collections.abc import Callable
-from pathlib import Path
-
 import pytest
 
 TURKISH_LINES = [
@@ -48,16 +45,3 @@ def turkish_cp1254() -> bytes:
 @pytest.fixture
 def english_utf8() -> bytes:
     return srt_text(ENGLISH_LINES).encode("utf-8")
-
-
-@pytest.fixture
-def make(tmp_path: Path) -> Callable[..., Path]:
-    """Create a file below `tmp_path` and return its path; the content only has to exist unless a test reads it."""
-
-    def make_file(relative: str, content: bytes = b"x") -> Path:
-        path = tmp_path / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(content)
-        return path
-
-    return make_file

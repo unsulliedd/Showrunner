@@ -27,6 +27,9 @@ class AppSettings:
     last_folders: list[str] = field(default_factory=list)
     # Opaque to this layer: whatever string the window produces and later restores.
     window_geometry: str = ""
+    # Widths of the panes of the main window, as the splitters report them; empty until the user has moved one.
+    library_splitter: list[int] = field(default_factory=list)
+    sheet_splitter: list[int] = field(default_factory=list)
     ui_language: str = "en"
     theme_mode: ThemeMode = ThemeMode.SYSTEM
     # External programs the user located by hand: program id to the program file or its folder.
