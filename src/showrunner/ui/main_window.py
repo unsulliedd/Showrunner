@@ -34,13 +34,16 @@ from showrunner.ui.library.model import Kind, LibraryModel
 from showrunner.ui.library.panel import LibraryPanel
 from showrunner.ui.sheet.sheet import Sheet
 from showrunner.ui.shell.empty_state import EmptyState
+from showrunner.ui.shell.loading import LoadingView
 from showrunner.ui.shell.splitter import SavedSplitter
 from showrunner.ui.shell.status import JobBar, SummaryBar
 from showrunner.ui.theme.manager import ThemeManager
 from showrunner.ui.theme.tokens import SIZES
 
 _log = logging.getLogger(__name__)
-_LOADED_PAGE = 1  # the page after the empty state
+_EMPTY_PAGE = 0
+_LOADED_PAGE = 1
+_LOADING_PAGE = 2
 _MESSAGE_MS = 8000
 
 
@@ -133,6 +136,9 @@ class MainWindow(QMainWindow):
         self.splitter.setStretchFactor(1, 1)
         self.stack.addWidget(self._framed(self.splitter, left=0))
 
+        self.loading_view = LoadingView()
+        self.stack.addWidget(self._framed(self.loading_view, left=SIZES["space_md"]))
+
     @staticmethod
     def _framed(content: QWidget, *, left: int) -> QWidget:
         """The inset of a page: the toolbar sits directly above it, so there is no top margin."""
@@ -190,6 +196,9 @@ class MainWindow(QMainWindow):
             return
         self.statusBar().clearMessage()
         self.job.start(tr("status.scanning"))
+        self.loading_view.set_detail(tr("status.scanning"))
+        if self.stack.currentIndex() == _EMPTY_PAGE:
+            self.stack.setCurrentIndex(_LOADING_PAGE)
         self._set_loading(True)
         self._loader.start(paths, known=[i.file.path for i in self.model.library.items])
 
@@ -204,20 +213,30 @@ class MainWindow(QMainWindow):
         self._loader.cancel()
 
     def _on_progress(self, done: int, total: int) -> None:
-        self.job.report(tr("status.reading", done=done, total=total), done, total)
+        text = tr("status.reading", done=done, total=total)
+        self.job.report(text, done, total)
+        self.loading_view.set_detail(text)
+
+    def _leave_loading_page(self) -> None:
+        """After a load that added nothing, the window goes back to what it showed before."""
+        if self.stack.currentIndex() == _LOADING_PAGE:
+            self.stack.setCurrentIndex(_LOADED_PAGE if self.model.library.items else _EMPTY_PAGE)
 
     def _on_load_failed(self, error: Exception) -> None:
         self._set_loading(False)
+        self._leave_loading_page()
         self.statusBar().showMessage(tr("status.load_failed", error=error), _MESSAGE_MS)
 
     def _on_loaded(self, load: LibraryLoad) -> None:
         self._set_loading(False)
         if not load.items:
+            self._leave_loading_page()
             self.statusBar().showMessage(tr("status.nothing_new"), _MESSAGE_MS)
             return
         if load.cancelled:
             self.statusBar().showMessage(tr("status.cancelled"), _MESSAGE_MS)
-        current = self.model.path(self.panel.current_source_index()) if self.stack.currentIndex() else None
+        shown = self.stack.currentIndex() == _LOADED_PAGE
+        current = self.model.path(self.panel.current_source_index()) if shown else None
         self.model.add(load)
         self.panel.expand_default()
         self.stack.setCurrentIndex(_LOADED_PAGE)

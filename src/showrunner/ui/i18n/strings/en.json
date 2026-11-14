@@ -199,6 +199,7 @@
   "status.load_failed": "The folder could not be read: {error}",
   "empty.title": "Drop a folder to start",
   "empty.title_over": "Release to scan {name}",
+  "loading.title": "Reading the library",
   "empty.lead": "A show, a season, a movie or a whole library. Showrunner reads every video's tracks, chapters and attachments, and pairs the subtitle files next to them.",
   "empty.choose_folder": "Choose folder…",
   "empty.choose_files": "Choose files…",

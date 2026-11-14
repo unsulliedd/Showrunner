@@ -104,7 +104,10 @@ def test_dropping_a_folder_loads_it_and_shows_the_library(
     assert window.empty.property("drop") == "idle"
     assert window.loading
     assert not window.add_button.isEnabled()
+    assert window.stack.currentWidget().isAncestorOf(window.loading_view)
+    assert window.loading_view.spinner.spinning
     wait_until(lambda: window.stack.currentIndex() == 1)
+    assert not window.loading_view.spinner.spinning
     assert not window.loading
     assert window.model.library.counts().episodes == 2
     assert window.summary.texts()[0] == "2 videos"
@@ -119,6 +122,8 @@ def test_a_drop_on_a_loaded_window_adds_to_the_library(
     window.add_paths([tmp_path / "One"])
     wait_until(lambda: window.stack.currentIndex() == 1)
     window.add_paths([tmp_path / "Two", tmp_path / "One"])
+    # A loaded library stays on screen; only the status bar shows the new load.
+    assert window.stack.currentIndex() == 1
     wait_until(lambda: window.model.library.counts().videos == 2)
     assert not window.loading
     assert window.model.library.counts().shows == 2
