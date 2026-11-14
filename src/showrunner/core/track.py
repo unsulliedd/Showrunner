@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import re
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
 from showrunner.core.language import Language
@@ -83,3 +84,18 @@ class Track:
         for kind, group in groups.items():
             if kind is not self.kind and group is not None:
                 raise ValueError(f"{kind.value} properties set on a track of kind {self.kind.value}")
+
+
+# Words in a track name that mark a flag many files leave unset, such as a commentary track named
+# "Commentary by the director" without the commentary flag.
+_FLAGS_IN_NAMES = (
+    ("commentary", re.compile(r"\b(?:commentary|commentaire|kommentar|comentario|commento)\b", re.IGNORECASE)),
+    ("hearing_impaired", re.compile(r"\b(?:sdh|cc|hearing[ -]impaired)\b", re.IGNORECASE)),
+    ("forced", re.compile(r"\bforced\b", re.IGNORECASE)),
+)
+
+
+def flags_with_name(track: Track) -> TrackFlags:
+    """The track's flags, plus the commentary, hearing impaired and forced flags its name implies."""
+    implied = {flag: True for flag, pattern in _FLAGS_IN_NAMES if pattern.search(track.name)}
+    return replace(track.flags, **implied) if implied else track.flags
