@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from showrunner.app.settings.app_settings import AppSettings, load_settings, save_settings
+from showrunner.app.settings.app_settings import RECENT_LIMIT, AppSettings, load_settings, save_settings, with_recent
 from showrunner.app.storage.paths import HOME_ENV_VAR, data_dir, profiles_dir, settings_path
 from showrunner.core.options.serialization import LoadWarning, WarningKind
 
@@ -91,3 +92,22 @@ def test_bad_tool_paths_fall_back_with_a_warning(tmp_path: Path) -> None:
     loaded = load_settings(path)
     assert loaded.value.tool_paths == {}
     assert loaded.warnings == [LoadWarning(WarningKind.WRONG_TYPE, "settings.tool_paths")]
+
+
+def test_recent_folders_put_the_newest_first_and_keep_a_few() -> None:
+    first = datetime(2026, 1, 1, 12, 0)
+    recent = with_recent({}, ["a", "b"], first)
+    assert list(recent) == ["a", "b"]
+    recent = with_recent(recent, ["b"], first + timedelta(days=1))
+    assert list(recent) == ["b", "a"]
+    assert recent["b"] == "2026-01-02T12:00:00"
+    many = with_recent(recent, [str(n) for n in range(RECENT_LIMIT + 3)], first)
+    assert len(many) == RECENT_LIMIT
+
+
+def test_panel_sizes_and_recent_folders_are_saved(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    save_settings(AppSettings(panel_sizes={"columns": "AAEC"}, recent_folders={"x": "2026-01-01T00:00:00"}), path)
+    loaded = load_settings(path).value
+    assert loaded.panel_sizes == {"columns": "AAEC"}
+    assert loaded.recent_folders == {"x": "2026-01-01T00:00:00"}

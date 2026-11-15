@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
@@ -13,6 +15,7 @@ from showrunner.app.storage.paths import settings_path
 from showrunner.core.options.serialization import Loaded, LoadWarning, WarningKind, from_sparse, to_sparse
 
 FORMAT_VERSION = 1
+RECENT_LIMIT = 8
 
 
 class ThemeMode(StrEnum):
@@ -41,10 +44,22 @@ class AppSettings:
     # Widths of the panes of the main window, as the splitters report them; empty until the user has moved one.
     library_splitter: list[int] = field(default_factory=list)
     sheet_splitter: list[int] = field(default_factory=list)
+    # Panel sizes of the Qt Quick window: split name to the split's own saved state, as base64.
+    panel_sizes: dict[str, str] = field(default_factory=dict)
+    # Folders opened before, newest first: path to when it was last opened, as an ISO date and time.
+    recent_folders: dict[str, str] = field(default_factory=dict)
     ui_language: str = "en"
     theme_mode: ThemeMode = ThemeMode.SYSTEM
     # External programs the user located by hand: program id to the program file or its folder.
     tool_paths: dict[str, str] = field(default_factory=dict)
+
+
+def with_recent(recent: dict[str, str], folders: Iterable[str], when: datetime) -> dict[str, str]:
+    """`recent` with `folders` moved to the front as opened at `when`, keeping the newest `RECENT_LIMIT`."""
+    opened = when.isoformat(timespec="seconds")
+    fresh = {folder: opened for folder in folders}
+    rest = {folder: time for folder, time in recent.items() if folder not in fresh}
+    return dict(list({**fresh, **rest}.items())[:RECENT_LIMIT])
 
 
 def load_settings(path: Path | None = None) -> Loaded[AppSettings]:

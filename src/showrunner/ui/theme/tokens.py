@@ -1,10 +1,17 @@
-"""Theme tokens: color roles derived from three base colors for a light and a dark set, and the size scale.
+"""Theme tokens: color roles derived from a few base colors for a light and a dark set, and the size scale.
 
-So that any base color stays readable, roles keep an OKLCH lightness bound: text and marks drawn from a
-base color at most 0.58 in light and at least 0.70 in dark, pale fills behind text at least 0.88 in light
-and at most 0.45 in dark, and text on a base-color fill turns from white to the dark ink once the fill's
-lightness passes 0.6. The bounds are close to, but not exactly, 4.5:1 for every hue, so each text role is
-then moved further in lightness until it reaches 4.5:1 on the backgrounds it is drawn on.
+Two generations of roles share this table. The Qt Quick window reads the roles of the approved dark set
+(`QUICK_ROLES`); the Qt Widgets window reads the older roles and goes with that window. Keys both use
+(`ink`, `line`, `control`, ...) carry the Qt Quick values in the dark set.
+
+So that any base color stays readable, the older roles keep an OKLCH lightness bound: text and marks drawn
+from a base color at most 0.58 in light and at least 0.70 in dark, pale fills behind text at least 0.88 in
+light and at most 0.45 in dark, and text on a base-color fill turns from white to the dark ink once the
+fill's lightness passes 0.6. The bounds are close to, but not exactly, 4.5:1 for every hue, so each text
+role is then moved further in lightness until it reaches 4.5:1 on the backgrounds it is drawn on.
+
+The dark Qt Quick roles follow their base color instead: each is the approved value at the default base,
+moved in hue and chroma (and, for surfaces, lightness) as far as the base moved.
 """
 
 from __future__ import annotations
@@ -13,7 +20,17 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from showrunner.ui.theme.color import WHITE, at_least, at_most, contrast, hex_to_oklch, mix, with_lightness
+from showrunner.ui.theme.color import (
+    WHITE,
+    at_least,
+    at_most,
+    contrast,
+    hex_to_oklch,
+    luminance,
+    mix,
+    oklch_to_hex,
+    with_lightness,
+)
 
 TEXT_CONTRAST = 4.5
 DARK_INK = "#1b1f24"
@@ -21,9 +38,10 @@ _INK_SWITCH_LIGHTNESS = 0.6
 
 
 class Base(StrEnum):
-    PRIMARY = "primary"
-    SECONDARY = "secondary"
-    ACCENT = "accent"
+    PRIMARY = "primary"  # the control color: selection, focus, the primary action
+    SECONDARY = "secondary"  # links and selected text of the Widgets window
+    ACCENT = "accent"  # the change color: whatever a run will change
+    NEUTRAL = "neutral"  # the neutral the window ground, panels, lines and text levels are tinted from
 
 
 class ColorSet(StrEnum):
@@ -31,7 +49,12 @@ class ColorSet(StrEnum):
     DARK = "dark"
 
 
-DEFAULT_BASES: dict[Base, str] = {Base.PRIMARY: "#1f4f8f", Base.SECONDARY: "#6fc3d8", Base.ACCENT: "#e0a43a"}
+DEFAULT_BASES: dict[Base, str] = {
+    Base.PRIMARY: "#8fa8ff",
+    Base.SECONDARY: "#6fc3d8",
+    Base.ACCENT: "#f4b544",
+    Base.NEUTRAL: "#0b0d10",
+}
 
 
 @dataclass(frozen=True)
@@ -82,6 +105,27 @@ def fill_behind_ink(fill: str) -> str:
 type Rule = str | Callable[[Mapping[str, str]], str]
 
 
+def follow(base: Base, approved: str, *, lightness: bool = False) -> Rule:
+    """`approved` at the default `base`; for another base, moved by the base's hue change and scaled by its chroma
+    change, and with `lightness` also shifted by its lightness change (surfaces follow a lighter ground, text
+    levels keep their lightness)."""
+    default = DEFAULT_BASES[base]
+    approved = approved.lower()
+
+    def rule(values: Mapping[str, str]) -> str:
+        current = values[base.value]
+        if current == default:
+            return approved
+        base_l, base_c, base_h = hex_to_oklch(current)
+        default_l, default_c, default_h = hex_to_oklch(default)
+        role_l, role_c, role_h = hex_to_oklch(approved)
+        scale = base_c / default_c if default_c else 1.0
+        shift = base_l - default_l if lightness else 0.0
+        return oklch_to_hex(min(max(role_l + shift, 0.0), 1.0), role_c * scale, role_h + base_h - default_h)
+
+    return rule
+
+
 @dataclass(frozen=True, slots=True)
 class Role:
     """A color role. A rule is a fixed color or a function of the base colors and the roles before it."""
@@ -94,15 +138,28 @@ class Role:
         return self.light if color_set is ColorSet.LIGHT else self.dark
 
 
-# Order matters: a rule reads only base colors and roles listed above it.
+_N = Base.NEUTRAL
+
+# Order matters: a rule reads only base colors and roles listed above it. A role named in `QUICK_ROLES` is read by
+# the Qt Quick window; the rest belong to the Widgets window and go with it.
 ROLES: tuple[Role, ...] = (
+    Role("ground", lambda v: with_lightness(v["neutral"], 0.955), lambda v: v["neutral"]),  # between panels
+    Role("panel", lambda v: with_lightness(v["neutral"], 0.995), follow(_N, "#12151a", lightness=True)),
+    Role("panel_2", lambda v: with_lightness(v["neutral"], 0.975), follow(_N, "#191d23", lightness=True)),  # cards
+    Role("panel_3", lambda v: with_lightness(v["neutral"], 0.94), follow(_N, "#21262e", lightness=True)),  # chips
+    Role("well", lambda v: with_lightness(v["neutral"], 0.985), follow(_N, "#0e1014", lightness=True)),  # inputs
     Role("chrome", "#f3f4f6", "#1b1e22"),  # toolbars, side panels, the status bar
     Role("chrome_2", "#e8eaee", "#262a30"),  # rows and buttons under the pointer
     Role("surface", "#ffffff", "#131518"),  # lists, tables, fields, dialog pages
-    Role("line", "#dde1e6", "#30353c"),
-    Role("ink", DARK_INK, "#e6e8eb"),
-    Role("muted", "#57606a", "#9ba3ad"),
-    Role("line_strong", lambda v: mix(v["muted"], v["surface"], 0.75), lambda v: mix(v["muted"], v["surface"], 0.75)),
+    Role("line", "#dde1e6", follow(_N, "#22272f", lightness=True)),
+    Role("ink", DARK_INK, follow(_N, "#e7eaee")),
+    Role("muted", "#57606a", follow(_N, "#a2abb7")),
+    Role(
+        "faint",
+        lambda v: readable(mix(v["muted"], v["panel"], 0.8), v["panel"], v["panel_2"], darker=True),
+        follow(_N, "#7e8894"),
+    ),
+    Role("line_strong", lambda v: mix(v["muted"], v["surface"], 0.75), follow(_N, "#353c47", lightness=True)),
     Role(
         "link",
         lambda v: readable(at_most(mix(v["secondary"], "#003a70", 0.40), 0.58), v["surface"], v["chrome"], darker=True),
@@ -113,36 +170,53 @@ ROLES: tuple[Role, ...] = (
     Role(
         "select",
         lambda v: at_least(mix(v["secondary"], WHITE, 0.35), 0.88),
-        lambda v: at_most(mix(v["secondary"], v["surface"], 0.35), 0.45),
+        follow(Base.PRIMARY, "#1d2540"),
     ),
-    # Checkboxes, sliders, the border of a field being typed in.
-    Role("control", lambda v: at_most(v["primary"], 0.58), lambda v: with_lightness(v["primary"], 0.74, -6)),
+    # The primary action, focus, checkboxes, sliders, the border of a field being typed in.
+    Role("control", lambda v: at_most(v["primary"], 0.58), lambda v: v["primary"]),
     Role(
         "control_fill",
         lambda v: fill_behind_ink(v["primary"]),
-        lambda v: fill_behind_ink(mix(v["primary"], WHITE, 0.78)),
+        lambda v: fill_behind_ink(v["primary"]),
     ),
-    Role("control_ink", lambda v: ink_on(v["control_fill"]), lambda v: ink_on(v["control_fill"])),
+    # Text on the control color; in the dark set the ground's own dark, which is darker than the usual dark ink.
+    Role(
+        "control_ink",
+        lambda v: ink_on(v["control_fill"]),
+        lambda v: WHITE if ink_on(v["control_fill"]) == WHITE else min(v["ground"], DARK_INK, key=luminance),
+    ),
     # Selected rows and pressed buttons.
     Role(
         "control_soft",
         lambda v: at_least(mix(v["primary"], v["surface"], 0.09), 0.88),
-        lambda v: at_most(mix(v["primary"], v["surface"], 0.55), 0.45),
+        follow(Base.PRIMARY, "#1b2236"),
     ),
     Role(
         "control_soft_ink",
         lambda v: readable(v["control"], v["control_soft"], darker=True),
         lambda v: readable(mix(v["control"], WHITE, 0.30), v["control_soft"], darker=False),
     ),
-    # Where a dragged file will land. No widget or style sheet rule draws it yet.
+    # A planned change: amber marks, counts and borders, and the fill behind them.
     Role(
-        "drop_soft",
-        lambda v: at_least(mix(v["secondary"], v["surface"], 0.18), 0.88),
-        lambda v: at_most(mix(v["secondary"], v["surface"], 0.16), 0.45),
+        "change",
+        lambda v: readable(at_most(v["accent"], 0.6), v["panel"], v["panel_2"], darker=True),
+        lambda v: v["accent"],
+    ),
+    Role(
+        "change_soft",
+        lambda v: at_least(mix(v["accent"], v["panel"], 0.18), 0.93),
+        follow(Base.ACCENT, "#2b2314"),
     ),
     Role("danger", "#c4302b", "#ff7b72"),
     # Behind a delete or discard button under the pointer. No widget or style sheet rule draws it yet.
     Role("danger_soft", lambda v: mix(v["danger"], v["surface"], 0.10), lambda v: mix(v["danger"], v["surface"], 0.10)),
+    # A dropped track or a destructive action, and the fill behind it.
+    Role("drop", lambda v: v["danger"], "#ff8077"),
+    Role("drop_soft", lambda v: mix(v["drop"], v["panel"], 0.12), "#2c1817"),
+    # An added file or a program that was found, and the fill behind it.
+    Role("add", "#1d7a52", "#62d6a5"),
+    Role("add_soft", lambda v: mix(v["add"], v["panel"], 0.12), "#13281f"),
+    Role("video", "#000000", "#000000"),  # the player surface
     # Notices and warnings drawn as text.
     Role(
         "accent_ink",
@@ -157,6 +231,13 @@ ROLES: tuple[Role, ...] = (
 )
 
 ROLE: dict[str, Role] = {role.key: role for role in ROLES}
+
+# The roles the Qt Quick window draws with; its Theme object exposes exactly these.
+QUICK_ROLES: tuple[str, ...] = (
+    "ground", "panel", "panel_2", "panel_3", "well", "line", "line_strong", "ink", "muted", "faint",
+    "control", "control_ink", "control_soft", "select", "change", "change_soft", "drop", "drop_soft",
+    "add", "add_soft", "video",
+)  # fmt: skip
 
 
 def resolve(colors: ThemeColors, color_set: ColorSet) -> dict[str, str]:
@@ -197,43 +278,70 @@ def with_role(colors: ThemeColors, color_set: ColorSet, key: str, hex_color: str
     return ThemeColors(colors.base, colors.light, roles)
 
 
-# Logical pixels; Qt scales them for the screen.
+# Logical pixels; Qt scales them for the screen. The Qt Quick window reads every entry through its Theme object.
 SIZES: dict[str, int] = {
-    "text_xs": 11,  # section labels, keys
-    "text_sm": 12,  # hints, the status bar
+    "text_xs": 11,  # section labels, keys, counts
+    "text_sm": 12,  # hints, the status bar, file names
     "text_md": 13,  # everything else
-    "text_lg": 14,  # headings inside dialogs
-    "text_xl": 16,  # page titles
-    "text_2xl": 20,  # the title of the sheet
+    "text_lg": 15,  # card titles
+    "text_xl": 18,  # the inspector's title
+    "text_2xl": 22,  # the workspace's title
+    "text_3xl": 30,  # the home screen's title
     "height_sm": 24,  # small icon buttons
     "height_md": 28,  # buttons and fields
     "height_lg": 40,  # the toolbar
-    "row_sm": 24,  # library tree rows
-    "row_md": 28,  # track, chapter and attachment rows
-    "row_lg": 32,  # the Settings window's section list
-    "radius_sm": 4,  # chips, scrollbar thumbs
-    "radius_md": 6,  # buttons, fields and rows
-    "radius_lg": 10,  # panels
+    "row_sm": 24,  # library tree rows, chips
+    "row_md": 30,  # buttons, fields, tabs of a side panel
+    "row_lg": 36,  # the drop area's buttons, track rows
+    "radius_sm": 4,  # chips, counts, scrollbar thumbs
+    "radius_md": 7,  # buttons, fields and rows
+    "radius_lg": 11,  # panels and cards
     "space_xs": 2,
     "space_sm": 4,
     "space_md": 8,
     "space_lg": 12,
     "space_xl": 16,
+    "space_2xl": 24,
+    "panel_gap": 6,  # between the window's panels
+    "top_bar": 46,
+    "status_bar": 26,
+    "workspace_tabs": 44,  # the tab row of the workspace and of the side panel
+    "drawer_tabs": 40,  # the tab row of the bottom drawer
+    "drawer_height": 320,  # the bottom drawer, pulled up
+    "inspector_width": 340,  # the side panel beside the workspace
+    "panel_min_width": 200,  # the narrowest a resizable panel may get
+    "workspace_min_width": 480,
+    "search_width": 380,  # the search field in the top bar
+    "icon_sm": 13,
+    "icon_md": 15,
+    "icon_lg": 20,
+    "dot": 6,  # a program's or a row's status dot
+    "stroke": 1,  # hairlines and borders
+    "underline": 2,  # the mark under the current tab, the grip of a split handle
+    "dash": 4,  # the dashes of a drop area's outline, in strokes
+    "handle_length": 40,  # the grip shown on a split handle under the pointer
+    "menu_width": 220,
+    "artwork_slot": 64,  # a movie's artwork in the workspace header
+    "home_card_height": 190,  # the Programs and Recent cards
+    "home_art_width": 340,  # the drawing beside the home screen's title
+    "home_text_width": 500,
     "swatch_width": 96,
     "dialog_width": 960,  # the Settings window
     "dialog_height": 720,
     "settings_nav_width": 200,  # the Settings window's section list
     "rule_list_width": 284,  # the track rule list beside the rule editor
     "token_picker_width": 252,  # the token list beside the naming templates
-    "library_width": 288,
+    "library_width": 272,
     "details_width": 320,
     "progress_width": 160,  # the progress bar in the status bar
     "mark_size": 8,  # the status dot of a row
     "empty_width": 560,  # the block in the middle of the empty state
     "spinner": 32,  # the loading spinner, drawn with a stroke of an eighth of its size
     "library_min_width": 220,
-    "window_width": 1280,
+    "window_width": 1280,  # the Widgets window
     "window_height": 800,
+    "quick_window_width": 1440,  # the Qt Quick window, which needs room for track names beside the workspace
+    "quick_window_height": 900,
     "window_min_width": 1024,
     "window_min_height": 640,
 }
@@ -242,3 +350,6 @@ SIZES: dict[str, int] = {
 FONT_FAMILIES: tuple[str, ...] = ("Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Helvetica Neue", "Arial")
 # Templates, token names, patterns and language lists, where braces, brackets and backslashes must read apart.
 MONO_FAMILIES: tuple[str, ...] = ("Cascadia Mono", "Consolas", "DejaVu Sans Mono")
+# The Qt Quick window bundles its two faces (SIL Open Font License) rather than trying installed ones.
+QUICK_FONT = "Inter"
+QUICK_MONO = "JetBrains Mono"

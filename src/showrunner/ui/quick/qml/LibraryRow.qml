@@ -1,0 +1,139 @@
+import QtQuick
+import QtQuick.Controls.Basic
+import Showrunner
+
+// One row of the library tree: a show, a season, an episode, the movies, or a movie.
+AbstractButton {
+    id: row
+
+    required property TreeView treeView
+    required property bool expanded
+    required property bool hasChildren
+    required property int depth
+    required property int row
+    required property int column
+    required property string label
+    required property string kind
+    required property string number
+    required property string summary
+    required property string problem
+    required property bool planned
+    required property string row_id
+
+    readonly property bool isSelected: row_id === app.selected
+    readonly property bool isGroup: kind === "show" || kind === "movies"
+
+    implicitWidth: treeView.width
+    implicitHeight: Theme.row_md - Theme.space_xs
+    hoverEnabled: true
+    focusPolicy: Qt.NoFocus
+    Accessible.role: Accessible.TreeItem
+    Accessible.name: number !== "" ? number + " " + label : label
+    onClicked: app.select(treeView.index(row.row, row.column))
+    onDoubleClicked: if (hasChildren) treeView.toggleExpanded(row.row)
+
+    background: Rectangle {
+        x: Theme.space_sm + Theme.space_xs
+        width: parent.width - 2 * x
+        radius: Theme.radius_md
+        color: row.isSelected ? Theme.select : row.hovered ? Theme.panel_2 : "transparent"
+    }
+
+    contentItem: Item {
+        Icon {
+            id: chevron
+
+            x: Theme.space_lg + row.depth * Theme.space_lg
+            anchors.verticalCenter: parent.verticalCenter
+            visible: row.hasChildren
+            name: row.expanded ? "down" : "right"
+            size: Theme.icon_sm
+
+            TapHandler {
+                onTapped: row.treeView.toggleExpanded(row.row)
+            }
+        }
+
+        Row {
+            anchors.left: chevron.right
+            anchors.leftMargin: Theme.space_md
+            anchors.right: right.left
+            anchors.rightMargin: Theme.space_md
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Theme.space_md
+
+            Icon {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: row.isGroup
+                name: row.kind === "show" ? "tv" : "film"
+                size: Theme.icon_sm
+            }
+
+            UiText {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: row.number !== ""
+                mono: true
+                text: row.number
+                color: Theme.faint
+                font.pixelSize: Theme.text_xs
+            }
+
+            UiText {
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.min(implicitWidth, parent.width - x)
+                text: row.label
+                color: Theme.ink
+                font.weight: row.isGroup ? Font.DemiBold : row.kind === "season" ? Font.Medium : Font.Normal
+            }
+        }
+
+        Row {
+            id: right
+
+            anchors.right: parent.right
+            anchors.rightMargin: Theme.space_lg + Theme.space_xs
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Theme.space_md
+
+            Count {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: row.kind === "show"
+                value: Number(row.summary)
+                change: false
+            }
+
+            UiText {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: row.kind !== "show"
+                mono: row.kind === "episode" || row.kind === "movie"
+                text: row.summary
+                color: Theme.faint
+                font.pixelSize: mono ? Theme.text_xs : Theme.text_sm
+            }
+
+            Item {
+                anchors.verticalCenter: parent.verticalCenter
+                width: Theme.icon_sm
+                height: Theme.icon_sm
+                visible: row.problem !== "" || row.planned
+
+                Icon {
+                    anchors.centerIn: parent
+                    visible: row.problem !== ""
+                    name: "alert"
+                    size: Theme.icon_sm
+                    color: row.problem === "drop" ? Theme.drop : Theme.change
+                }
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    visible: row.problem === "" && row.planned
+                    width: Theme.dot
+                    height: Theme.dot
+                    radius: Theme.dot / 2
+                    color: Theme.change
+                }
+            }
+        }
+    }
+}

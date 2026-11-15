@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from showrunner.ui.theme.color import contrast, oklch_to_hex
+from showrunner.ui.theme.color import contrast, hex_to_oklch, oklch_to_hex
 from showrunner.ui.theme.tokens import (
     DEFAULT_BASES,
+    QUICK_ROLES,
     ROLES,
     TEXT_CONTRAST,
     Base,
@@ -89,3 +90,38 @@ def test_changes_stay_sparse() -> None:
     assert with_role(with_role(ThemeColors(), ColorSet.LIGHT, "ink", "#000000"), ColorSet.LIGHT, "ink", None) == (
         ThemeColors()
     )
+
+
+# The approved dark token set of the Qt Quick window.
+APPROVED_DARK = {
+    "ground": "#0B0D10", "panel": "#12151A", "panel_2": "#191D23", "panel_3": "#21262E", "well": "#0E1014",
+    "line": "#22272F", "line_strong": "#353C47", "ink": "#E7EAEE", "muted": "#A2ABB7", "faint": "#7E8894",
+    "control": "#8FA8FF", "control_ink": "#0B0D10", "control_soft": "#1B2236", "select": "#1D2540",
+    "change": "#F4B544", "change_soft": "#2B2314", "drop": "#FF8077", "drop_soft": "#2C1817",
+    "add": "#62D6A5", "add_soft": "#13281F", "video": "#000000",
+}  # fmt: skip
+
+
+def test_the_default_dark_set_is_the_approved_one() -> None:
+    dark = resolve(ThemeColors(), ColorSet.DARK)
+    assert set(QUICK_ROLES) == set(APPROVED_DARK)
+    assert {key: dark[key] for key in QUICK_ROLES} == {key: value.lower() for key, value in APPROVED_DARK.items()}
+
+
+@pytest.mark.parametrize("color_set", list(ColorSet))
+def test_text_levels_are_readable_on_panels(color_set: ColorSet) -> None:
+    roles = resolve(ThemeColors(), color_set)
+    for text in ("ink", "muted", "faint"):
+        for ground in ("panel", "panel_2"):
+            assert contrast(roles[text], roles[ground]) >= TEXT_CONTRAST, (text, ground)
+
+
+def test_dark_roles_follow_a_moved_base() -> None:
+    moved = resolve(with_base(ThemeColors(), Base.NEUTRAL, "#101820"), ColorSet.DARK)
+    assert moved["ground"] == "#101820"
+    assert moved["panel"] != APPROVED_DARK["panel"].lower()
+    # Text levels keep their lightness when the neutral moves; only their tint follows.
+    assert abs(hex_to_oklch(moved["ink"])[0] - hex_to_oklch(APPROVED_DARK["ink"])[0]) < 0.01
+    tinted = resolve(with_base(ThemeColors(), Base.PRIMARY, "#ff8fa8"), ColorSet.DARK)
+    assert tinted["control"] == "#ff8fa8"
+    assert tinted["select"] != APPROVED_DARK["select"].lower()

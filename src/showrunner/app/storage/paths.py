@@ -32,6 +32,11 @@ def theme_path() -> Path:
     return data_dir() / "theme.json"
 
 
+def workspace_path() -> Path:
+    """What the window had open beyond the settings: each batch's working copy of its profile."""
+    return data_dir() / "workspace.json"
+
+
 def jobs_path() -> Path:
     """The database of job progress."""
     return data_dir() / "jobs.sqlite3"
