@@ -3,7 +3,7 @@ import QtQuick.Controls.Basic
 import Showrunner
 
 // A button: "primary" fills with the control color, "outline" sits on a raised fill with a border, "ghost" has
-// neither until the pointer is over it.
+// neither until the pointer is over it. A checkable one shows its on state with the control colour on its border.
 AbstractButton {
     id: control
 
@@ -16,7 +16,8 @@ AbstractButton {
     implicitWidth: content.implicitWidth + 2 * Theme.space_lg
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
-    Accessible.role: Accessible.Button
+    Accessible.role: checkable ? Accessible.CheckBox : Accessible.Button
+    Accessible.checked: checked
     Accessible.name: text
 
     background: Rectangle {
@@ -25,7 +26,7 @@ AbstractButton {
              : control.hovered && control.enabled ? Theme.panel_3
              : control.kind === "outline" ? Theme.panel_2 : "transparent"
         border.width: control.kind === "outline" || control.visualFocus ? Theme.stroke : 0
-        border.color: control.visualFocus ? Theme.control : Theme.line_strong
+        border.color: control.visualFocus || control.checked ? Theme.control : Theme.line_strong
     }
 
     contentItem: Item {

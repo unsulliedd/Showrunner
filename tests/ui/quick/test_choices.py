@@ -170,3 +170,21 @@ def test_the_inspector_follows_the_file_picked_in_a_row(
     assert controller.inspector["name"] == "Episode Five"
     controller.select(QModelIndex())  # an invalid row changes nothing
     assert controller.inspector["name"] == "Episode Five"
+
+
+def test_the_implied_flags_switch_writes_into_the_working_copy(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    assert not controller.write_implied_flags
+    controller.set_write_implied_flags(True)
+    assert controller.write_implied_flags
+    assert controller.profile_edited
+    assert controller._key is not None
+    assert controller.batches.profile(controller._key).for_stage("metadata").write_implied_flags
+    settle(controller, qtbot)
+    tabs = {tab["key"]: tab["count"] for tab in controller.workspace_tabs}
+    # Each fixture file has a track whose name implies a flag it does not have.
+    assert (tabs["names"], tabs["review"]) == (10, 10)
+    controller.set_write_implied_flags(False)
+    assert not controller.profile_edited

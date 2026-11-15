@@ -753,6 +753,8 @@
   "matrix.legend.forced": "forced",
   "matrix.legend.missing": "missing",
   "matrix.legend.fallback": "fallback: the default where the first choice has no track",
+  "matrix.write_implied_flags": "Write flags the names imply",
+  "matrix.write_implied_flags_help": "A track named Forced, SDH or Commentary also gets that flag written into the file.",
   "rules.intro": "Every file runs these rules from the top. The first rule that fits a track decides; a later rule only fills in what is left. No rules, no track changes.",
   "rules.empty": "No rules yet. Choices made on Overview and Tracks become rules here.",
   "rules.drag": "Drag to reorder",

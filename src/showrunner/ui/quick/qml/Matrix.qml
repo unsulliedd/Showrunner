@@ -393,39 +393,58 @@ Item {
             }
         }
 
-        Flow {
+        RowLayout {
             Layout.fillWidth: true
             spacing: Theme.space_xl
 
-            Repeater {
-                model: ["kept", "dropped", "added", "default", "forced", "missing", "fallback"]
+            Flow {
+                Layout.fillWidth: true
+                spacing: Theme.space_xl
 
-                delegate: Row {
-                    required property string modelData
+                Repeater {
+                    model: ["kept", "dropped", "added", "default", "forced", "missing", "fallback"]
 
-                    spacing: Theme.space_sm
+                    delegate: Row {
+                        required property string modelData
 
-                    Cell {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: Theme.icon_md + Theme.space_md
-                        height: Theme.pill
-                        visible: modelData !== "fallback"
-                        value: ({
-                            "state": modelData === "kept" || modelData === "dropped" || modelData === "added"
-                                     || modelData === "missing" ? modelData : "kept",
-                            "default": modelData === "default",
-                            "forced": modelData === "forced",
-                            "fallback": false
-                        })
-                    }
+                        spacing: Theme.space_sm
 
-                    UiText {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: Strings.t("matrix.legend." + modelData)
-                        color: Theme.muted
-                        font.pixelSize: Theme.text_sm
+                        Cell {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Theme.icon_md + Theme.space_md
+                            height: Theme.pill
+                            visible: modelData !== "fallback"
+                            value: ({
+                                "state": modelData === "kept" || modelData === "dropped" || modelData === "added"
+                                         || modelData === "missing" ? modelData : "kept",
+                                "default": modelData === "default",
+                                "forced": modelData === "forced",
+                                "fallback": false
+                            })
+                        }
+
+                        UiText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: Strings.t("matrix.legend." + modelData)
+                            color: Theme.muted
+                            font.pixelSize: Theme.text_sm
+                        }
                     }
                 }
+            }
+
+            // A name such as Forced or SDH already counts as the flag when rules match; this writes the flag itself.
+            ActionButton {
+                objectName: "writeImpliedFlags"
+                Layout.alignment: Qt.AlignTop
+                kind: "outline"
+                size: Theme.row_sm
+                checkable: true
+                checked: app.write_implied_flags
+                iconName: checked ? "check" : ""
+                text: Strings.t("matrix.write_implied_flags")
+                Accessible.description: Strings.t("matrix.write_implied_flags_help")
+                onToggled: app.set_write_implied_flags(checked)
             }
         }
     }

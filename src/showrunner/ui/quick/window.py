@@ -525,6 +525,19 @@ class WindowController(QObject):
         if self._key is not None and 0 <= index < len(self._tracks().rules):
             self._set_tracks(pause_rule(self._tracks(), index, paused))
 
+    @Property(bool, notify=batch_changed)
+    def write_implied_flags(self) -> bool:
+        """Whether a track named Forced, SDH or Commentary also gets that flag written, in the selected batch."""
+        return self._key is not None and self.batches.profile(self._key).for_stage("metadata").write_implied_flags
+
+    @Slot(bool)
+    def set_write_implied_flags(self, on: bool) -> None:
+        if self._key is None or on == self.write_implied_flags:
+            return
+        metadata = self.batches.profile(self._key).for_stage("metadata")
+        self.batches.copy(self._key).set_options("metadata", replace(metadata, write_implied_flags=on))
+        self._copy_changed()
+
     @Slot(str)
     def focus_file(self, path: str) -> None:
         """Show one file of the batch in the Inspector. Inside a season the tree selects the episode too, which opens
