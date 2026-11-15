@@ -21,7 +21,7 @@ from showrunner.app.batches.batch import BatchKind
 from showrunner.app.library.library import Library
 from showrunner.tools.probe import Programs
 from showrunner.ui.i18n.catalog import STRINGS_DIR
-from showrunner.ui.quick import names
+from showrunner.ui.quick import names, palette
 from showrunner.ui.quick.engine import QML_DIR, build_engine, prepare
 from showrunner.ui.quick.window import SIDE_PANELS, WORKSPACE_TABS, WindowController
 from showrunner.ui.theme.tokens import SIZES
@@ -360,6 +360,11 @@ def test_every_string_key_the_qml_asks_for_exists() -> None:
     keys |= {f"tokens.editor.kind.{kind}" for kind in names.KINDS}
     keys |= {f"tokens.editor.source.{source}" for source in names.SOURCES}
     keys |= {f"matrix.legend.{entry}" for entry in re.findall(r'"(\w+)"', _legend(text))}
+    # Keys built from a Settings section, a choice of a segmented control, a base colour and a palette result.
+    keys |= {
+        f"prefs.appearance.base.{base}{part}" for base in ("neutral", "primary", "accent") for part in ("", ".hint")
+    }
+    keys |= {f"palette.kind.{kind}" for kind in palette.KINDS}
     keys = {key for key in keys if not key.endswith(".")}
     assert sorted(key for key in keys if key not in catalog) == []
     assert sorted(key for key in plurals if f"{key}.one" not in catalog or f"{key}.other" not in catalog) == []
@@ -475,4 +480,111 @@ def test_names_and_tokens_answer_the_pointer(
     qtbot.waitUntil(lambda: not controller.planning)
     assert load() == []
     assert controller.names["title"] == "Movie titles"
+    assert qt_warnings() == []
+
+
+def _key(window: Any, key: Qt.Key, modifier: Qt.KeyboardModifier = Qt.KeyboardModifier.NoModifier) -> None:
+    QTest.keyClick(window, key, modifier)
+
+
+def test_settings_and_the_palette_answer_the_keyboard(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    window = load.window
+    dialog = window.findChild(QObject, "settings")
+    # Ctrl+, opens Settings; Down, End, Home and Up move between sections; Escape closes it.
+    _key(window, Qt.Key.Key_Comma, Qt.KeyboardModifier.ControlModifier)
+    qtbot.waitUntil(lambda: dialog.property("opened"))
+    assert dialog.property("section") == "general"
+    _key(window, Qt.Key.Key_Down)
+    assert dialog.property("section") == "profiles"
+    _key(window, Qt.Key.Key_End)
+    assert dialog.property("section") == "about"
+    _key(window, Qt.Key.Key_Up)
+    assert dialog.property("section") == "shortcuts"
+    _key(window, Qt.Key.Key_Home)
+    assert dialog.property("section") == "general"
+    for section in ("profiles", "programs", "appearance", "shortcuts", "about", "general"):
+        load.run(f'settings.section = "{section}"')
+        assert load() == [], section
+    _key(window, Qt.Key.Key_Escape)
+    qtbot.waitUntil(lambda: not dialog.property("visible"))
+    # The pill's Manage profiles opens Profiles; the delete question closes alone on Escape and Settings stays.
+    load.run('app.settings.open("profiles")')
+    qtbot.waitUntil(lambda: dialog.property("opened"))
+    assert dialog.property("section") == "profiles"
+    controller.save_profile_as("Series")
+    controller.settings.pick("Series")
+    load()
+    _click(window, _item(window.contentItem(), "deleteProfile"))
+    load()
+    _key(window, Qt.Key.Key_Escape)
+    load()
+    assert dialog.property("visible")
+    assert "Series" in controller.profiles
+    _key(window, Qt.Key.Key_Escape)
+    qtbot.waitUntil(lambda: not dialog.property("visible"))
+    # Ctrl+K focuses the palette; typing searches, Down moves, Return runs.
+    _key(window, Qt.Key.Key_K, Qt.KeyboardModifier.ControlModifier)
+    field = window.findChild(QQuickItem, "paletteField")
+    qtbot.waitUntil(field.hasActiveFocus)
+    for letter in "names":
+        QTest.keyClick(window, letter)
+    load()
+    assert controller.palette_query == "names"
+    assert controller.palette[0]["key"] == "place.names"
+    _key(window, Qt.Key.Key_Return)
+    load()
+    assert window.property("place") == "names"
+    assert controller.palette_query == ""
+    assert not field.hasActiveFocus()
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def test_a_narrow_compact_window_and_the_palette_by_pointer(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    window = load.window
+    window.setWidth(SIZES["window_min_width"])
+    controller.look.set_density("compact")
+    load()
+    # A theme change keeps the window's size.
+    assert window.width() == SIZES["window_min_width"]
+    dialog = window.findChild(QObject, "settings")
+    load.run('settings.show("general")')
+    qtbot.waitUntil(lambda: dialog.property("opened"))
+    assert dialog.property("rail") is True
+    for section in ("general", "profiles", "programs", "appearance", "shortcuts", "about"):
+        load.run(f'settings.section = "{section}"')
+        assert load() == [], section
+    load.run("settings.close()")
+    qtbot.waitUntil(lambda: not dialog.property("visible"))
+    for place in ("overview", "tracks", "names", "review"):
+        window.setProperty("place", place)
+        assert load() == [], place
+    # A click on a palette result runs it.
+    field = window.findChild(QQuickItem, "paletteField")
+    _click(window, field)
+    for letter in "tracks":
+        QTest.keyClick(window, letter)
+    load()
+    results = _item(window.contentItem(), "paletteResults")
+    first = results.property("contentItem").childItems()[0]
+    _click(window, first)
+    load()
+    assert window.property("place") == "tracks"
+    assert controller.palette_query == ""
+    controller.look.set_density("comfortable")
+    assert load() == []
     assert qt_warnings() == []

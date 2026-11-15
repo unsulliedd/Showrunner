@@ -56,5 +56,9 @@ def build_engine(
         engine.warnings.connect(on_warnings)
     engine.addImageProvider("icon", IconProvider())
     engine.rootContext().setContextProperty("app", controller)
+    look = getattr(controller, "look", None)
+    if look is not None:
+        # Before the window loads, so it paints in the chosen look from the first frame.
+        engine.singletonInstance(MODULE, "Theme").follow(look)
     engine.load(QUrl.fromLocalFile(str(source)))
     return engine

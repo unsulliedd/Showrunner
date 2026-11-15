@@ -1,8 +1,9 @@
 """Theme tokens: color roles derived from a few base colors for a light and a dark set, and the size scale.
 
-Two generations of roles share this table. The Qt Quick window reads the roles of the approved dark set
-(`QUICK_ROLES`); the Qt Widgets window reads the older roles and goes with that window. Keys both use
-(`ink`, `line`, `control`, ...) carry the Qt Quick values in the dark set.
+Two generations of roles share this table. The window reads the roles of the approved dark set (`QUICK_ROLES`);
+the older roles are read by no window, but the light rules of several window roles still derive from them
+(`surface`, `chrome`, `danger`, `control_fill`). Keys both use (`ink`, `line`, `control`, ...) carry the
+window's values in the dark set.
 
 So that any base color stays readable, the older roles keep an OKLCH lightness bound: text and marks drawn
 from a base color at most 0.58 in light and at least 0.70 in dark, pale fills behind text at least 0.88 in
@@ -39,7 +40,7 @@ _INK_SWITCH_LIGHTNESS = 0.6
 
 class Base(StrEnum):
     PRIMARY = "primary"  # the control color: selection, focus, the primary action
-    SECONDARY = "secondary"  # links and selected text of the Widgets window
+    SECONDARY = "secondary"  # the light set's selection; Appearance does not offer it
     ACCENT = "accent"  # the change color: whatever a run will change
     NEUTRAL = "neutral"  # the neutral the window ground, panels, lines and text levels are tinted from
 
@@ -141,7 +142,7 @@ class Role:
 _N = Base.NEUTRAL
 
 # Order matters: a rule reads only base colors and roles listed above it. A role named in `QUICK_ROLES` is read by
-# the Qt Quick window; the rest belong to the Widgets window and go with it.
+# the window; the rest are read only by other roles' rules, or by nothing.
 ROLES: tuple[Role, ...] = (
     Role("ground", lambda v: with_lightness(v["neutral"], 0.955), lambda v: v["neutral"]),  # between panels
     Role("panel", lambda v: with_lightness(v["neutral"], 0.995), follow(_N, "#12151a", lightness=True)),
@@ -338,7 +339,7 @@ SIZES: dict[str, int] = {
     "empty_width": 560,  # the block in the middle of the empty state
     "spinner": 32,  # the loading spinner, drawn with a stroke of an eighth of its size
     "library_min_width": 220,
-    "window_width": 1280,  # the Widgets window
+    "window_width": 1280,  # read by nothing: the window uses quick_window_width
     "window_height": 800,
     "quick_window_width": 1440,  # the Qt Quick window, which needs room for track names beside the workspace
     "quick_window_height": 900,
@@ -348,8 +349,23 @@ SIZES: dict[str, int] = {
     "matrix_column": 82,  # one track signature across the matrix
     "matrix_header": 150,  # the matrix's column headers with their toggles
     "track_card": 64,  # a movie's track card
+    "settings_width": 920,  # the Settings dialog
+    "settings_height": 660,
+    "settings_rail_below": 1200,  # a window narrower than this shows the section list as a rail of icons
+    "toggle_width": 34,  # an on/off switch
+    "palette_width": 560,  # the command palette
     "window_min_width": 1024,
     "window_min_height": 640,
+}
+
+# Compact density: the sizes that change, for long seasons on small screens. Rows and panel headers get shorter;
+# text keeps its size.
+COMPACT_SIZES: dict[str, int] = {
+    "row_lg": 30,
+    "list_row": 36,
+    "workspace_tabs": 36,
+    "drawer_tabs": 34,
+    "track_card": 52,
 }
 
 # Tried in order; the first one installed is used.

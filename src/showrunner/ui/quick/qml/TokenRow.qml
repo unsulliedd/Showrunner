@@ -2,7 +2,8 @@ import QtQuick
 import Showrunner
 
 // One token in the Tokens panel with its value on the selected file. Drag it onto the rail, or click it (Enter) to
-// add it at the end of the template; a custom token also opens in the editor.
+// add it at the end of the template. Its button opens it in the editor: a custom token whole, a built-in one for
+// its value map.
 Item {
     id: entry
 
@@ -71,17 +72,17 @@ Item {
         anchors.left: chip.right
         anchors.leftMargin: Theme.space_sm
         anchors.verticalCenter: parent.verticalCenter
-        visible: entry.token.index >= 0
         implicitWidth: Theme.row_sm
         implicitHeight: Theme.row_sm
         iconName: "sliders"
         label: Strings.f("tokens.edit", {"token": entry.token.label})
-        onClicked: app.edit_token(entry.token.index)
+        // A built-in token opens for its value map only.
+        onClicked: entry.token.index >= 0 ? app.edit_token(entry.token.index) : app.edit_builtin(entry.token.name)
     }
 
     UiText {
         anchors.right: parent.right
-        anchors.left: edit.visible ? edit.right : chip.right
+        anchors.left: edit.right
         anchors.leftMargin: Theme.space_md
         anchors.verticalCenter: parent.verticalCenter
         horizontalAlignment: Text.AlignRight

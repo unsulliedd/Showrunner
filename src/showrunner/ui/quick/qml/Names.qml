@@ -36,6 +36,37 @@ Item {
             }
         }
 
+        // The language given to audio and subtitle tracks that have none; empty leaves them as they are.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.space_md
+
+            UiText {
+                text: Strings.t("names.untagged")
+                color: Theme.muted
+                font.pixelSize: Theme.text_sm
+            }
+
+            InputField {
+                objectName: "untaggedLanguage"
+                Layout.preferredWidth: Theme.swatch_width
+                mono: true
+                label: Strings.t("names.untagged")
+                placeholderText: Strings.t("names.untagged_none")
+                text: app.untagged.value
+                onEditingFinished: if (text !== app.untagged.value) app.set_untagged_language(text)
+            }
+
+            UiText {
+                Layout.fillWidth: true
+                text: app.untagged.problem !== "" ? app.untagged.problem : Strings.t("names.untagged_hint")
+                color: app.untagged.problem !== "" ? Theme.drop : Theme.faint
+                font.pixelSize: Theme.text_sm
+                wrapMode: Text.WordWrap
+                elide: Text.ElideNone
+            }
+        }
+
         RowLayout {
             Layout.fillWidth: true
             Layout.topMargin: Theme.space_sm

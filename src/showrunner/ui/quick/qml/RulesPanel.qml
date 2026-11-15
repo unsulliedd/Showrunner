@@ -205,6 +205,17 @@ Item {
                             label: entry.modelData.enabled ? Strings.t("rules.pause") : Strings.t("rules.resume")
                             onClicked: app.pause_rule(entry.index, entry.modelData.enabled)
                         }
+
+                        IconButton {
+                            objectName: "removeRule"
+                            Layout.alignment: Qt.AlignTop
+                            visible: !entry.modelData.from_choice
+                            implicitWidth: Theme.row_sm
+                            implicitHeight: Theme.row_sm
+                            iconName: "x"
+                            label: Strings.t("rules.delete")
+                            onClicked: app.remove_rule(entry.index)
+                        }
                     }
                 }
             }

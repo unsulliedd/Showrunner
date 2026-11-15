@@ -63,6 +63,10 @@ class WorkingCopy:
         """Make another profile active; unsaved edits are dropped, so the caller asks first."""
         self._saved = self._current = self._store.load(name).value
 
+    def reload(self) -> None:
+        """The profile's file changed on disk: read it again as the saved copy. The edits stay."""
+        self._saved = self._store.load(self.name).value
+
     def renamed(self, name: str) -> None:
         """The active profile's file was renamed; the edits stay."""
         self._saved = self._store.load(name).value

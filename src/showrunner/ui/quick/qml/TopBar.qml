@@ -12,6 +12,7 @@ Item {
 
     signal drawerToggled()
     signal reviewAsked()
+    signal settingsAsked()
 
     implicitHeight: Theme.top_bar
 
@@ -60,9 +61,10 @@ Item {
         }
 
         IconButton {
+            objectName: "settingsButton"
             iconName: "sliders"
             label: Strings.t("top.settings")
-            enabled: false
+            onClicked: bar.settingsAsked()
         }
 
         UiText {
@@ -135,14 +137,31 @@ Item {
         }
     }
 
+    // The command palette's field: it finds files, tracks, tokens and actions. The library has its own filter.
     FindField {
         id: search
 
+        objectName: "paletteField"
         anchors.centerIn: parent
         width: Theme.search_width
         placeholderText: Strings.t("top.search")
         hint: Strings.t("top.search_key")
-        text: app.filter_text
-        onTextEdited: app.filter_text = text
+        text: app.palette_query
+        onTextEdited: app.palette_query = text
+        onActiveFocusChanged: activeFocus ? finder.open() : finder.close()
+        Keys.onDownPressed: finder.move(1)
+        Keys.onUpPressed: finder.move(-1)
+        Keys.onReturnPressed: finder.run(finder.current)
+        Keys.onEnterPressed: finder.run(finder.current)
+        Keys.onEscapePressed: {
+            app.palette_query = ""
+            focus = false
+        }
+    }
+
+    CommandPalette {
+        id: finder
+
+        field: search
     }
 }

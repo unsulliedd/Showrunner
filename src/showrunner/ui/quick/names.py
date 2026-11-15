@@ -626,16 +626,43 @@ def _matches(query: str, *texts: str) -> bool:
     return not folded or any(folded in t.casefold() for t in texts)
 
 
-def tokens(given: NamesInput, query: str, editing: int) -> dict[str, object]:
-    """The built-in tokens by scope and the user's own, each with its value on the focused file; the custom token
-    being edited, with its result on the batch."""
+# Value maps: a token's value, exactly as read, rewritten ("Dolby Digital Plus 5.1" written as "DDP 5.1").
+
+
+def map_rows(naming: NamingOptions, name: str) -> list[dict[str, str]]:
+    return [{"read": read, "written": written} for read, written in naming.value_maps.get(name, {}).items()]
+
+
+def set_map_row(naming: NamingOptions, name: str, row: int, read: str, written: str) -> NamingOptions:
+    """`naming` with row `row` of `name`'s value map set; a row past the end is added, a row left with nothing
+    read is removed, and a map left empty goes with it. A read value already in the map keeps its first place."""
+    rows = [(r["read"], r["written"]) for r in map_rows(naming, name)]
+    if row < len(rows):
+        rows[row] = (read, written)
+    elif read:
+        rows.append((read, written))
+    values: dict[str, str] = {}
+    for key, value in rows:
+        if key:
+            values.setdefault(key, value)
+    maps = {token: dict(entries) for token, entries in naming.value_maps.items() if token != name}
+    if values:
+        maps[name] = values
+    return replace(naming, value_maps=maps)
+
+
+def tokens(given: NamesInput, query: str, editing: int, builtin: str = "") -> dict[str, object]:
+    """The built-in tokens by scope and the user's own, each with its value on the focused file; the token open in
+    the editor (a custom token by index, or a built-in one by name) with its value map."""
     title, track = _panel_context(given)
     custom = given.naming.custom_tokens
     problems = check_tokens(custom, given.naming.value_maps)
 
-    def value(name: str, scope: Scope | None) -> str:
+    def value(name: str, scope: Scope | None, mapped: bool = True) -> str:
         context = track if scope is Scope.TRACK else title
-        return preview(f"{{{name}}}", context).text if context is not None else ""
+        if context is None:
+            return ""
+        return preview(f"{{{name}}}", context if mapped else replace(context, value_maps={})).text
 
     groups = []
     for scope in _SCOPES:
@@ -652,7 +679,26 @@ def tokens(given: NamesInput, query: str, editing: int) -> dict[str, object]:
         if _matches(query, t.name)
     ]
     groups.append({"key": "custom", "label": tr("tokens.group.custom"), "tokens": mine})
-    editor = _editor(given, custom[editing], editing, problems) if 0 <= editing < len(custom) else {}
+    if 0 <= editing < len(custom):
+        name, scope = custom[editing].name, None
+        editor = _editor(given, custom[editing], editing, problems)
+    elif builtin in TOKENS:
+        name, scope = builtin, TOKENS[builtin].scope
+        focus = given.focus or (given.items[0] if given.items else None)
+        editor = {
+            "index": -1,
+            "name": builtin,
+            "label": token_label(builtin),
+            "value": value(builtin, scope),
+            "value_label": tr("tokens.editor.on_file", file=_file_label(focus)) if focus is not None else "",
+        }
+    else:
+        return {"groups": groups, "editor": {}}
+    raw = value(name, scope, mapped=False)
+    editor |= {
+        "maps": [*map_rows(given.naming, name), {"read": "", "written": ""}],
+        "raw": tr("tokens.maps.read_here", value=raw) if raw else "",
+    }
     return {"groups": groups, "editor": editor}
 
 

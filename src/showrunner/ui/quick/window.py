@@ -51,6 +51,7 @@ from showrunner.app.storage.paths import jobs_path
 from showrunner.core.media import MediaFile, MediaItem
 from showrunner.core.naming import (
     SUGGESTED_TEMPLATES,
+    TOKENS,
     CustomKind,
     CustomToken,
     NamingOptions,
@@ -69,9 +70,10 @@ from showrunner.ui.quick import names as rail
 from showrunner.ui.quick.facts import heading, video_summary, when
 from showrunner.ui.quick.jobs import Jobs
 from showrunner.ui.quick.library import LibraryTree
+from showrunner.ui.quick.palette import Entry, search
 from showrunner.ui.quick.plans import LivePlanner
-from showrunner.ui.quick.programs_dialog import run_programs_dialog
 from showrunner.ui.quick.review import FILTERS, ReviewInput, review
+from showrunner.ui.quick.settings import SECTIONS, Settings
 from showrunner.ui.quick.tracks import BatchView, Column, item_number, item_title
 
 _log = logging.getLogger(__name__)
@@ -147,6 +149,8 @@ class WindowController(QObject):
     planning_changed = Signal()
     names_changed = Signal()  # what the Names place or the Tokens panel shows changed
     apply_changed = Signal()  # whether Apply can start, or why it did not
+    palette_changed = Signal()
+    palette_asked = Signal(str, str)  # the palette asks the window for a place ("place", key) or the drawer
 
     def __init__(
         self,
@@ -154,7 +158,7 @@ class WindowController(QObject):
         statuses: Callable[[], Statuses] = check_shown,
         loader: LibraryLoader | None = None,
         store: ProfileStore | None = None,
-        get_program: Callable[[str], None] = run_programs_dialog,
+        get_program: Callable[[str], None] | None = None,
         clock: Callable[[], datetime] = datetime.now,
         jobs: JobStore | None = None,
         make_pipeline: MakePipeline = default_pipeline,
@@ -170,7 +174,6 @@ class WindowController(QObject):
         self._loader.finished.connect(self._on_loaded)
         self._loader.failed.connect(self._on_failed)
         self._check = statuses
-        self._get_program = get_program
         self._clock = clock
         self._store = store or ProfileStore()
         self.batches: Batches = load_batches(self._store)
@@ -204,13 +207,19 @@ class WindowController(QObject):
         self._shown: dict[str, Any] = {}  # what QML reads about the batch, built once per plan or choice
         self._template = TITLE_TEMPLATE  # the template the Names builder shows
         self._token_query = ""
+        self._palette_query = ""
         self._editing = -1  # the custom token open in the Tokens panel's editor
+        self._editing_builtin = ""  # or the built-in token open there, for its value map
         self._names: dict[str, Any] = {}  # what the Names place and the Tokens panel read
         self._marks: dict[Path, str] = {}  # tree dots from the live plans of every batch opened
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(SAVE_DELAY_MS)
         self._save_timer.timeout.connect(self._save_batches)
+        self._settings = Settings(self)
+        self.look = self._settings.look
+        self._settings.programs_view.statuses_changed.connect(self.refresh_programs)
+        self._get_program = get_program or self._settings.get_program
         settings = load_settings().value
         self._recent = dict(settings.recent_folders)
         self._restore = settings.last_selection
@@ -388,6 +397,7 @@ class WindowController(QObject):
             self._key, self._items = BatchKey.selection(paths, Media.MOVIES), items
         if self._key != previous:
             self._editing = -1  # the open token belongs to the other batch's profile
+            self._editing_builtin = ""
         self._replan()
         self.batch_changed.emit()
 
@@ -514,6 +524,19 @@ class WindowController(QObject):
         self._copy_changed()
         return ""
 
+    @Property(QObject, constant=True)
+    def settings(self) -> Settings:
+        """The Settings dialog's side: General, Profiles, Programs, Appearance, Shortcuts and About."""
+        return self._settings
+
+    @property
+    def store(self) -> ProfileStore:
+        return self._store
+
+    def profiles_edited(self) -> None:
+        """Settings changed profile files: the selected batch plans again, and the pill and lists follow."""
+        self._copy_changed()
+
     def _copy_changed(self) -> None:
         """Every edit of a working copy ends here: the views follow at once, a new plan starts, the file is saved."""
         self._replan()
@@ -600,6 +623,35 @@ class WindowController(QObject):
     def pause_rule(self, index: int, paused: bool) -> None:
         if self._key is not None and 0 <= index < len(self._tracks().rules):
             self._set_tracks(pause_rule(self._tracks(), index, paused))
+
+    @Slot(int)
+    def remove_rule(self, index: int) -> None:
+        """Delete a hand-written rule. A rule a choice wrote goes by undoing the choice on its track instead."""
+        rules = self._tracks().rules if self._key is not None else []
+        if 0 <= index < len(rules) and not rules[index].from_choice:
+            self._set_tracks(replace(self._tracks(), rules=rules[:index] + rules[index + 1 :]))
+
+    @Property("QVariantMap", notify=batch_changed)
+    def untagged(self) -> dict[str, str]:
+        """The language given to tracks that have none, in the selected batch, and why it cannot be used."""
+        if self._key is None:
+            return {"value": "", "problem": ""}
+        profile = self.batches.profile(self._key)
+        block = blocked_stages(profile).get("metadata")
+        bad = block.language if block is not None else ""
+        return {
+            "value": profile.for_stage("metadata").untagged_language,
+            "problem": tr("names.blocked.language", language=bad) if bad else "",
+        }
+
+    @Slot(str)
+    def set_untagged_language(self, text: str) -> None:
+        if self._key is None or self.locked:
+            return
+        metadata = self.batches.profile(self._key).for_stage("metadata")
+        if text.strip() != metadata.untagged_language:
+            self.batches.copy(self._key).set_options("metadata", replace(metadata, untagged_language=text.strip()))
+            self._copy_changed()
 
     @Property(bool, notify=batch_changed)
     def write_implied_flags(self) -> bool:
@@ -761,14 +813,27 @@ class WindowController(QObject):
         if self._key is None:
             return
         custom = self._custom()
-        self._editing = len(custom)
+        self._editing, self._editing_builtin = len(custom), ""
         self._set_naming(replace(self._naming(), custom_tokens=[*custom, CustomToken(rail.new_token_name(custom))]))
 
     @Slot(int)
     def edit_token(self, index: int) -> None:
         """Open a custom token in the editor; -1 closes it."""
         self._editing = index if 0 <= index < len(self._custom()) else -1
+        self._editing_builtin = ""
         self._refresh_names()
+
+    @Slot(str)
+    def edit_builtin(self, name: str) -> None:
+        """Open a built-in token in the editor, for its value map; "" closes it."""
+        self._editing, self._editing_builtin = -1, name if name in TOKENS else ""
+        self._refresh_names()
+
+    @Slot(str, int, str, str)
+    def set_value_map(self, name: str, row: int, read: str, written: str) -> None:
+        """Set one row of a token's value map: what the token reads, and what is written instead."""
+        if self._key is not None and not self.locked and row >= 0:
+            self._set_naming(rail.set_map_row(self._naming(), name, row, read, written))
 
     def _change_token(self, index: int, **changes: Any) -> None:
         custom = self._custom()
@@ -831,7 +896,10 @@ class WindowController(QObject):
                 block=blocked_stages(profile).get("metadata"),
                 batch_title=heading(self._key, self._items).title,
             )
-            built = {"place": rail.place(given), "tokens": rail.tokens(given, self._token_query, self._editing)}
+            built = {
+                "place": rail.place(given),
+                "tokens": rail.tokens(given, self._token_query, self._editing, self._editing_builtin),
+            }
         if built != self._names:
             self._names = built
             self.names_changed.emit()
@@ -1239,8 +1307,99 @@ class WindowController(QObject):
 
     @Slot(str)
     def get_program(self, spec_id: str) -> None:
+        """ "Get it": Settings opens on Programs at that program's row; its checks refresh the statuses here."""
         self._get_program(spec_id)
-        self.refresh_programs()
+
+    # Command palette
+
+    def _get_palette_query(self) -> str:
+        return self._palette_query
+
+    def _set_palette_query(self, text: str) -> None:
+        if text != self._palette_query:
+            self._palette_query = text
+            self.palette_changed.emit()
+
+    palette_query = Property(str, _get_palette_query, _set_palette_query, notify=palette_changed)
+
+    @Property(list, notify=palette_changed)
+    def palette(self) -> list[dict[str, Any]]:
+        """The palette's results for the query: actions, files, the batch's tracks and tokens, best first."""
+        return [
+            {"kind": e.kind, "key": e.key, "label": e.label, "detail": e.detail}
+            for e in search(self._palette_query, self._palette_entries())
+        ]
+
+    def _palette_entries(self) -> list[Entry]:
+        batch, edited = self._key is not None, self.profile_edited
+        places = [key for key, _icon, later in WORKSPACE_TABS if not later]
+        actions = [
+            Entry("action", "open_folder", tr("palette.action.open_folder")),
+            Entry("action", "add_files", tr("palette.action.add_files")),
+            *(
+                Entry("action", f"place.{key}", tr("palette.action.place", place=tr(f"workspace.tab.{key}")), "", batch)
+                for key in places
+            ),
+            Entry("action", "drawer", tr("palette.action.drawer")),
+            Entry(
+                "action",
+                "save_profile",
+                tr("palette.action.save_profile"),
+                self.profile,
+                edited and not self.profile_read_only,
+            ),
+            Entry("action", "discard", tr("palette.action.discard"), self.profile, edited),
+            *(
+                Entry("action", f"settings.{key}", tr("palette.action.settings", section=tr(f"prefs.section.{key}")))
+                for key, _icon in SECTIONS
+            ),
+        ]
+        files = [
+            Entry("file", str(item.file.path), item_title(item) or item.file.path.stem, item.file.path.stem)
+            for item in self.model.library.items
+        ]
+        tracks = [
+            Entry(
+                "track",
+                str(h["id"]),
+                " · ".join(str(p) for p in (h["code"], h["title"], h["name"]) if p),
+                tr(f"palette.track.{h['kind']}"),
+            )
+            for h in self._shown.get("headers", [])
+        ]
+        custom = [t.name for t in self._custom()]
+        tokens = [Entry("token", name, rail.token_label(name), f"{{{name}}}", batch) for name in [*TOKENS, *custom]]
+        return [*actions, *files, *tracks, *tokens]
+
+    @Slot(str, str)
+    def palette_run(self, kind: str, key: str) -> None:
+        """Run a result: an action, select a file, or take the window to a track's or a token's place."""
+        self._set_palette_query("")
+        if kind == "file":
+            self._set_filter("")
+            self._set_needs_look_only(False)
+            index = self.tree.index_of(key)
+            if index.isValid():
+                self.select(index)
+        elif kind == "track":
+            self.palette_asked.emit("place", "tracks")
+        elif kind == "token":
+            self._set_token_query(key)
+            self.palette_asked.emit("place", "names")
+        elif key.startswith("place."):
+            self.palette_asked.emit("place", key.removeprefix("place."))
+        elif key.startswith("settings."):
+            self._settings.open(key.removeprefix("settings."))
+        else:
+            run = {
+                "open_folder": self.choose_folder,
+                "add_files": self.choose_files,
+                "save_profile": self.save_profile,
+                "discard": self.discard_profile,
+                "drawer": lambda: self.palette_asked.emit("drawer", ""),
+            }.get(key)
+            if run is not None:
+                run()
 
     # Recent folders
 

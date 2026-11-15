@@ -24,6 +24,11 @@ class ThemeMode(StrEnum):
     DARK = "dark"
 
 
+class Density(StrEnum):
+    COMFORTABLE = "comfortable"
+    COMPACT = "compact"  # shorter rows and panel headers, for long seasons on small screens
+
+
 class Startup(StrEnum):
     LAST_WORKSPACE = "last-workspace"  # read the last folders again and select what was selected
     EMPTY = "empty"
@@ -49,7 +54,9 @@ class AppSettings:
     # Folders opened before, newest first: path to when it was last opened, as an ISO date and time.
     recent_folders: dict[str, str] = field(default_factory=dict)
     ui_language: str = "en"
-    theme_mode: ThemeMode = ThemeMode.SYSTEM
+    # Dark is the approved theme; light and following Windows are chosen in Appearance.
+    theme_mode: ThemeMode = ThemeMode.DARK
+    density: Density = Density.COMFORTABLE
     # External programs the user located by hand: program id to the program file or its folder.
     tool_paths: dict[str, str] = field(default_factory=dict)
 

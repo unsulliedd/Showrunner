@@ -130,6 +130,19 @@ AbstractButton {
             enabled: app.profile_edited
             onTriggered: app.discard_profile()
         }
+
+        MenuSeparator {
+            contentItem: Rectangle {
+                implicitHeight: Theme.stroke
+                color: Theme.line
+            }
+        }
+
+        MenuRow {
+            objectName: "manageProfiles"
+            text: Strings.t("profile.manage")
+            onTriggered: app.settings.open("profiles")
+        }
     }
 
     SaveAsPopup {

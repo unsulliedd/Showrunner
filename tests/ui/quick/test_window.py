@@ -31,12 +31,13 @@ def test_programs_are_checked_in_the_background(controller: WindowController, qt
     assert (ffmpeg["found"], ffmpeg["status"]) == (False, "FFmpeg not found")
 
 
-def test_get_it_opens_the_download_flow_and_checks_again(
+def test_get_it_opens_programs_and_a_change_there_checks_again(
     controller: WindowController, opened: list[str], qtbot: QtBot
 ) -> None:
-    with qtbot.waitSignal(controller.programs_changed):
-        controller.get_program("ffmpeg")
+    controller.get_program("ffmpeg")
     assert opened == ["ffmpeg"]
+    with qtbot.waitSignal(controller.programs_changed):
+        controller.settings.programs.statuses_changed.emit()
 
 
 def test_the_tree_draws_from_named_roles(controller: WindowController, library: Library) -> None:

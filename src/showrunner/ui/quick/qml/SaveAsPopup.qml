@@ -3,11 +3,16 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
-// Asks for a new profile's name and saves the batch's choices under it; the reason shows when a name is refused.
+// Asks for a profile's name and hands it to `submit`, which returns why it was refused or "" when done. By default
+// it saves the batch's choices as a new profile; Settings uses it to rename and duplicate.
 Popup {
     id: popup
 
     property string problem: ""
+    property string heading: Strings.t("profile.save_as_title")
+    property string action: Strings.t("profile.save")
+    property string initial: ""
+    property var submit: name => app.save_profile_as(name)
 
     modal: true
     focus: true
@@ -15,12 +20,13 @@ Popup {
     anchors.centerIn: Overlay.overlay
     onOpened: {
         problem = ""
-        field.text = ""
+        field.text = initial
+        field.selectAll()
         field.forceActiveFocus()
     }
 
     function save() {
-        problem = app.save_profile_as(field.text)
+        problem = submit(field.text)
         if (problem === "")
             close()
     }
@@ -38,7 +44,7 @@ Popup {
         spacing: Theme.space_lg
 
         UiText {
-            text: Strings.t("profile.save_as_title")
+            text: popup.heading
             font.weight: Font.DemiBold
         }
 
@@ -84,7 +90,7 @@ Popup {
 
             ActionButton {
                 kind: "primary"
-                text: Strings.t("profile.save")
+                text: popup.action
                 enabled: field.text.trim() !== ""
                 onClicked: popup.save()
             }

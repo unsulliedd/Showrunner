@@ -11,8 +11,11 @@ ApplicationWindow {
     property bool drawerOpen: false
     readonly property bool sideShown: app.has_batch && app.side_tabs(place).length > 0
 
-    width: Theme.quick_window_width
-    height: Theme.quick_window_height
+    // The start size is set once: a binding would snap the window back each time Appearance changes the theme.
+    Component.onCompleted: {
+        width = Theme.quick_window_width
+        height = Theme.quick_window_height
+    }
     minimumWidth: Theme.window_min_width
     minimumHeight: Theme.window_min_height
     visible: true
@@ -27,13 +30,22 @@ ApplicationWindow {
         drawerOpen: window.drawerOpen
         onDrawerToggled: window.drawerOpen = !window.drawerOpen
         onReviewAsked: window.place = "review"
+        onSettingsAsked: settings.show(settings.section)
     }
 
     footer: StatusBar {}
 
     Shortcut {
-        sequence: "Ctrl+K"
-        onActivated: top.search.forceActiveFocus()
+        sequence: app.settings.keys.palette
+        onActivated: {
+            top.search.forceActiveFocus()
+            top.search.selectAll()
+        }
+    }
+
+    Shortcut {
+        sequence: app.settings.keys.settings
+        onActivated: settings.show(settings.section)
     }
 
     component Handle: Rectangle {
@@ -140,6 +152,31 @@ ApplicationWindow {
     }
 
     JobOffer {}
+
+    SettingsDialog {
+        id: settings
+    }
+
+    // "Manage profiles…" in the pill and "Get it" anywhere open Settings on their section.
+    Connections {
+        target: app.settings
+
+        function onOpen_asked(section) {
+            settings.show(section)
+        }
+    }
+
+    // A palette result that needs the window: a place, or the drawer.
+    Connections {
+        target: app
+
+        function onPalette_asked(what, key) {
+            if (what === "place")
+                window.place = key
+            else if (what === "drawer")
+                window.drawerOpen = !window.drawerOpen
+        }
+    }
 
     DropArea {
         anchors.fill: parent

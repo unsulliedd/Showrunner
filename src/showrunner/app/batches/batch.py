@@ -8,7 +8,7 @@ Revert returns to the profile. Preview plans a batch's files with that batch's p
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -92,6 +92,44 @@ class Batches:
         """Raises `ProfileExistsError` or `InvalidProfileNameError` and then changes nothing."""
         self.copy(key).save_as(name)
         self.last_used[key.media] = name
+
+    def following(self, name: str) -> list[BatchKey]:
+        """The batches whose working copy starts from profile `name`."""
+        return [key for key, copy in self._copies.items() if copy.name.casefold() == name.casefold()]
+
+    def rename_profile(self, name: str, new_name: str) -> None:
+        """Rename a saved profile's file; the batches that follow it keep their edits under the new name."""
+        self._store.rename(name, new_name)
+        for key in self.following(name):
+            self._copies[key].renamed(new_name)
+        self.last_used = {media: new_name if used == name else used for media, used in self.last_used.items()}
+
+    def delete_profile(self, name: str) -> None:
+        """Delete a saved profile's file. A batch that followed it keeps what it planned with, as edits over the
+        default profile, so nothing chosen is lost; a new batch of that kind starts from the default."""
+        self._store.delete(name)
+        for key in self.following(name):
+            edited = self._copies[key].profile
+            copy = self._copies[key] = self._open(DEFAULT_PROFILE_NAME)
+            for stage_id, options in edited.options.items():
+                copy.set_options(stage_id, options)
+        self.last_used = {media: used for media, used in self.last_used.items() if used != name}
+
+    def edit_profile(self, name: str, stage_id: str, **changes: Any) -> None:
+        """Change fields of one stage in a saved profile's file. A batch that follows it takes each change unless
+        its working copy already changed that field, so an unsaved choice is kept and nothing reads as edited
+        that was not."""
+        saved = self._store.load(name).value
+        old = saved.for_stage(stage_id)
+        self._store.save(saved.with_options(stage_id, replace(old, **changes)))
+        for key in self.following(name):
+            copy = self._copies[key]
+            current = copy.profile.for_stage(stage_id)
+            follow = {
+                field: value for field, value in changes.items() if getattr(current, field) == getattr(old, field)
+            }
+            copy.reload()
+            copy.set_options(stage_id, replace(current, **follow))
 
     def forget(self, key: BatchKey) -> None:
         """Drop the batch's working copy; the next `copy` starts from a profile again."""

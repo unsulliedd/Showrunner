@@ -3,13 +3,15 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
-// The custom token open for editing: its name, its kind (Text, From a pattern, Combined), what it holds and, for a
-// pattern, where it searches; under that its value on the selected file and how many files of the batch give one.
-// A field is written when it is left or Enter is pressed.
+// The token open for editing. A custom one shows its name, its kind (Text, From a pattern, Combined), what it holds
+// and, for a pattern, where it searches; under that its value on the selected file and how many files of the batch
+// give one. Every token, built-in ones too, has its value map: values as read, each written as something else. A
+// field is written when it is left or Enter is pressed.
 Rectangle {
     id: editor
 
     required property var token
+    readonly property bool custom: token.index >= 0
 
     objectName: "tokenEditor"
     implicitHeight: body.implicitHeight + 2 * Theme.space_lg
@@ -49,13 +51,13 @@ Rectangle {
             spacing: Theme.space_md
 
             UiText {
-                text: editor.token.name
+                text: editor.custom ? editor.token.name : editor.token.label
                 font.weight: Font.DemiBold
             }
 
             UiText {
                 Layout.fillWidth: true
-                text: Strings.t("tokens.editor.title")
+                text: editor.custom ? Strings.t("tokens.editor.title") : Strings.t("tokens.editor.builtin")
                 color: Theme.faint
                 font.pixelSize: Theme.text_xs
             }
@@ -65,16 +67,18 @@ Rectangle {
                 implicitHeight: Theme.row_sm
                 iconName: "x"
                 label: Strings.t("tokens.editor.close")
-                onClicked: app.edit_token(-1)
+                onClicked: editor.custom ? app.edit_token(-1) : app.edit_builtin("")
             }
         }
 
         Label {
+            visible: editor.custom
             text: Strings.t("tokens.editor.name")
         }
 
         InputField {
             objectName: "tokenName"
+            visible: editor.custom
             Layout.fillWidth: true
             mono: true
             label: Strings.t("tokens.editor.name")
@@ -83,11 +87,12 @@ Rectangle {
         }
 
         Problems {
-            model: editor.token.name_problems
+            model: editor.token.name_problems || []
         }
 
         Row {
             Layout.fillWidth: true
+            visible: editor.custom
             spacing: Theme.space_xs
 
             Repeater {
@@ -133,13 +138,15 @@ Rectangle {
         }
 
         Label {
-            text: editor.token.text_label
+            visible: editor.custom
+            text: editor.token.text_label || ""
             wrapMode: Text.WordWrap
             elide: Text.ElideNone
         }
 
         InputField {
             objectName: "tokenText"
+            visible: editor.custom
             Layout.fillWidth: true
             mono: true
             label: editor.token.text_label
@@ -148,7 +155,7 @@ Rectangle {
         }
 
         Problems {
-            model: editor.token.text_problems
+            model: editor.token.text_problems || []
         }
 
         RowLayout {
@@ -170,13 +177,76 @@ Rectangle {
             }
 
             UiText {
-                text: editor.token.found
+                visible: editor.custom
+                text: editor.token.found || ""
                 color: Theme.faint
                 font.pixelSize: Theme.text_sm
             }
         }
 
+        Label {
+            Layout.topMargin: Theme.space_sm
+            text: Strings.t("tokens.maps.title")
+        }
+
+        UiText {
+            Layout.fillWidth: true
+            text: editor.token.raw !== "" ? editor.token.raw : Strings.t("tokens.maps.hint")
+            color: Theme.faint
+            font.pixelSize: Theme.text_xs
+            wrapMode: Text.WordWrap
+            elide: Text.ElideNone
+        }
+
+        // One row per rewrite, then an empty row that adds one. Clearing what a row reads removes it.
+        Repeater {
+            model: editor.token.maps
+
+            delegate: RowLayout {
+                id: mapRow
+
+                required property var modelData
+                required property int index
+
+                Layout.fillWidth: true
+                spacing: Theme.space_sm
+
+                InputField {
+                    objectName: "mapRead_" + mapRow.index
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    mono: true
+                    label: Strings.t("tokens.maps.read")
+                    placeholderText: Strings.t("tokens.maps.read")
+                    text: mapRow.modelData.read
+                    onEditingFinished: if (text !== mapRow.modelData.read)
+                        app.set_value_map(editor.token.name, mapRow.index, text, written.text)
+                }
+
+                Icon {
+                    name: "arrow"
+                    size: Theme.icon_sm
+                    color: Theme.faint
+                }
+
+                InputField {
+                    id: written
+
+                    objectName: "mapWritten_" + mapRow.index
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    mono: true
+                    label: Strings.t("tokens.maps.written")
+                    placeholderText: Strings.t("tokens.maps.written")
+                    text: mapRow.modelData.written
+                    onEditingFinished: if (text !== mapRow.modelData.written && mapRow.modelData.read !== "")
+                        app.set_value_map(editor.token.name, mapRow.index, mapRow.modelData.read, text)
+                }
+            }
+        }
+
         ActionButton {
+            visible: editor.custom
             kind: "ghost"
             size: Theme.row_sm
             iconName: "x"

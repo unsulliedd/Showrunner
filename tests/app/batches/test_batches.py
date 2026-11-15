@@ -133,3 +133,48 @@ def test_forgetting_a_batch_starts_it_again_from_its_profile(tmp_path: Path, sto
     drop_commentary(batches, key)
     batches.forget(key)
     assert not batches.copy(key).changed
+
+
+def test_a_renamed_profile_carries_the_batches_that_follow_it(tmp_path: Path, store: ProfileStore) -> None:
+    store.save_as(store.load(DEFAULT_PROFILE_NAME).value, "Series")
+    batches = Batches(store, {Media.EPISODES: "Series"})
+    key = BatchKey.of(episode(tmp_path, 1))
+    drop_commentary(batches, key)
+    batches.rename_profile("Series", "Shows")
+    assert batches.copy(key).name == "Shows"
+    assert batches.copy(key).changed
+    assert batches.last_used[Media.EPISODES] == "Shows"
+    assert store.names() == [DEFAULT_PROFILE_NAME, "Shows"]
+
+
+def test_a_deleted_profile_leaves_its_batches_their_choices_over_the_default(
+    tmp_path: Path, store: ProfileStore
+) -> None:
+    store.save_as(store.load(DEFAULT_PROFILE_NAME).value, "Series")
+    batches = Batches(store, {Media.EPISODES: "Series"})
+    key = BatchKey.of(episode(tmp_path, 1))
+    drop_commentary(batches, key)
+    rules = batches.profile(key).for_stage("tracks").rules
+    batches.delete_profile("Series")
+    assert batches.copy(key).name == DEFAULT_PROFILE_NAME
+    assert batches.profile(key).for_stage("tracks").rules == rules
+    assert Media.EPISODES not in batches.last_used
+
+
+def test_an_edited_profile_reaches_its_batches_unless_they_changed_that_field(
+    tmp_path: Path, store: ProfileStore
+) -> None:
+    store.save_as(store.load(DEFAULT_PROFILE_NAME).value, "Series")
+    batches = Batches(store, {Media.EPISODES: "Series"})
+    plain, chosen = BatchKey.of(episode(tmp_path, 1)), BatchKey.of(episode(tmp_path, 1, season=2))
+    batches.copy(plain)
+    mux = batches.profile(chosen).for_stage("mux")
+    batches.copy(chosen).set_options("mux", replace(mux, original="keep"))
+    batches.edit_profile("Series", "mux", suffix=" new", original="recycle")
+    assert store.load("Series").value.for_stage("mux").suffix == " new"
+    assert batches.profile(plain).for_stage("mux").suffix == " new"
+    assert not batches.copy(plain).changed
+    # The batch that chose to keep its originals keeps that unsaved choice, and takes the suffix.
+    assert batches.profile(chosen).for_stage("mux").original == "keep"
+    assert batches.profile(chosen).for_stage("mux").suffix == " new"
+    assert batches.copy(chosen).changed
