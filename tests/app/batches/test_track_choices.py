@@ -1,8 +1,19 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
-from showrunner.app.batches.choices import NO_CHOICE, TrackChoice, TrackSignature, add_paired, choice_of, choose
+from showrunner.app.batches.choices import (
+    NO_CHOICE,
+    TrackChoice,
+    TrackSignature,
+    add_paired,
+    choice_of,
+    choose,
+    move_rule,
+    pause_rule,
+    signature_of,
+)
 from showrunner.core.language import Language
 from showrunner.core.media import Episode, MediaFile, MediaItem, SubtitleFile
 from showrunner.core.track import AudioProperties, SubtitleProperties, Track, TrackFlags, TrackKind, VideoProperties
@@ -148,3 +159,32 @@ def test_a_paired_file_is_added_by_its_own_choice_and_then_chosen_like_a_track()
     starred = choose(options, TrackSignature.of(stand_in), TrackChoice(default=True))
     assert flagged(starred, "default", PAIRED) == [ENGLISH.id, stand_in.id]
     assert add_paired(options, srt, False) == TracksOptions()
+
+
+def test_rules_move_and_pause_in_place() -> None:
+    first, second, third = (TrackRule(label=name) for name in ("first", "second", "third"))
+    options = TracksOptions(rules=[first, second, third])
+    assert [r.label for r in move_rule(options, 0, 2).rules] == ["second", "third", "first"]
+    assert [r.label for r in move_rule(options, 2, 0).rules] == ["third", "first", "second"]
+    assert [r.label for r in move_rule(options, 1, 9).rules] == ["first", "third", "second"]
+    paused = pause_rule(options, 1, True)
+    assert [r.enabled for r in paused.rules] == [True, False, True]
+    assert pause_rule(paused, 1, False) == options
+    assert options.rules[1].enabled  # the old list is untouched
+
+
+def test_a_choice_rule_names_its_signature() -> None:
+    signatures = [TrackSignature.of(ENGLISH), TrackSignature.of(TURKISH)]
+    options = choose(TracksOptions(), signatures[1], TrackChoice(Verdict.DROP))
+    assert signature_of(options.rules[0], signatures) == signatures[1]
+    hand_written = replace(options.rules[0], from_choice=False)
+    assert signature_of(hand_written, signatures) is None
+
+
+def test_a_paused_choice_is_no_choice_until_chosen_again() -> None:
+    turkish = TrackSignature.of(TURKISH)
+    options = choose(TracksOptions(rules=[TrackRule(label="hand")]), turkish, TrackChoice(Verdict.KEEP, default=True))
+    paused = pause_rule(options, 0, True)
+    assert choice_of(paused, turkish) == NO_CHOICE
+    again = choose(paused, turkish, TrackChoice(Verdict.KEEP, default=True))
+    assert again == options  # the same rule in the same place, on again

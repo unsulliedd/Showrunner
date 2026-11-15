@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from PySide6.QtCore import QByteArray, QModelIndex, QPersistentModelIndex, Qt
+from PySide6.QtCore import QAbstractItemModel, QByteArray, QModelIndex, QPersistentModelIndex, Qt
 
 from showrunner.app.library.library import Mark
 from showrunner.core.media import Episode
@@ -30,6 +30,19 @@ type Index = QModelIndex | QPersistentModelIndex
 
 class LibraryTree(LibraryFilter):
     """The name column of a `LibraryModel`, filtered, with the summary and marks folded in as roles."""
+
+    def setSourceModel(self, model: QAbstractItemModel) -> None:  # noqa: N802  # Qt's name
+        super().setSourceModel(model)
+        model.dataChanged.connect(self._on_source_data)
+
+    def _on_source_data(self, top_left: QModelIndex, bottom_right: QModelIndex, roles: list[int]) -> None:
+        """The source names its dot and mark roles; QML listens for the roles here that are drawn from them."""
+        if DOT_ROLE not in roles and MARK_ROLE not in roles:
+            return
+        for row in range(top_left.row(), bottom_right.row() + 1):
+            index = self.mapFromSource(top_left.siblingAtRow(row).siblingAtColumn(NAME_COLUMN))
+            if index.isValid():
+                self.dataChanged.emit(index, index, [PLANNED, PROBLEM])
 
     def source(self) -> LibraryModel:
         model = self.sourceModel()

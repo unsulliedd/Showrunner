@@ -13,7 +13,11 @@ Panel {
     }
     property string tab: tabs.length > 0 ? tabs[0].key : ""
 
-    onPlaceChanged: tab = tabs.length > 0 ? tabs[0].key : ""
+    // Read the new place's tabs here: `tabs` may not have followed the place yet when this handler runs.
+    onPlaceChanged: {
+        const first = app.side_tabs(place)
+        tab = first.length > 0 ? first[0].key : ""
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -25,17 +29,33 @@ Panel {
             Layout.leftMargin: Theme.space_sm
             model: side.tabs.map(entry => Object.assign({}, entry, {
                 label: Strings.t("panel.tab." + entry.key),
+                count: entry.key === "rules" ? app.rules.length : entry.count,
                 change: false
             }))
             current: side.tab
             onPicked: key => side.tab = key
         }
 
-        Placeholder {
+        Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            title: side.tab !== "" ? Strings.t("panel.placeholder." + side.tab + ".title") : ""
-            lead: side.tab !== "" ? Strings.t("panel.placeholder." + side.tab + ".lead") : ""
+
+            Inspector {
+                anchors.fill: parent
+                visible: side.tab === "inspector"
+            }
+
+            RulesPanel {
+                anchors.fill: parent
+                visible: side.tab === "rules"
+            }
+
+            Placeholder {
+                anchors.fill: parent
+                visible: side.tab !== "inspector" && side.tab !== "rules"
+                title: side.tab !== "" ? Strings.t("panel.placeholder." + side.tab + ".title") : ""
+                lead: side.tab !== "" ? Strings.t("panel.placeholder." + side.tab + ".lead") : ""
+            }
         }
     }
 }

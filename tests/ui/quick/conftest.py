@@ -4,6 +4,7 @@ no file. The screenshot script imports the library and the program statuses from
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -31,15 +32,50 @@ NUMBERS = ("One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine
 GB = 1024**3
 
 
-def _file(path: Path, size: float, duration: float, hdr: HdrKind, chapters: int, attachments: int) -> MediaFile:
-    tracks = (
-        Track(0, TrackKind.VIDEO, "V_MPEGH/ISO/HEVC", video=VideoProperties(3840, 2160, 23.976, hdr, 10)),
+def _tracks(number: int) -> tuple[Track, ...]:
+    """English and Turkish audio with an English commentary, English SDH and plain subtitles and Turkish forced ones.
+    Episode Seven has no Turkish audio and no forced subtitles; Episode Nine has an extra English stereo track."""
+    tracks = [
+        Track(0, TrackKind.VIDEO, "V_MPEGH/ISO/HEVC", video=VideoProperties(3840, 2160, 23.976, HdrKind.NONE, 10)),
         Track(
             1, TrackKind.AUDIO, "A_EAC3", Language("eng"), "English", TrackFlags(default=True), audio=AudioProperties(6)
         ),
         Track(2, TrackKind.AUDIO, "A_EAC3", Language("tur"), "Turkish", audio=AudioProperties(6)),
-        Track(3, TrackKind.SUBTITLE, "S_TEXT/UTF8", Language("eng"), "English", subtitle=SubtitleProperties()),
-    )
+        Track(3, TrackKind.AUDIO, "A_AC3", Language("eng"), "Commentary", audio=AudioProperties(2)),
+        Track(
+            4,
+            TrackKind.SUBTITLE,
+            "S_TEXT/UTF8",
+            Language("eng"),
+            "SDH",
+            TrackFlags(hearing_impaired=True),
+            subtitle=SubtitleProperties(),
+        ),
+        Track(5, TrackKind.SUBTITLE, "S_TEXT/UTF8", Language("eng"), "English", subtitle=SubtitleProperties()),
+        Track(
+            6,
+            TrackKind.SUBTITLE,
+            "S_TEXT/UTF8",
+            Language("tur"),
+            "Forced",
+            TrackFlags(forced=True),
+            subtitle=SubtitleProperties(),
+        ),
+    ]
+    if number == 7:
+        tracks = [t for t in tracks if t.id not in (2, 6)]
+    if number == 9:
+        tracks.append(Track(7, TrackKind.AUDIO, "A_AAC", Language("eng"), "Stereo", audio=AudioProperties(2)))
+    return tuple(tracks)
+
+
+def _file(
+    path: Path, size: float, duration: float, hdr: HdrKind, chapters: int, attachments: int, number: int = 0
+) -> MediaFile:
+    tracks = _tracks(number)
+    video = tracks[0]
+    assert video.video is not None
+    tracks = (replace(video, video=replace(video.video, hdr=hdr)), *tracks[1:])
     return MediaFile(
         path,
         "matroska",
@@ -55,7 +91,7 @@ def _episode(show: str, year: int, season: int, number: int) -> MediaItem:
     folder = Path(f"{show} ({year})") / f"Season {season}"
     stem = f"{show.replace(' ', '.')}.S{season:02d}E{number:02d}"
     title = f"Episode {NUMBERS[number - 1]}" if number <= len(NUMBERS) else ""
-    file = _file(folder / f"{stem}.mkv", 6.43, 3134.0, HdrKind.DOLBY_VISION, 8, 2)
+    file = _file(folder / f"{stem}.mkv", 6.43, 3134.0, HdrKind.DOLBY_VISION, 8, 2, number)
     subtitles = (SubtitleFile(folder / f"{stem}.tur.srt", Language("tur")),)
     return MediaItem(Episode(show, season, number, year, title), file, subtitles)
 
@@ -86,9 +122,10 @@ def neutral_library() -> Library:
 
 
 def program_statuses() -> dict[str, DependencyStatus]:
-    """MKVToolNix found, FFmpeg missing, as on the approved first-run screen."""
+    """MKVToolNix found, FFmpeg missing, as on the approved first-run screen. The path is made up: plans name the
+    program, nothing runs it."""
     return {
-        "mkvtoolnix": DependencyStatus("mkvtoolnix", State.FOUND, version="88.0"),
+        "mkvtoolnix": DependencyStatus("mkvtoolnix", State.FOUND, Path("mkvtoolnix") / "mkvmerge", version="88.0"),
         "ffmpeg": DependencyStatus("ffmpeg", State.MISSING),
     }
 

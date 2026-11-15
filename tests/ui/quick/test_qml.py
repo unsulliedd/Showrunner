@@ -10,13 +10,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from PySide6.QtCore import QPointF, Qt, QUrl
+from PySide6.QtCore import QPoint, QPointF, Qt, QUrl
 from PySide6.QtQml import QQmlApplicationEngine, QQmlComponent, QQmlEngine, QQmlError, QQmlExpression
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
 
+from showrunner.app.batches.batch import BatchKind
 from showrunner.app.library.library import Library
 from showrunner.ui.i18n.catalog import STRINGS_DIR
 from showrunner.ui.quick.engine import QML_DIR, build_engine, prepare
@@ -126,6 +127,139 @@ def test_qml_reaches_the_controller(
     assert qt_warnings() == []
 
 
+def test_choices_reach_every_place_without_warnings(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    # Chips, flags and rules driven from QML expressions, as a click would.
+    load.run("app.toggle_keep(2)")
+    load.run('app.toggle_flag(7, "default")')
+    load.run("app.pause_rule(0, true)")
+    qtbot.waitUntil(lambda: not controller.planning)
+    assert controller.change_count > 0
+    side = load.window.findChild(QQuickItem, "sidePanel")
+    for place, tab in (("tracks", "rules"), ("overview", "inspector"), ("tracks", "rules")):
+        load.window.setProperty("place", place)
+        assert load() == [], place
+        assert side.property("tab") == tab, place
+    seventh = str(library.items[6].file.path)
+    load.run(f"app.focus_file({json.dumps(seventh)})")
+    assert controller.focus_path == seventh
+    controller.select(controller.tree.index_of(str(library.items[-3].file.path)))
+    load.window.setProperty("place", "overview")
+    qtbot.waitUntil(lambda: not controller.planning)
+    load.run("app.toggle_keep(0)")
+    qtbot.waitUntil(lambda: not controller.planning)
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def _items(root: QQuickItem, name: str) -> list[QQuickItem]:
+    """Items called `name` under `root` in the visual tree, where delegates live (they are no QObject children)."""
+    found = [root] if root.objectName() == name else []
+    for child in root.childItems():
+        found += _items(child, name)
+    return found
+
+
+def _item(root: QQuickItem, name: str) -> QQuickItem:
+    (found,) = (item for item in _items(root, name) if item.isVisible())
+    return found
+
+
+def _click(window: Any, item: QQuickItem) -> None:
+    point = item.mapToScene(QPointF(item.width() / 2, item.height() / 2)).toPoint()
+    QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, point)
+
+
+def test_chips_and_rules_answer_the_pointer(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    load()
+    # A click on the commentary chip drops it; a click on the Turkish chip's star sets the default only.
+    root = load.window.contentItem()
+    _click(load.window, _item(root, "chip2"))
+    load()
+    _click(load.window, _item(_item(root, "chip1"), "defaultFlag"))
+    load()
+    words = [" ".join(str(p["text"]) for p in rule["parts"]) for rule in controller.rules]
+    assert words == ["Drop audio in ENG named Commentary", "Keep audio in TUR named Turkish · default"]
+    controller.toggle_keep(4)
+    qtbot.waitUntil(lambda: not controller.planning)
+    load.window.setProperty("place", "tracks")
+    load()
+    # Drag the first rule by its grip below the last one.
+    grips = sorted((g for g in _items(root, "ruleGrip") if g.isVisible()), key=lambda g: g.mapToScene(QPointF()).y())
+    assert len(grips) == 3
+    start = grips[0].mapToScene(QPointF(grips[0].width() / 2, grips[0].height() / 2)).toPoint()
+    end = grips[2].mapToScene(QPointF(grips[2].width() / 2, grips[2].height() * 2)).toPoint()
+    QTest.mousePress(load.window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+    steps = 12
+    for step in range(1, steps + 1):
+        y = start.y() + (end.y() - start.y()) * step // steps
+        QTest.mouseMove(load.window, QPoint(start.x(), y))
+        qtbot.wait(10)
+    QTest.mouseRelease(load.window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
+    load()
+    words = [" ".join(str(p["text"]) for p in rule["parts"]) for rule in controller.rules]
+    assert words[-1] == "Drop audio in ENG named Commentary"
+    # With more rules than the panel holds the list could scroll; a drag on a grip still moves the rule.
+    for column in (5, 6, 7, 3):
+        controller.toggle_flag(column, "default")
+    qtbot.waitUntil(lambda: not controller.planning)
+    load()
+    assert len(controller.rules) == 7
+    first = controller.rules[0]["parts"]
+    grips = sorted((g for g in _items(root, "ruleGrip") if g.isVisible()), key=lambda g: g.mapToScene(QPointF()).y())
+    start = grips[0].mapToScene(QPointF(grips[0].width() / 2, grips[0].height() / 2)).toPoint()
+    # One card down: the dragged card's centre lands on the second card's centre.
+    end = grips[1].mapToScene(QPointF(grips[1].width() / 2, grips[1].height() / 2)).toPoint()
+    QTest.mousePress(load.window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+    for step in range(1, steps + 1):
+        QTest.mouseMove(load.window, QPoint(start.x(), start.y() + (end.y() - start.y()) * step // steps))
+        qtbot.wait(10)
+    QTest.mouseRelease(load.window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
+    load()
+    assert controller.rules[1]["parts"] == first
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def test_a_show_and_a_selection_keep_their_batch_when_a_row_is_picked(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    episode = controller.tree.index_of(str(library.items[0].file.path))
+    controller.select(episode.parent().parent())
+    qtbot.waitUntil(lambda: not controller.planning)
+    assert controller.batch_kind == "show"
+    assert len(controller.overview["rows"]) == 18
+    assert load() == []
+    load.run(f"app.focus_file({json.dumps(str(library.items[12].file.path))})")
+    assert (controller.batch_kind, controller.inspector["name"]) == ("show", "Episode Three")
+    movie = controller.tree.index_of(str(library.items[-1].file.path))
+    controller.select(movie.parent())
+    qtbot.waitUntil(lambda: not controller.planning)
+    assert controller.batch_kind == "selection"
+    load.run(f"app.focus_file({json.dumps(str(library.items[-2].file.path))})")
+    assert (controller.batch_kind, controller.inspector["name"]) == ("selection", "Another Movie")
+    for place in ("tracks", "overview"):
+        load.window.setProperty("place", place)
+        assert load() == [], place
+    assert qt_warnings() == []
+
+
 def _qml_text() -> str:
     return "\n".join(path.read_text(encoding="utf-8") for path in QML_FILES)
 
@@ -143,9 +277,21 @@ def test_every_string_key_the_qml_asks_for_exists() -> None:
     keys |= {f"panel.tab.{tab}" for tab in tabs}
     keys |= {f"panel.placeholder.{tab}.{part}" for tab in tabs for part in ("title", "lead")}
     keys |= {f"drawer.placeholder.{tab}.{part}" for tab in ("player", "jobs", "log") for part in ("title", "lead")}
+    # Keys built from a batch kind, a track kind, a flag and the matrix legend.
+    keys |= {f"overview.title.{kind}" for kind in BatchKind}
+    keys |= {f"matrix.group.{kind}" for kind in ("audio", "subtitle")}
+    keys |= {f"tracks.flag_tip.{flag}" for flag in ("default", "forced")}
+    keys |= {f"matrix.legend.{entry}" for entry in re.findall(r'"(\w+)"', _legend(text))}
     keys = {key for key in keys if not key.endswith(".")}
     assert sorted(key for key in keys if key not in catalog) == []
     assert sorted(key for key in plurals if f"{key}.one" not in catalog or f"{key}.other" not in catalog) == []
+
+
+def _legend(text: str) -> str:
+    """The legend's list of entries in the matrix."""
+    found = re.search(r'model: \[("kept"[^\]]*)\]', text)
+    assert found is not None
+    return found.group(1)
 
 
 def test_qml_files_hold_no_literal_colors_or_text() -> None:

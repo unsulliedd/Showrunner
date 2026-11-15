@@ -11,6 +11,7 @@ itself is never edited.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
 from showrunner.core.track import Track, TrackKind
@@ -72,9 +73,10 @@ NO_CHOICE = TrackChoice()
 
 
 def choice_of(options: TracksOptions, signature: TrackSignature) -> TrackChoice:
-    """The choice the rules hold for `signature`; `NO_CHOICE` when none was made."""
+    """The choice the rules hold for `signature`; `NO_CHOICE` when none was made or its rule is paused, since a
+    paused rule decides nothing. A new choice on it replaces the paused rule in its place, switched on."""
     index = _index(options.rules, signature)
-    if index is None:
+    if index is None or not options.rules[index].enabled:
         return NO_CHOICE
     rule = options.rules[index]
     return TrackChoice(rule.verdict, rule.default is FlagShape.FIRST, rule.forced is FlagShape.FIRST)
@@ -111,6 +113,25 @@ def add_paired(options: TracksOptions, paired: PairedFile, add: bool) -> TracksO
     added, such a file is a subtitle track like the others: `choose` on its `TrackSignature` flags or drops it."""
     rest = [chosen for chosen in options.add_paired if chosen != paired]
     return replace(options, add_paired=[*rest, paired] if add else rest)
+
+
+def move_rule(options: TracksOptions, source: int, target: int) -> TracksOptions:
+    """The options with the rule at `source` moved to `target`, both positions in the list as it is now."""
+    rules = list(options.rules)
+    rules.insert(max(0, min(target, len(rules) - 1)), rules.pop(source))
+    return replace(options, rules=rules)
+
+
+def pause_rule(options: TracksOptions, index: int, paused: bool) -> TracksOptions:
+    """The options with one rule paused (kept in the list, deciding nothing) or on again."""
+    rules = list(options.rules)
+    rules[index] = replace(rules[index], enabled=not paused)
+    return replace(options, rules=rules)
+
+
+def signature_of(rule: TrackRule, signatures: Iterable[TrackSignature]) -> TrackSignature | None:
+    """The signature among `signatures` whose choice `rule` is, if it is one."""
+    return next((s for s in signatures if rule.from_choice and rule.match == s.match()), None)
 
 
 def _index(rules: list[TrackRule], signature: TrackSignature) -> int | None:

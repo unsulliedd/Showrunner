@@ -108,11 +108,14 @@ def preview(
     blocked: Collection[str] = (),
     left_out: Collection[ChangeGroup] = (),
     finished: Finished | None = None,
+    stamped: bool = True,
 ) -> Preview:
     """Plan every stage for each item. `blocked` holds the ids of stages whose options have a problem: such a
     stage is planned for no file, and the stages that read its options see them asking for nothing, so a broken
     rule cannot drive another stage's plan. `left_out` holds the groups this run leaves out, planned as if their
-    options were empty; Review shows what a left-out group would do from a second preview with every group in."""
+    options were empty; Review shows what a left-out group would do from a second preview with every group in.
+    Without `stamped` no file is read: the plans are pure, every stamp is None and no file counts as missing or
+    finished before, which suits a plan that follows each choice; Apply needs a stamped preview."""
     key = options_key(profile, stages, blocked, left_out)
     # A problem in a group the run leaves out decides nothing, so it blocks nothing.
     blocked = {s for s in blocked if s not in _BLOCKED_GROUP or _BLOCKED_GROUP[s] not in left_out}
@@ -120,7 +123,7 @@ def preview(
     for group in {*left_out, *(_BLOCKED_GROUP[s] for s in blocked if s in _BLOCKED_GROUP)}:
         planning = without(planning, group)
     can_remux = any(s.remuxes for s in stages if s.id not in blocked)
-    files = tuple(_preview_file(item, planning, stages, blocked, can_remux, key, finished) for item in items)
+    files = tuple(_preview_file(item, planning, stages, blocked, can_remux, key, finished, stamped) for item in items)
     return Preview(key, planning, files)
 
 
@@ -132,12 +135,15 @@ def _preview_file(
     can_remux: bool,
     key: str,
     finished: Finished | None,
+    stamped: bool,
 ) -> FilePreview:
-    try:
-        current = stamp(item.file.path)
-    except OSError as error:
-        return FilePreview(item, None, (), FileOutcome.MISSING, str(error))
-    before = finished is not None and finished(current.content_hash, key)
+    current = None
+    if stamped:
+        try:
+            current = stamp(item.file.path)
+        except OSError as error:
+            return FilePreview(item, None, (), FileOutcome.MISSING, str(error))
+    before = current is not None and finished is not None and finished(current.content_hash, key)
     plans = tuple(StagePlan(s.id, PlanState.BLOCKED) if s.id in blocked else s.plan(item, profile) for s in stages)
     return FilePreview(item, current, plans, _outcome(plans, can_remux), finished_before=before)
 

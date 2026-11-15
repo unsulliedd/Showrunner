@@ -197,3 +197,13 @@ def test_one_file_can_be_planned_again(tmp_path: Path, profile: Profile) -> None
 def test_the_pipeline_leaves_out_a_stage_without_its_program() -> None:
     assert [s.id for s in pipeline(Programs(), None)] == ["tracks"]
     assert [s.id for s in pipeline(Programs(), Path("mkvpropedit"))] == ["tracks", "metadata"]
+
+
+def test_an_unstamped_preview_reads_no_file(tmp_path: Path, profile: Profile) -> None:
+    item = movie(tmp_path)
+    item.file.path.unlink()
+    result = preview([item], with_rule(profile, KindTest.SUBTITLE), STAGES, finished=lambda *_: True, stamped=False)
+    (file,) = result.files
+    assert (file.stamp, file.finished_before) == (None, False)
+    assert file.outcome is FileOutcome.NEEDS_REMUX
+    assert result.options_key == preview([], with_rule(profile, KindTest.SUBTITLE), STAGES).options_key

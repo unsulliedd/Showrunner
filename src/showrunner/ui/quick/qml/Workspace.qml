@@ -99,11 +99,32 @@ Panel {
             onPicked: key => workspace.placePicked(key)
         }
 
-        Placeholder {
+        Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            title: Strings.t("workspace.placeholder." + workspace.place + ".title")
-            lead: Strings.t("workspace.placeholder." + workspace.place + ".lead")
+
+            Overview {
+                anchors.fill: parent
+                visible: workspace.place === "overview" && app.batch_kind !== "movie"
+                onMatrixAsked: workspace.placePicked("tracks")
+            }
+
+            MovieOverview {
+                anchors.fill: parent
+                visible: workspace.place === "overview" && app.batch_kind === "movie"
+            }
+
+            Matrix {
+                anchors.fill: parent
+                visible: workspace.place === "tracks"
+            }
+
+            Placeholder {
+                anchors.fill: parent
+                visible: workspace.place !== "overview" && workspace.place !== "tracks"
+                title: Strings.t("workspace.placeholder." + workspace.place + ".title")
+                lead: Strings.t("workspace.placeholder." + workspace.place + ".lead")
+            }
         }
     }
 }

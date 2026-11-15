@@ -115,9 +115,24 @@ AbstractButton {
         }
 
         MenuRow {
+            text: Strings.t("profile.save")
+            enabled: app.profile_edited && !app.profile_read_only
+            onTriggered: app.save_profile()
+        }
+
+        MenuRow {
+            text: Strings.t("profile.save_as")
+            onTriggered: saveAs.open()
+        }
+
+        MenuRow {
             text: Strings.t("profile.discard")
             enabled: app.profile_edited
             onTriggered: app.discard_profile()
         }
+    }
+
+    SaveAsPopup {
+        id: saveAs
     }
 }

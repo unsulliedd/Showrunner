@@ -106,7 +106,7 @@ def plan_tracks(item: MediaItem, options: TracksOptions) -> TrackPlan | PlanRefu
     entries: list[tuple[Track, SubtitleFile | None]] = [(track, None) for track in item.file.tracks]
     # A stand-in keeps the number of its place among all paired files, so a choice on one file renumbers no other.
     entries += [
-        (_stand_in(subtitle, index), subtitle)
+        (stand_in(subtitle, index), subtitle)
         for index, subtitle in enumerate(item.subtitles)
         if PairedFile.of(subtitle) in options.add_paired
     ]
@@ -180,7 +180,8 @@ def _guard(kept: list[tuple[Track, SubtitleFile | None]], dropped: list[DroppedT
     return tuple(problems)
 
 
-def _stand_in(subtitle: SubtitleFile, index: int) -> Track:
+def stand_in(subtitle: SubtitleFile, index: int) -> Track:
+    """The track a paired subtitle file is planned as: its place among the paired files gives a negative id."""
     suffix = Path(subtitle.path).suffix.casefold()
     return Track(
         id=-(index + 1),

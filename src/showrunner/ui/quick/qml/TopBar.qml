@@ -65,7 +65,7 @@ Item {
         }
 
         UiText {
-            text: app.change_count > 0 ? Strings.n("top.changes", app.change_count) : Strings.t("top.nothing")
+            text: app.change_text
             color: Theme.muted
             font.pixelSize: Theme.text_md
         }
@@ -74,7 +74,7 @@ Item {
             text: app.change_count > 0 ? Strings.t("top.review_apply") : Strings.t("top.review")
             kind: app.change_count > 0 ? "primary" : "outline"
             iconName: app.change_count > 0 ? "arrow" : ""
-            // Review and Apply come with the Review place.
+            // Review and Apply come with the Review place; until then the plans only show.
             enabled: false
         }
     }

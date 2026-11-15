@@ -115,6 +115,7 @@ ApplicationWindow {
         }
 
         SidePanel {
+            objectName: "sidePanel"
             visible: window.sideShown
             place: window.place
             SplitView.preferredWidth: Theme.inspector_width

@@ -342,6 +342,12 @@ SIZES: dict[str, int] = {
     "window_height": 800,
     "quick_window_width": 1440,  # the Qt Quick window, which needs room for track names beside the workspace
     "quick_window_height": 900,
+    "list_row": 46,  # an episode row of Overview, a file row of the track matrix
+    "pill": 20,  # a track pill in an episode row, a code badge
+    "matrix_label": 150,  # the file names down the track matrix
+    "matrix_column": 82,  # one track signature across the matrix
+    "matrix_header": 150,  # the matrix's column headers with their toggles
+    "track_card": 64,  # a movie's track card
     "window_min_width": 1024,
     "window_min_height": 640,
 }
