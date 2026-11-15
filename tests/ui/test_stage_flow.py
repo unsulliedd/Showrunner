@@ -12,7 +12,7 @@ import pytest
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from showrunner.app.jobs.hashing import stamp
-from showrunner.app.jobs.stages import PlanState, StagePlan, StepResult, TracksStage
+from showrunner.app.jobs.stages import RECHECK, PlanState, Resumed, StagePlan, StepResult, TracksStage
 from showrunner.app.jobs.store import JobStore
 from showrunner.app.library.library import Library
 from showrunner.app.library.loader import LibraryLoader
@@ -52,9 +52,12 @@ class Writer:
     def plan(self, item: MediaItem, profile: Profile) -> StagePlan:
         return StagePlan(self.id, PlanState.CHANGES, None, writes=True)
 
-    def apply(self, plan: StagePlan, cancel: threading.Event | None) -> StepResult:
+    def apply(self, plan: StagePlan, cancel: threading.Event | None, progress: object = None) -> StepResult:
         self.applied.append("done")
         return StepResult(True)
+
+    def resume(self, plan: StagePlan, before: object, cancel: threading.Event | None) -> Resumed:
+        return RECHECK
 
 
 def statuses() -> dict[str, DependencyStatus]:
@@ -248,3 +251,13 @@ def test_the_workspace_comes_back_at_the_next_start(window: MainWindow, theme: T
     later.restore_workspace()
     assert started == [[tmp_path / "lib"]]
     assert later._restore_selection == selected
+
+
+def test_the_mux_switch_turns_mux_on_and_names_its_program(window: MainWindow) -> None:
+    switch = window.stage_bar.switches["mux"]
+    assert not switch.isChecked()  # off in Default
+    wait_until(lambda: bool(window.stages.statuses))  # the programs are checked in the background
+    assert switch.toolTip() == "Needs MKVToolNix. Settings > Programs can download it."
+    switch.setChecked(True)
+    assert window.session.options("mux").enabled
+    window.session.revert()

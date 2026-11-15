@@ -10,13 +10,15 @@ from pathlib import Path
 
 from showrunner.app.jobs.hashing import stamp
 from showrunner.app.jobs.preview import Preview
-from showrunner.app.jobs.stages import PlanState, Stage
+from showrunner.app.jobs.stages import PlanState, Recovery, Stage, StepResult
 from showrunner.app.jobs.store import FINAL, JobStore, StepState, StoredStep
 from showrunner.app.profiles.profile import Profile
 from showrunner.core.media import MediaFile
 from showrunner.tools.process import ProcessCancelledError
 
 Progress = Callable[[int, int], None]  # steps finished, steps in the job
+# The file and stage of the running step, and the fraction of it done; for a step that takes long, a remux.
+StepProgress = Callable[[Path, str, float], None]
 Read = Callable[[Path], MediaFile]  # reads a file's tracks again, as the library load does
 
 
@@ -34,6 +36,7 @@ class StepRecord:
     # The stage's own result (`ApplyResult` for Metadata) for a step run by this call; None otherwise, since only
     # the state and the message are stored.
     detail: object = None
+    written: Path | None = None  # the file's new path, when the step gave it one
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,45 +69,63 @@ def run_job(
     *,
     read: Read,
     progress: Progress | None = None,
+    step_progress: StepProgress | None = None,
     cancel: threading.Event | None = None,
 ) -> JobResult:
     """Run every step that has not finished. A file whose stamp differs from the preview is not written. A step
-    that was running when the app stopped is checked against the file read again: done when the file already
-    shows it, run again when the file is as it was planned, stale otherwise."""
+    that was running when the app stopped is first given to its stage's `resume`; by default it is checked
+    against the file read again: done when the file already shows it, run again when the file is as it was
+    planned, stale otherwise."""
     job = store.load(job_id)
     by_id = {stage.id: stage for stage in stages}
     states = {step.position: (step.state, step.message) for step in job.steps}
     details: dict[int, object] = {}
+    written: dict[int, Path] = {}
     cancelled = False
 
     def record(step: StoredStep, state: StepState, message: str = "") -> None:
         store.set_state(job_id, step.position, state, message)
         states[step.position] = (state, message)
 
-    def attempt(step: StoredStep) -> tuple[StepState, str, object]:
+    def finished(result: StepResult) -> tuple[StepState, str, StepResult]:
+        return StepState.DONE if result.ok else StepState.FAILED, result.message, result
+
+    def attempt(step: StoredStep) -> tuple[StepState, str, StepResult | None]:
         earlier = [states[s.position][0] for s in job.steps if s.path == step.path and s.position < step.position]
         if any(state is not StepState.DONE for state in earlier):
             return StepState.SKIPPED, "", None
         stage = by_id.get(step.plan.stage)
         if stage is None:
             return StepState.FAILED, f"stage {step.plan.stage!r} is not available", None
+        verdict: StepState | None = None
+        message = ""
         if step.state is StepState.RUNNING:
-            verdict, message = _recheck(step, stage, job.profile, read)
+            try:
+                resumed = stage.resume(step.plan, step.stamp, cancel)
+            except ProcessCancelledError:
+                raise
+            except Exception as error:  # a file that cannot be settled fails alone, as in apply
+                return StepState.FAILED, str(error) or type(error).__name__, None
+            if resumed.recovery is Recovery.SETTLED:
+                return finished(resumed.result) if resumed.result is not None else (StepState.STALE, "", None)
+            if resumed.recovery is Recovery.STALE:
+                return StepState.STALE, "", None
+            if resumed.recovery is Recovery.RECHECK:
+                verdict, message = _recheck(step, stage, job.profile, read)
         elif not earlier:
             # Only the file's first step can compare stamps: each step that writes changes them.
             verdict, message = _check_stamp(step)
-        else:
-            verdict, message = None, ""
         if verdict is not None:
             return verdict, message, None
         record(step, StepState.RUNNING)
+        report = None if step_progress is None else lambda fraction: step_progress(step.path, step.plan.stage, fraction)
         try:
-            result = stage.apply(step.plan, cancel)
+            result = stage.apply(step.plan, cancel, report)
         except ProcessCancelledError:
             raise
         except Exception as error:  # one file's failure never stops the batch
             return StepState.FAILED, str(error) or type(error).__name__, None
-        return StepState.DONE if result.ok else StepState.FAILED, result.message, result.detail
+        return finished(result)
 
     for step in job.steps:
         if step.state in FINAL:
@@ -113,18 +134,26 @@ def run_job(
             cancelled = True
             break
         try:
-            state, message, details[step.position] = attempt(step)
+            state, message, result = attempt(step)
         except ProcessCancelledError:
             cancelled = True  # the step keeps its state, so a resume checks what it wrote
             break
+        if result is not None:
+            details[step.position] = result.detail
+            if result.moved_to is not None:
+                written[step.position] = result.moved_to
         record(step, state, message)
         if all(states[s.position][0] is StepState.DONE for s in job.steps if s.path == step.path):
-            _mark_finished(store, job.options_key, step.path)
+            moved = [written[s.position] for s in job.steps if s.path == step.path and s.position in written]
+            _mark_finished(store, job.options_key, moved[-1] if moved else step.path)
         if progress is not None:
             progress(sum(state in FINAL for state, _ in states.values()), len(job.steps))
 
     records = tuple(
-        StepRecord(s.position, s.path, s.plan.stage, *states[s.position], details.get(s.position)) for s in job.steps
+        StepRecord(
+            s.position, s.path, s.plan.stage, *states[s.position], details.get(s.position), written.get(s.position)
+        )
+        for s in job.steps
     )
     return JobResult(job_id, records, cancelled)
 

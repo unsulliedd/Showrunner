@@ -187,7 +187,7 @@ def test_a_cancelled_program_leaves_its_step_to_be_checked(
 ) -> None:
     @dataclass(frozen=True)
     class Cancelled(files.FakeStage):  # type: ignore[misc, name-defined]
-        def apply(self, plan: StagePlan, cancel: threading.Event | None) -> StepResult:
+        def apply(self, plan: StagePlan, cancel: threading.Event | None, progress: object = None) -> StepResult:
             raise ProcessCancelledError("cancelled", ())
 
     def cancelled_read(path: Path) -> MediaFile:

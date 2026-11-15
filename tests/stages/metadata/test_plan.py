@@ -170,11 +170,15 @@ def test_a_remux_carries_the_track_rules_flags_and_the_plan_says_so(b: SimpleNam
     ]
 
 
-def test_a_subtitle_file_that_is_added_needs_a_remux_and_is_not_named(b: SimpleNamespace) -> None:
+def test_a_subtitle_file_that_is_added_is_named_under_its_stand_in_id_for_the_remux(b: SimpleNamespace) -> None:
     item = b.item(b.audio(0, "A"), subtitles=(SubtitleFile(Path("Show Name - S01E01.tr.srt"), None),))
-    result = plan(item, replace(MetadataOptions(), set_title=False), tracks=rules())
+    result = plan(item, replace(MetadataOptions(), set_title=False, untagged_language="tr"), tracks=rules())
     assert result.needs_remux
-    assert changes(result) == [(Property.NAME, 0, "A", "Show Name - S01E01 (Dolby Digital 5.1)")]
+    assert changes(result) == [
+        (Property.NAME, 0, "A", "Show Name - S01E01 (Dolby Digital 5.1)"),
+        (Property.NAME, -1, "", "Show Name - S01E01"),
+        (Property.LANGUAGE, -1, "", "tr"),
+    ]
 
 
 def test_a_disabled_track_stage_adds_no_subtitle_file(b: SimpleNamespace) -> None:

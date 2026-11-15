@@ -504,7 +504,7 @@
   "plan.flag_forced_on": "sets the forced flag on {track}",
   "plan.flag_forced_off": "clears the forced flag on {track}",
   "plan.needs_remux": "Needs a remux.",
-  "plan.needs_remux_nothing": "Needs a remux, and no stage that writes a new file is available yet: nothing on this file is written.",
+  "plan.needs_remux_nothing": "Needs a remux, and Mux is off or MKVToolNix is missing: nothing on this file is written.",
   "plan.unwritten": "Nothing writes these flags: Metadata is off, or MKVToolNix is missing.",
   "plan.turn_on_metadata": "Turn on Metadata",
   "plan.tracks_refused": "No plan for this file: the rules would leave {what} ({reasons}). Apply leaves its tracks as they are.",
@@ -531,5 +531,6 @@
   "sheet.dropped": "Dropped",
   "sheet.old_name": "Now: {name}",
   "plan.state.unwritten": "Changes no stage writes",
-  "plan.state.missing": "Could not be read"
+  "plan.state.missing": "Could not be read",
+  "stage.mux": "Mux"
 }

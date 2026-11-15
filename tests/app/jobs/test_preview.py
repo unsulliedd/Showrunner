@@ -8,7 +8,16 @@ from typing import ClassVar
 import pytest
 
 from showrunner.app.jobs.preview import FileOutcome, preview
-from showrunner.app.jobs.stages import MetadataStage, PlanState, StagePlan, StepResult, TracksStage, pipeline
+from showrunner.app.jobs.stages import (
+    RECHECK,
+    MetadataStage,
+    PlanState,
+    Resumed,
+    StagePlan,
+    StepResult,
+    TracksStage,
+    pipeline,
+)
 from showrunner.app.profiles.profile import Profile
 from showrunner.core.language import Language
 from showrunner.core.media import MediaFile, MediaItem, Movie
@@ -30,8 +39,11 @@ class Mux:
     def plan(self, item: MediaItem, profile: Profile) -> StagePlan:
         return StagePlan(self.id, PlanState.CHANGES, writes=True)
 
-    def apply(self, plan: StagePlan, cancel: threading.Event | None) -> StepResult:
+    def apply(self, plan: StagePlan, cancel: threading.Event | None, progress: object = None) -> StepResult:
         raise AssertionError("a preview applies nothing")
+
+    def resume(self, plan: StagePlan, before: object, cancel: threading.Event | None) -> Resumed:
+        return RECHECK
 
 
 def movie(tmp_path: Path, name: str = "Movie Title (2016).mkv") -> MediaItem:

@@ -8,7 +8,7 @@ from typing import ClassVar
 
 import pytest
 
-from showrunner.app.jobs.stages import PlanState, StagePlan, StepResult
+from showrunner.app.jobs.stages import RECHECK, PlanState, Resumed, StagePlan, StepResult
 from showrunner.app.jobs.store import JobStore
 from showrunner.app.profiles import registered  # noqa: F401
 from showrunner.app.profiles.profile import Profile
@@ -43,7 +43,7 @@ class FakeStage:
             return StagePlan(self.id, PlanState.UNCHANGED, (str(item.file.path), text))
         return StagePlan(self.id, PlanState.CHANGES, (str(item.file.path), text), writes=True)
 
-    def apply(self, plan: StagePlan, cancel: threading.Event | None) -> StepResult:
+    def apply(self, plan: StagePlan, cancel: threading.Event | None, progress: object = None) -> StepResult:
         path = Path(plan.plan[0])  # type: ignore[index]
         if path.name == self.crash_on and not self.crash_after_write:
             raise Killed
@@ -55,6 +55,9 @@ class FakeStage:
             raise Killed
         self.applied.append(path.name)
         return StepResult(True)
+
+    def resume(self, plan: StagePlan, before: object, cancel: threading.Event | None) -> Resumed:
+        return RECHECK
 
 
 @dataclass(frozen=True)

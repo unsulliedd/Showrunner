@@ -1,4 +1,6 @@
 import os
+import shutil
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -120,3 +122,55 @@ def make(tmp_path: Path) -> Callable[..., Path]:
         return path
 
     return make_file
+
+
+def find_program(name: str) -> Path | None:
+    """A program on PATH, or MKVToolNix's in its default folder."""
+    if found := shutil.which(name):
+        return Path(found)
+    folder = Path(os.environ.get("PROGRAMFILES", "")) / "MKVToolNix"
+    return next(iter(folder.glob(f"{name}.exe")), None) if name.startswith("mkv") else None
+
+
+# Turkish text in the code page such files were written in before UTF-8.
+TURKISH_LINE = "Güzel şehir"
+
+
+@dataclass(frozen=True)
+class RealEpisode:
+    """A small Matroska file made in `tmp_path`: video, English audio and French audio, with a Turkish subtitle
+    file in Windows-1254 beside it."""
+
+    video: Path
+    subtitle: Path
+    mkvmerge: Path
+
+
+@pytest.fixture
+def real_episode(tmp_path: Path) -> RealEpisode:
+    ffmpeg, mkvmerge = find_program("ffmpeg"), find_program("mkvmerge")
+    if ffmpeg is None or mkvmerge is None:
+        pytest.skip("ffmpeg and MKVToolNix are needed")
+    work = tmp_path / "work"
+    work.mkdir()
+    source = work / "source.mkv"
+    subprocess.run(
+        [
+            ffmpeg, "-v", "error", "-f", "lavfi", "-i", "color=c=black:s=64x64:r=10:d=2",
+            "-f", "lavfi", "-i", "sine=d=2", "-f", "lavfi", "-i", "sine=f=880:d=2",
+            "-map", "0", "-map", "1", "-map", "2", "-c:v", "mpeg4", "-c:a", "aac", source,
+        ],
+        check=True,
+        capture_output=True,
+    )  # fmt: skip
+    folder = tmp_path / "Show Name" / "Season 01"
+    folder.mkdir(parents=True)
+    video = folder / "Show Name - S01E01.mkv"
+    subprocess.run(
+        [mkvmerge, "-o", video, "--language", "1:eng", "--language", "2:fre", "--title", "Old Title", source],
+        check=True,
+        capture_output=True,
+    )
+    subtitle = folder / "Show Name - S01E01.tr.srt"
+    subtitle.write_bytes(f"1\r\n00:00:00,000 --> 00:00:01,000\r\n{TURKISH_LINE}\r\n".encode("cp1254"))
+    return RealEpisode(video, subtitle, mkvmerge)

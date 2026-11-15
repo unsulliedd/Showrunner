@@ -15,9 +15,11 @@ from showrunner.app.library.loader import BackgroundJob
 
 class JobRunner(QObject):
     """One job at a time, started fresh or resumed alike. `progress` counts finished steps; `finished` carries a
-    `JobResult`, whose `cancelled` is set when Cancel stopped it."""
+    `JobResult`, whose `cancelled` is set when Cancel stopped it. `step_progress` carries the file, the stage and
+    the fraction done of a long step."""
 
     progress = Signal(int, int)
+    step_progress = Signal(object, str, float)
     finished = Signal(object)
     failed = Signal(object)
 
@@ -45,6 +47,7 @@ class JobRunner(QObject):
                 self._stages,
                 read=self._read,
                 progress=self.progress.emit,
+                step_progress=self.step_progress.emit,
                 cancel=self._cancel,
             )
 

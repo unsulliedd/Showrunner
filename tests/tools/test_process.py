@@ -64,3 +64,32 @@ def test_cancel_stops_the_program() -> None:
 def test_stdin_is_closed() -> None:
     result = run(python("import sys; print(repr(sys.stdin.read()))"), timeout=10)
     assert result.stdout.strip() == "''"
+
+
+def test_on_line_gets_each_line_while_the_program_runs() -> None:
+    seen: list[tuple[str, float]] = []
+    code = (
+        "import sys, time\n"
+        "for n in range(3):\n    print(f'step {n}', flush=True)\n    time.sleep(0.2)\n"
+        "print('e', file=sys.stderr)"
+    )
+    result = run(python(code), on_line=lambda line: seen.append((line, time.monotonic())))
+    assert [line for line, _ in seen] == ["step 0", "step 1", "step 2"]
+    assert seen[-1][1] - seen[0][1] > 0.2  # delivered as written, not all at the end
+    assert result.stdout == "step 0\nstep 1\nstep 2"
+    assert result.stderr.strip() == "e"
+
+
+def test_cancel_stops_a_streaming_program() -> None:
+    cancel = threading.Event()
+    lines: list[str] = []
+
+    def on_line(line: str) -> None:
+        lines.append(line)
+        cancel.set()
+
+    started = time.monotonic()
+    with pytest.raises(ProcessCancelledError):
+        run(python("import time\nprint('go', flush=True)\ntime.sleep(30)"), cancel=cancel, on_line=on_line)
+    assert lines == ["go"]
+    assert time.monotonic() - started < 10

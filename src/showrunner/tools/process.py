@@ -6,7 +6,7 @@ import os
 import subprocess
 import threading
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -65,12 +65,16 @@ def run(
     check: bool = False,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
+    on_line: Callable[[str], None] | None = None,
 ) -> RunResult:
     """Run a program to the end and capture its output, decoded as UTF-8 with bad bytes replaced.
 
     With `check`, a non-zero exit code raises ProcessFailedError. Stdin is closed, so a program that
-    asks a question fails at once instead of waiting forever.
+    asks a question fails at once instead of waiting forever. `on_line` receives each line of standard
+    output as it is written, on a thread of its own, for programs that report progress.
     """
+    if on_line is not None:
+        return _run_streaming(args, on_line, timeout=timeout, cancel=cancel, check=check, cwd=cwd, env=env)
     command = tuple(str(a) for a in args)
     try:
         process = subprocess.Popen(
@@ -115,6 +119,74 @@ def open_with_shell(path: Path) -> None:
         os.startfile(path)  # type: ignore[attr-defined]  # Windows only
     except OSError as error:
         raise ProgramNotFoundError(str(error), [str(path)]) from error
+
+
+def _run_streaming(
+    args: Sequence[str | Path],
+    on_line: Callable[[str], None],
+    *,
+    timeout: float | None,
+    cancel: threading.Event | None,
+    check: bool,
+    cwd: Path | None,
+    env: Mapping[str, str] | None,
+) -> RunResult:
+    command = tuple(str(a) for a in args)
+    try:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=cwd,
+            env=None if env is None else dict(env),
+            creationflags=_CREATION_FLAGS,
+        )
+    except OSError as error:
+        raise ProgramNotFoundError(str(error), command) from error
+    assert process.stdout is not None
+    assert process.stderr is not None
+    out: list[str] = []
+    err: list[bytes] = []
+
+    def pump_out() -> None:
+        for raw in process.stdout:  # type: ignore[union-attr]
+            line = _decode(raw).rstrip("\r\n")
+            out.append(line)
+            on_line(line)
+
+    # Both pipes are drained, so a program that writes much to standard error cannot block on a full pipe.
+    readers = [
+        threading.Thread(target=pump_out, daemon=True),
+        threading.Thread(target=lambda: err.append(process.stderr.read()), daemon=True),  # type: ignore[union-attr]
+    ]
+    for reader in readers:
+        reader.start()
+    deadline = None if timeout is None else time.monotonic() + timeout
+    stopped: ProcessError | None = None
+    with process:
+        while True:
+            try:
+                process.wait(timeout=_POLL_SECONDS)
+                break
+            except subprocess.TimeoutExpired:
+                if cancel is not None and cancel.is_set():
+                    stopped = ProcessCancelledError("cancelled", command)
+                elif deadline is not None and time.monotonic() >= deadline:
+                    stopped = ProcessTimeoutError(f"no result after {timeout} s", command)
+                if stopped is not None:
+                    process.kill()
+                    process.wait()
+                    break
+        # The readers end at the end of the output; they are joined before the pipes close.
+        for reader in readers:
+            reader.join()
+    if stopped is not None:
+        raise stopped
+    result = RunResult(command, process.returncode, "\n".join(out), _decode(b"".join(err)))
+    if check and result.returncode != 0:
+        raise ProcessFailedError(result)
+    return result
 
 
 def _stop(process: subprocess.Popen[bytes]) -> None:

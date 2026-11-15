@@ -136,9 +136,9 @@ def plan_metadata(
     # An empty result leaves a title or name alone: a template never clears one by accident.
     if naming.enabled and options.set_title and (title := render("title_template", None)) and title != file.title:
         changes.append(HeaderChange(Property.TITLE, file.title, title))
+    # A subtitle file that is added is planned under its stand-in track's negative ID; only a remux adds files, so
+    # those changes go into the remux and never to mkvpropedit.
     for planned in track_plan.kept:
-        if planned.external is not None:
-            continue  # a subtitle file that is added has no header yet
         track = planned.track
         if naming.enabled and options.set_track_names:
             name = render(_TEMPLATES[track.kind], planned)

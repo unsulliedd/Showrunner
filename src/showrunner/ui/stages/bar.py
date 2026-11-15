@@ -20,7 +20,8 @@ from showrunner.ui.theme.manager import ThemeManager
 from showrunner.ui.theme.tokens import SIZES
 
 # The stages with an engine, in pipeline order, and the program each one needs.
-STAGES = (("tracks", None), ("metadata", "mkvtoolnix"))
+# Mux has a switch only, so it can be tried; its options are the profile file's until the redesign.
+STAGES = (("tracks", None), ("mux", "mkvtoolnix"), ("metadata", "mkvtoolnix"))
 
 
 def _separator() -> QFrame:

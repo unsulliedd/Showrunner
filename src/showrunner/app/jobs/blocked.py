@@ -11,6 +11,7 @@ from showrunner.core.language import Language
 from showrunner.core.media import MediaFile, MediaItem, Movie
 from showrunner.core.naming import NamingContext, NamingOptions, Problem, TokenProblem, check_tokens, preview
 from showrunner.stages.metadata import MetadataOptions
+from showrunner.stages.mux import MuxOptions, NameField, check_names
 from showrunner.stages.tracks import RuleProblem, TracksOptions, check_rules
 
 TITLE_TEMPLATE = "title_template"
@@ -30,10 +31,12 @@ class StageBlock:
     tokens: tuple[TokenProblem, ...] = ()
     rules: tuple[RuleProblem, ...] = ()
     language: str = ""  # an untagged-track language that is not one
+    names: tuple[NameField, ...] = ()  # Mux fields that cannot be part of a file name
 
     @property
     def count(self) -> int:
-        return sum(len(p) for p in self.templates.values()) + len(self.tokens) + len(self.rules) + bool(self.language)
+        problems = sum(len(p) for p in self.templates.values()) + len(self.tokens) + len(self.rules)
+        return problems + bool(self.language) + len(self.names)
 
 
 def template_problems(naming: NamingOptions, template: str) -> tuple[Problem, ...]:
@@ -67,4 +70,8 @@ def blocked_stages(profile: Profile) -> dict[str, StageBlock]:
         block = StageBlock("metadata", templates, tokens, language=bad_language)
         if block.count:
             found["metadata"] = block
+
+    mux: MuxOptions = profile.for_stage("mux")
+    if mux.enabled and (names := check_names(mux)):
+        found["mux"] = StageBlock("mux", {}, names=names)
     return found
