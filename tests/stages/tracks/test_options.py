@@ -16,14 +16,12 @@ from showrunner.stages.tracks import (
 def test_registered_and_the_defaults_change_nothing() -> None:
     assert REGISTRY.get("tracks") is TracksOptions
     assert REGISTRY.defaults()["tracks"] == TracksOptions()
-    assert not TracksOptions().enabled
     assert TracksOptions().rules == []
     assert to_sparse(TracksOptions()) == {}
 
 
 def test_a_rule_list_round_trips() -> None:
     options = TracksOptions(
-        enabled=True,
         rules=[
             TrackRule(
                 label="Keep Turkish subtitles",

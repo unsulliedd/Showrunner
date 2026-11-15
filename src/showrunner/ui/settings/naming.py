@@ -11,7 +11,6 @@ from PySide6.QtCore import QModelIndex, QSortFilterProxyModel, Qt, QTimer, Signa
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QHeaderView,
@@ -90,11 +89,8 @@ class NamingPage(SettingsPage):
         self.source.addItems(SOURCES)
         self.source.setCurrentText(self._source or tr("settings.naming.source_guess"))
         self.source.currentTextChanged.connect(self._on_source)
-        self.set_names = QCheckBox(tr("settings.naming.set_names"))
-        self.set_names.toggled.connect(lambda on: session.update("naming", enabled=on))
         self.title_row.addWidget(label(tr("settings.naming.source"), "muted"), 0, Qt.AlignmentFlag.AlignTop)
         self.title_row.addWidget(self.source, 0, Qt.AlignmentFlag.AlignTop)
-        self.title_row.addWidget(self.set_names, 0, Qt.AlignmentFlag.AlignTop)
 
         columns = QHBoxLayout()
         columns.setSpacing(SIZES["space_xl"])
@@ -248,9 +244,6 @@ class NamingPage(SettingsPage):
             if self._item
             else tr("settings.naming.preview_sample")
         )
-        self.set_names.blockSignals(True)
-        self.set_names.setChecked(naming.enabled)
-        self.set_names.blockSignals(False)
         names = self._names()
         for template, editor in self.editors.items():
             editor.field.set_text(getattr(naming, template))

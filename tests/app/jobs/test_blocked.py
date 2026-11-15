@@ -6,7 +6,7 @@ from showrunner.app.jobs.blocked import blocked_stages
 from showrunner.app.profiles import registered  # noqa: F401
 from showrunner.app.profiles.profile import Profile
 from showrunner.core.naming import CustomKind, CustomToken, ProblemKind
-from showrunner.stages.tracks import TrackMatch, TrackRule, TracksOptions
+from showrunner.stages.tracks import TrackMatch, TrackRule
 
 
 def profile(**stages: object) -> Profile:
@@ -28,11 +28,12 @@ def test_an_unknown_token_blocks_metadata() -> None:
     assert blocks["metadata"].count == 1
 
 
-def test_an_unused_template_blocks_nothing() -> None:
-    broken = {"audio_track_template": "{nope}"}
-    assert blocked_stages(profile(naming=broken, metadata={"set_track_names": False})) == {}
-    assert blocked_stages(profile(naming={**broken, "enabled": False})) == {}
-    assert blocked_stages(profile(naming=broken, metadata={"enabled": False})) == {}
+def test_an_empty_template_blocks_nothing_and_needs_no_token_check() -> None:
+    empty = dict.fromkeys(
+        ("title_template", "video_track_template", "audio_track_template", "subtitle_track_template"), ""
+    )
+    broken_token = [CustomToken("group", CustomKind.PATTERN, "(")]
+    assert blocked_stages(profile(naming={**empty, "custom_tokens": broken_token})) == {}
 
 
 def test_a_broken_token_definition_blocks_metadata() -> None:
@@ -46,9 +47,7 @@ def test_an_untagged_language_that_is_not_one_blocks_metadata() -> None:
 
 def test_a_broken_rule_blocks_tracks_only_while_it_is_on() -> None:
     rule = TrackRule(match=TrackMatch(languages=["egn"]))
-    blocks = blocked_stages(profile(tracks={"enabled": True, "rules": [rule]}))
+    blocks = blocked_stages(profile(tracks={"rules": [rule]}))
     assert list(blocks) == ["tracks"]
     assert blocks["tracks"].rules[0].detail == "egn"
-    off = TracksOptions(enabled=True, rules=[replace(rule, enabled=False)])
-    assert blocked_stages(profile(tracks={"enabled": off.enabled, "rules": off.rules})) == {}
-    assert blocked_stages(profile(tracks={"enabled": False, "rules": [rule]})) == {}
+    assert blocked_stages(profile(tracks={"rules": [replace(rule, enabled=False)]})) == {}

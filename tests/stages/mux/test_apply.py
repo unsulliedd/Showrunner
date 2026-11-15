@@ -59,8 +59,8 @@ def make_plan(episode: Any, **mux: Any) -> tuple[MuxPlan, Programs]:
     naming = replace(NamingOptions(), title_template="{show} S{season:02}E{episode:02}")
     result = plan_mux(
         item,
-        MuxOptions(enabled=True, **mux),
-        TracksOptions(enabled=True, rules=[DROP_FRENCH]),
+        MuxOptions(**mux),
+        TracksOptions(rules=[DROP_FRENCH]),
         MetadataOptions(),
         naming,
     )

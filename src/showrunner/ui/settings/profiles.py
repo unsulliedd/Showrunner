@@ -82,13 +82,12 @@ def differences(profile: Profile) -> list[tuple[str, str]]:
         if not sparse:
             lines.append((name, tr("settings.profiles.same")))
             continue
-        state = tr("settings.profiles.on" if getattr(options, "enabled", True) else "settings.profiles.off")
         if stage_id == "tracks":
             on = sum(rule.enabled for rule in options.rules)
             detail = tr_plural("settings.profiles.rules", len(options.rules), on=on)
         else:
             detail = tr_plural("settings.profiles.changed", len(sparse))
-        lines.append((name, tr("settings.profiles.line", state=state, detail=detail)))
+        lines.append((name, detail))
     return lines
 
 

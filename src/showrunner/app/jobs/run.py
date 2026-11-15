@@ -8,6 +8,7 @@ from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from showrunner.app.jobs.groups import ChangeGroup
 from showrunner.app.jobs.hashing import stamp
 from showrunner.app.jobs.preview import Preview
 from showrunner.app.jobs.stages import PlanState, Recovery, Stage, StepResult
@@ -23,7 +24,7 @@ Read = Callable[[Path], MediaFile]  # reads a file's tracks again, as the librar
 
 
 class StalePreviewError(Exception):
-    """The options, the stages or the blocked stages changed since the preview."""
+    """The options, the stages, the blocked stages or the groups left out changed since the preview."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,12 +54,22 @@ def create_job(
     stages: Sequence[Stage],
     *,
     blocked: Collection[str] = (),
+    left_out: Collection[ChangeGroup] = (),
+    left_out_files: Collection[Path] = (),
 ) -> int:
-    """Store one step per plan that writes, in file order and then pipeline order. `profile`, `stages` and
-    `blocked` are the current ones; a preview made with others raises `StalePreviewError`."""
-    if not preview.is_current(profile, stages, blocked):
+    """Store one step per plan that writes, in file order and then pipeline order, for every file but those in
+    `left_out_files`. `profile`, `stages`, `blocked` and `left_out` are the current ones; a preview made with others
+    raises `StalePreviewError`. A file's plans do not depend on which files are left out, so leaving one out or
+    putting it back needs no new preview."""
+    if not preview.is_current(profile, stages, blocked, left_out):
         raise StalePreviewError("the options changed since the preview")
-    steps = [(f.item, f.stamp, plan) for f in preview.files if f.stamp is not None for plan in f.writes]
+    out = set(left_out_files)
+    steps = [
+        (f.item, f.stamp, plan)
+        for f in preview.files
+        if f.stamp is not None and f.item.file.path not in out
+        for plan in f.writes
+    ]
     return store.create(preview.options_key, preview.profile, steps)
 
 

@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import fields
-from typing import Any, get_type_hints
+from typing import Any
 
 from showrunner.core.options.serialization import validate_declaration
 
@@ -20,8 +19,6 @@ class OptionsRegistry:
             if stage_id in self._classes:
                 raise ValueError(f"stage {stage_id!r} is already registered")
             validate_declaration(cls)
-            if "enabled" not in {f.name for f in fields(cls)} or get_type_hints(cls)["enabled"] is not bool:
-                raise TypeError(f"{cls.__name__} needs an `enabled: bool` field")
             self._classes[stage_id] = cls
             return cls
 

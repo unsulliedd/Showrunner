@@ -1,5 +1,5 @@
-"""Preview: every switched-on stage planned for each file of a batch, with the stamps that tell whether the
-preview still holds. Files are read for their stamp only; nothing is written."""
+"""Preview: every stage planned for each file of a batch, with the stamps that tell whether the preview still holds.
+Files are read for their stamp only; nothing is written."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from collections.abc import Callable, Collection, Iterable, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
+from showrunner.app.jobs.groups import ChangeGroup, without
 from showrunner.app.jobs.hashing import FileStamp, stamp
 from showrunner.app.jobs.stages import PlanState, Stage, StagePlan
 from showrunner.app.profiles.profile import Profile, profile_to_json
@@ -17,16 +18,20 @@ from showrunner.core.media import MediaItem
 # (content hash, options key) -> True when a file with that content was finished with those options.
 Finished = Callable[[str, str], bool]
 
+# A blocked stage's options are planned as if they asked for nothing, so that no other stage reads them either.
+_BLOCKED_GROUP = {"tracks": ChangeGroup.TRACKS, "metadata": ChangeGroup.NAMES}
+
 
 class FileOutcome(StrEnum):
     """What Apply would do to a file, the worst case first."""
 
     MISSING = "missing"  # the file could not be read for its stamp
-    NEEDS_REMUX = "needs-remux"  # a plan needs a new file and no stage that writes one is on: nothing is written
+    # A plan needs a new file and no stage can write one (mkvmerge is missing or Mux is blocked): nothing is written.
+    NEEDS_REMUX = "needs-remux"
     REFUSED = "refused"  # a stage refused the file; the stages that did plan it still apply
     CHANGES = "changes"
-    # A stage planned changes that no switched-on stage writes, such as flags the track rules move while
-    # Metadata is off; nothing is written.
+    # A stage planned changes that no stage writes, such as flags the track rules move while mkvpropedit is missing
+    # or Metadata is blocked; nothing is written.
     UNWRITTEN = "unwritten"
     UNCHANGED = "unchanged"
 
@@ -35,7 +40,7 @@ class FileOutcome(StrEnum):
 class FilePreview:
     item: MediaItem
     stamp: FileStamp | None  # None when the file could not be read
-    plans: tuple[StagePlan, ...]  # switched-on stages in pipeline order
+    plans: tuple[StagePlan, ...]  # in pipeline order
     outcome: FileOutcome
     error: str = ""  # why the stamp could not be taken
     # This content was finished before with the same options, under this name or another. The plans are made
@@ -56,12 +61,19 @@ class FilePreview:
 @dataclass(frozen=True, slots=True)
 class Preview:
     options_key: str  # see `options_key`
-    # The options the plans were made with: blocked stages are switched off in it, as they were for planning.
+    # The options the plans were made with: the left-out groups and the blocked stages ask for nothing in it, as
+    # they did for planning. A job stores it, so a resumed step is planned again with the same options.
     profile: Profile
     files: tuple[FilePreview, ...]
 
-    def is_current(self, profile: Profile, stages: Sequence[Stage], blocked: Collection[str] = ()) -> bool:
-        return options_key(profile, stages, blocked) == self.options_key
+    def is_current(
+        self,
+        profile: Profile,
+        stages: Sequence[Stage],
+        blocked: Collection[str] = (),
+        left_out: Collection[ChangeGroup] = (),
+    ) -> bool:
+        return options_key(profile, stages, blocked, left_out) == self.options_key
 
     def with_files(self, other: Preview) -> Preview:
         """This preview with the files of `other` in place of the ones with the same path; for planning one file
@@ -73,10 +85,18 @@ class Preview:
         return replace(self, files=kept + tuple(fresh.values()))
 
 
-def options_key(profile: Profile, stages: Sequence[Stage], blocked: Collection[str] = ()) -> str:
+def options_key(
+    profile: Profile, stages: Sequence[Stage], blocked: Collection[str] = (), left_out: Collection[ChangeGroup] = ()
+) -> str:
     """A digest of everything besides the files that decides the plans: the options, the stages with their
-    settings, and the blocked stages. The profile's name is left out, so renaming it changes nothing."""
-    data = {"options": profile_to_json(profile), "stages": [repr(s) for s in stages], "blocked": sorted(blocked)}
+    settings, the blocked stages and the groups left out of the run. The profile's name is left out, so renaming it
+    changes nothing."""
+    data = {
+        "options": profile_to_json(profile),
+        "stages": [repr(s) for s in stages],
+        "blocked": sorted(blocked),
+        "left_out": sorted(left_out),
+    }
     return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
 
@@ -86,18 +106,21 @@ def preview(
     stages: Sequence[Stage],
     *,
     blocked: Collection[str] = (),
+    left_out: Collection[ChangeGroup] = (),
     finished: Finished | None = None,
 ) -> Preview:
-    """Plan every switched-on stage for each item. `blocked` holds the ids of stages whose options have a
-    problem: such a stage is planned for no file, and the stages that read its options see it switched off, so a
-    broken rule cannot drive another stage's plan."""
-    key = options_key(profile, stages, blocked)
+    """Plan every stage for each item. `blocked` holds the ids of stages whose options have a problem: such a
+    stage is planned for no file, and the stages that read its options see them asking for nothing, so a broken
+    rule cannot drive another stage's plan. `left_out` holds the groups this run leaves out, planned as if their
+    options were empty; Review shows what a left-out group would do from a second preview with every group in."""
+    key = options_key(profile, stages, blocked, left_out)
+    # A problem in a group the run leaves out decides nothing, so it blocks nothing.
+    blocked = {s for s in blocked if s not in _BLOCKED_GROUP or _BLOCKED_GROUP[s] not in left_out}
     planning = profile
-    for stage_id in blocked:
-        planning = planning.with_options(stage_id, replace(planning.for_stage(stage_id), enabled=False))
-    active = [s for s in stages if profile.for_stage(s.id).enabled]
-    can_remux = any(s.remuxes for s in active if s.id not in blocked)
-    files = tuple(_preview_file(item, planning, active, blocked, can_remux, key, finished) for item in items)
+    for group in {*left_out, *(_BLOCKED_GROUP[s] for s in blocked if s in _BLOCKED_GROUP)}:
+        planning = without(planning, group)
+    can_remux = any(s.remuxes for s in stages if s.id not in blocked)
+    files = tuple(_preview_file(item, planning, stages, blocked, can_remux, key, finished) for item in items)
     return Preview(key, planning, files)
 
 

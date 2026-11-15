@@ -129,7 +129,7 @@ def test_preview_plans_the_batch_and_names_its_reach(window: MainWindow) -> None
 
 def test_a_change_of_options_makes_the_preview_out_of_date(window: MainWindow) -> None:
     run_preview(window)
-    window.session.update("tracks", enabled=True)
+    window.session.update("tracks", flags_from_names=False)
     assert not window.stages.is_current
     assert not window.stage_bar.apply.isEnabled()
     assert window.stage_bar.stamp.text() == "Options changed since the preview"
@@ -177,7 +177,7 @@ def test_a_template_problem_blocks_metadata_and_says_where(window: MainWindow) -
 
 def test_a_refused_plan_needs_a_look_and_keeps_the_other_stages(window: MainWindow) -> None:
     drop_audio = TrackRule(match=TrackMatch(kind=KindTest.AUDIO), verdict=Verdict.DROP)
-    window.session.update("tracks", enabled=True, rules=[drop_audio])
+    window.session.update("tracks", rules=[drop_audio])
     run_preview(window)
     file = window.stages.preview.files[0]
     assert file.outcome.value == "refused"
@@ -215,7 +215,7 @@ def test_an_unresumable_job_is_offered_for_discard_only(window: MainWindow, tmp_
 
 def test_a_broken_rule_blocks_tracks_with_a_way_to_the_rule(window: MainWindow) -> None:
     rule = TrackRule(label="Keep", match=TrackMatch(languages=["egn"]), verdict=Verdict.KEEP)
-    window.session.update("tracks", enabled=True, rules=[rule])
+    window.session.update("tracks", rules=[rule])
     run_preview(window)
     path = window.stages.preview.files[0].item.file.path
     window.panel.select(window.model.index_for_path(path))
@@ -231,7 +231,7 @@ def test_a_broken_rule_blocks_tracks_with_a_way_to_the_rule(window: MainWindow) 
 
 
 def test_closing_with_unsaved_changes_asks_first(window: MainWindow, monkeypatch: pytest.MonkeyPatch) -> None:
-    window.session.update("tracks", enabled=True)
+    window.session.update("tracks", flags_from_names=False)
     monkeypatch.setattr(profiles, "ask_unsaved", lambda parent, name: QMessageBox.StandardButton.Cancel)
     assert not window.close()
     assert window.isVisible()
@@ -253,11 +253,8 @@ def test_the_workspace_comes_back_at_the_next_start(window: MainWindow, theme: T
     assert later._restore_selection == selected
 
 
-def test_the_mux_switch_turns_mux_on_and_names_its_program(window: MainWindow) -> None:
+def test_the_mux_button_names_the_program_it_lacks(window: MainWindow) -> None:
     switch = window.stage_bar.switches["mux"]
-    assert not switch.isChecked()  # off in Default
+    assert not switch.isCheckable()
     wait_until(lambda: bool(window.stages.statuses))  # the programs are checked in the background
     assert switch.toolTip() == "Needs MKVToolNix. Settings > Programs can download it."
-    switch.setChecked(True)
-    assert window.session.options("mux").enabled
-    window.session.revert()

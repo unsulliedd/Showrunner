@@ -88,11 +88,9 @@ def plan_mux(
 ) -> MuxPlan | MuxRefused | None:
     """The new file for the item, the reason it cannot be written, or None when the track plan needs no remux.
 
-    With Metadata off or refusing the file, names, languages and the title stay as they are; the track plan's
-    flags are written all the same, since the remux carries out the whole track plan.
+    With Metadata refusing the file, names, languages and the title stay as they are; the track plan's flags are
+    written all the same, since the remux carries out the whole track plan.
     """
-    if not options.enabled:
-        return None
     track_plan = plan_tracks(item, tracks)
     if isinstance(track_plan, PlanRefused) or not track_plan.needs_remux:
         return None

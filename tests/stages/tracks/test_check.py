@@ -12,7 +12,7 @@ from showrunner.stages.tracks import (
 
 
 def rules(*matches: TrackMatch) -> TracksOptions:
-    return TracksOptions(enabled=True, rules=[TrackRule(match=m) for m in matches])
+    return TracksOptions(rules=[TrackRule(match=m) for m in matches])
 
 
 def test_good_rules_have_no_problems() -> None:

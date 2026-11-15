@@ -68,7 +68,8 @@ class Resumed:
 
 
 class Stage(Protocol):
-    """One stage of the pipeline. Its options are `profile.for_stage(id)`, and their `enabled` is its switch.
+    """One stage of the pipeline. Its options are `profile.for_stage(id)`; it plans changes only where they ask
+    for one.
 
     `plan` reads nothing from disk and writes nothing. `apply` is called only with a plan whose `writes` is set,
     and only from a background thread; `progress`, when given, takes the fraction done. `resume` is asked about a

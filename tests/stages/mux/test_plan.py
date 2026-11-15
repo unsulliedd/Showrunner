@@ -14,8 +14,8 @@ from showrunner.stages.mux import plan_mux as plan_mux_
 from showrunner.stages.tracks import FlagShape, KindTest, TrackMatch, TrackRule, TracksOptions, Verdict
 
 DROP_FRENCH = TrackRule(match=TrackMatch(kind=KindTest.AUDIO, languages=["fre"]), verdict=Verdict.DROP)
-TRACKS = TracksOptions(enabled=True, rules=[DROP_FRENCH])
-ON = MuxOptions(enabled=True)
+TRACKS = TracksOptions(rules=[DROP_FRENCH])
+ON = MuxOptions()
 
 
 def plan_mux(
@@ -37,9 +37,9 @@ def test_nothing_to_remux_without_a_drop_or_an_added_file(b: SimpleNamespace) ->
     assert plan_mux(item) is None
 
 
-def test_mux_off_or_tracks_off_plans_nothing(b: SimpleNamespace) -> None:
-    assert plan_mux(two_audio(b), mux=MuxOptions(enabled=False)) is None
-    assert plan_mux(two_audio(b), tracks=replace(TRACKS, enabled=False)) is None
+def test_no_rule_that_is_on_plans_nothing(b: SimpleNamespace) -> None:
+    assert plan_mux(two_audio(b), tracks=TracksOptions()) is None
+    assert plan_mux(two_audio(b), tracks=TracksOptions(rules=[replace(DROP_FRENCH, enabled=False)])) is None
 
 
 def test_tracks_read_without_mkvmerge_are_refused(b: SimpleNamespace) -> None:
@@ -57,9 +57,12 @@ def test_the_plan_keeps_the_rules_tracks_with_metadatas_names_and_title(b: Simpl
     assert result.output == result.source  # a Matroska file keeps its name
 
 
-def test_metadata_off_keeps_names_and_title_but_writes_the_rules_flags(b: SimpleNamespace) -> None:
+def test_empty_templates_keep_names_and_title_but_the_rules_flags_are_written(b: SimpleNamespace) -> None:
     rules = [DROP_FRENCH, TrackRule(match=TrackMatch(kind=KindTest.VIDEO), default=FlagShape.FIRST)]
-    result = plan_mux(two_audio(b, title="Old"), tracks=replace(TRACKS, rules=rules), metadata=MetadataOptions(False))
+    empty = NamingOptions(
+        title_template="", video_track_template="", audio_track_template="", subtitle_track_template=""
+    )
+    result = plan_mux(two_audio(b, title="Old"), tracks=replace(TRACKS, rules=rules), naming=empty)
     assert isinstance(result, MuxPlan)
     assert result.title == "Old"
     assert [t.name for t in result.tracks] == ["", "English"]

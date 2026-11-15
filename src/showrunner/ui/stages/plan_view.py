@@ -93,7 +93,7 @@ def tracks_line(plan: StagePlan, file: FilePreview, blocks: dict[str, StageBlock
     if file.outcome is FileOutcome.NEEDS_REMUX:
         return Line("tracks", f"{text} {tr('plan.needs_remux_nothing')}", "refused")
     if file.outcome is FileOutcome.UNWRITTEN:
-        return Line("tracks", f"{text} {tr('plan.unwritten')}", "refused", ((tr("plan.turn_on_metadata"), "", -1),))
+        return Line("tracks", f"{text} {tr('plan.unwritten')}", "refused")
     return Line("tracks", text + (f" {tr('plan.needs_remux')}" if result.needs_remux else ""), "planned")
 
 
@@ -144,7 +144,7 @@ def state_of(file: FilePreview) -> tuple[str, str | None]:
 
 
 class PlannedChanges(QWidget):
-    """`open_page` asks for a Settings page (empty: switch Metadata on); `open_rule` for a rule by index;
+    """`open_page` asks for a Settings page; `open_rule` for a rule by index;
     `leave_out` toggles whether Apply skips this file."""
 
     open_page = Signal(str)

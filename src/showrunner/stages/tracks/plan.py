@@ -104,11 +104,12 @@ def describe_track(track: Track) -> str:
 def plan_tracks(item: MediaItem, options: TracksOptions) -> TrackPlan | PlanRefused:
     """Apply the rules to the tracks of the file and to its paired subtitle files."""
     entries = [(track, None) for track in item.file.tracks]
-    if not options.enabled:
+    active = [(index, rule) for index, rule in enumerate(options.rules) if rule.enabled]
+    # Without a rule that is on, nothing was asked for: paired subtitle files are not added either.
+    if not active:
         return TrackPlan(tuple(PlannedTrack(track) for track, _ in entries), ())
     entries += [(_stand_in(subtitle, index), subtitle) for index, subtitle in enumerate(item.subtitles)]
 
-    active = [(index, rule) for index, rule in enumerate(options.rules) if rule.enabled]
     from_names = options.flags_from_names
     kept: list[tuple[Track, SubtitleFile | None]] = []
     dropped: list[DroppedTrack] = []

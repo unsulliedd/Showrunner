@@ -108,10 +108,6 @@ class TracksPage(SettingsPage):
         self._item: MediaItem | None = None
         self._loading = False
 
-        self.use = QCheckBox(tr("settings.tracks.use"))
-        self.use.toggled.connect(lambda on: session.update("tracks", enabled=on))
-        self.title_row.addWidget(self.use, 0, Qt.AlignmentFlag.AlignTop)
-
         columns = QHBoxLayout()
         columns.setSpacing(SIZES["space_xl"])
         left = QVBoxLayout()
@@ -284,7 +280,6 @@ class TracksPage(SettingsPage):
     def refresh(self) -> None:
         options = self.options
         self._loading = True
-        self.use.setChecked(options.enabled)
         self.from_names.setChecked(options.flags_from_names)
         row = max(self.list.currentRow(), 0)
         problems = {p.rule_index for p in self.problems()}
@@ -388,7 +383,7 @@ class TracksPage(SettingsPage):
         options = self.options
         plan = plan_tracks(item, options)
         broken = [p for p in self.problems() if options.rules[p.rule_index].enabled]
-        if broken and options.enabled:
+        if broken:
             numbers = ", ".join(str(n + 1) for n in sorted({p.rule_index for p in broken}))
             self._strip(tr("settings.tracks.result.rule_problem", rules=numbers), "danger_strip")
         rows: list[tuple[Track, str, list[str], bool, str]] = []  # track, outcome, flags, struck, mark

@@ -337,8 +337,6 @@ class MainWindow(QMainWindow):
     def _open_from_plan(self, page: str) -> None:
         if page:
             self.open_settings(page)
-        else:
-            self.session.update("metadata", enabled=True)
 
     def _unpair(self, subtitle: SubtitleFile) -> None:
         self.model.unpair(subtitle)

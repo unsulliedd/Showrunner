@@ -1,5 +1,5 @@
-"""The right part of the toolbar: the active profile, a switch per stage, and Preview and Apply with the stamp that
-says whether the preview on screen still holds."""
+"""The right part of the toolbar: the active profile, a button per stage with its few plain options, and Preview and
+Apply with the stamp that says whether the preview on screen still holds."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from showrunner.ui.theme.manager import ThemeManager
 from showrunner.ui.theme.tokens import SIZES
 
 # The stages with an engine, in pipeline order, and the program each one needs.
-# Mux has a switch only, so it can be tried; its options are the profile file's until the redesign.
+# Mux has no menu; its options are the profile file's until the redesign.
 STAGES = (("tracks", None), ("mux", "mkvtoolnix"), ("metadata", "mkvtoolnix"))
 
 
@@ -59,7 +59,6 @@ class StageBar(QWidget):
         self.switches: dict[str, StageSwitch] = {}
         for stage_id, _program in STAGES:
             switch = StageSwitch(stage_id, tr(f"stage.{stage_id}"), theme)
-            switch.toggled.connect(lambda on, s=stage_id: session.update(s, enabled=on))
             self.switches[stage_id] = switch
             layout.addWidget(switch)
         self._build_menus()
@@ -95,8 +94,8 @@ class StageBar(QWidget):
         self._actions = [self._check_action(tracks, tr("stage.menu.flags_from_names"), "tracks", "flags_from_names")]
         tracks.menu().addSeparator()
         tracks.menu().addAction(tr("stage.menu.track_rules")).triggered.connect(lambda: self.open_page.emit("tracks"))
-        for option in ("set_title", "set_track_names", "write_implied_flags"):
-            self._actions.append(self._check_action(metadata, tr(f"stage.menu.{option}"), "metadata", option))
+        option = "write_implied_flags"
+        self._actions.append(self._check_action(metadata, tr(f"stage.menu.{option}"), "metadata", option))
         self.language = metadata.menu().addAction("")
         self.language.triggered.connect(self.ask_language)
         metadata.menu().addSeparator()
@@ -136,9 +135,6 @@ class StageBar(QWidget):
         preview = controller.preview
         for stage_id, program in STAGES:
             switch = self.switches[stage_id]
-            switch.blockSignals(True)
-            switch.setChecked(session.options(stage_id).enabled)
-            switch.blockSignals(False)
             missing = (
                 tr("stage.missing_program_tip", name=tr(SPEC_BY_ID[program].name_key))
                 if program and stage_id not in running and controller.statuses

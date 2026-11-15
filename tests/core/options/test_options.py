@@ -62,11 +62,6 @@ def test_registry_rejects_duplicate_stage_id(registry: OptionsRegistry, example:
         registry.register("example")(example)
 
 
-@dataclass(frozen=True)
-class _NoEnabled:
-    count: int = 1
-
-
 @dataclass
 class _NotFrozen:
     enabled: bool = True
@@ -83,7 +78,7 @@ class _BadType:
     value: dict[str, int] | None = None
 
 
-@pytest.mark.parametrize("cls", [_NoEnabled, _NotFrozen, _NoDefault, _BadType])
+@pytest.mark.parametrize("cls", [_NotFrozen, _NoDefault, _BadType])
 def test_registry_rejects_invalid_declarations(registry: OptionsRegistry, cls: type) -> None:
     with pytest.raises(TypeError):
         registry.register("bad")(cls)

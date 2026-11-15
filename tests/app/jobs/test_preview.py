@@ -7,6 +7,7 @@ from typing import ClassVar
 
 import pytest
 
+from showrunner.app.jobs.groups import ChangeGroup
 from showrunner.app.jobs.preview import FileOutcome, preview
 from showrunner.app.jobs.stages import (
     RECHECK,
@@ -22,7 +23,7 @@ from showrunner.app.profiles.profile import Profile
 from showrunner.core.language import Language
 from showrunner.core.media import MediaFile, MediaItem, Movie
 from showrunner.core.track import AudioProperties, SubtitleProperties, Track, TrackKind, VideoProperties
-from showrunner.stages.metadata import MetadataOptions, MetadataPlan
+from showrunner.stages.metadata import MetadataPlan
 from showrunner.stages.tracks import FlagShape, KindTest, TrackMatch, TrackRule, TracksOptions, Verdict
 from showrunner.tools.probe import Programs
 
@@ -59,18 +60,25 @@ def movie(tmp_path: Path, name: str = "Movie Title (2016).mkv") -> MediaItem:
 
 def with_rule(profile: Profile, kind: KindTest) -> Profile:
     rule = TrackRule(match=TrackMatch(kind=kind), verdict=Verdict.DROP)
-    return profile.with_options("tracks", TracksOptions(enabled=True, rules=[rule]))
+    return profile.with_options("tracks", TracksOptions(rules=[rule]))
 
 
-def headers_only(profile: Profile, **changes: bool) -> Profile:
-    return profile.with_options("metadata", replace(profile.for_stage("metadata"), **changes))
+NO_NAMES = dict.fromkeys(
+    ("title_template", "video_track_template", "audio_track_template", "subtitle_track_template"), ""
+)
+
+
+def naming(profile: Profile, **templates: str) -> Profile:
+    return profile.with_options("naming", replace(profile.for_stage("naming"), **templates))
 
 
 def test_header_changes_are_planned_and_written_by_metadata(tmp_path: Path, profile: Profile) -> None:
     result = preview([movie(tmp_path)], profile, STAGES)
     (file,) = result.files
     assert file.outcome is FileOutcome.CHANGES
-    assert file.plan_for("tracks") is None  # off in the default profile, so not planned
+    tracks = file.plan_for("tracks")
+    assert tracks is not None
+    assert tracks.state is PlanState.UNCHANGED  # the default profile has no rules
     metadata = file.plan_for("metadata")
     assert metadata is not None
     assert metadata.writes
@@ -79,7 +87,7 @@ def test_header_changes_are_planned_and_written_by_metadata(tmp_path: Path, prof
 
 
 def test_a_file_with_nothing_to_change_is_unchanged(tmp_path: Path, profile: Profile) -> None:
-    quiet = headers_only(profile, set_title=False, set_track_names=False)
+    quiet = naming(profile, **NO_NAMES)
     (file,) = preview([movie(tmp_path)], quiet, STAGES).files
     assert file.outcome is FileOutcome.UNCHANGED
     assert file.writes == ()
@@ -114,8 +122,9 @@ def test_rules_that_leave_no_audio_refuse_the_file(tmp_path: Path, profile: Prof
 
 def test_flags_that_no_stage_writes_are_named_as_such(tmp_path: Path, profile: Profile) -> None:
     rule = TrackRule(match=TrackMatch(kind=KindTest.AUDIO), default=FlagShape.FIRST)
-    flags_only = profile.with_options("tracks", TracksOptions(enabled=True, rules=[rule]))
-    (file,) = preview([movie(tmp_path)], headers_only(flags_only, enabled=False), STAGES).files
+    flags_only = profile.with_options("tracks", TracksOptions(rules=[rule]))
+    # Without mkvpropedit there is no Metadata stage to write them.
+    (file,) = preview([movie(tmp_path)], flags_only, (TracksStage(),)).files
     assert file.outcome is FileOutcome.UNWRITTEN
     assert file.writes == ()
     (written,) = preview([movie(tmp_path)], flags_only, STAGES).files
@@ -129,9 +138,9 @@ def test_a_blocked_stage_is_planned_for_no_file_and_seen_as_off(tmp_path: Path, 
     tracks = file.plan_for("tracks")
     assert tracks is not None
     assert tracks.state is PlanState.BLOCKED
-    # Metadata plans as if the rules were off: no remux is asked for, the header edits go ahead.
+    # Metadata plans as if there were no rules: no remux is asked for, the header edits go ahead.
     assert file.outcome is FileOutcome.CHANGES
-    assert not result.profile.for_stage("tracks").enabled
+    assert result.profile.for_stage("tracks").rules == []
 
 
 def test_a_file_that_cannot_be_read_is_missing(tmp_path: Path, profile: Profile) -> None:
@@ -164,13 +173,15 @@ def test_the_options_key_follows_options_stages_and_blocks(profile: Profile) -> 
     key = preview([], profile, STAGES).options_key
     assert preview([], profile, STAGES).options_key == key
     assert preview([], replace(profile, name="Other"), STAGES).options_key == key
-    assert preview([], headers_only(profile, set_title=False), STAGES).options_key != key
+    assert preview([], naming(profile, title_template=""), STAGES).options_key != key
     assert preview([], profile, STAGES[:1]).options_key != key
     assert preview([], profile, STAGES, blocked={"tracks"}).options_key != key
+    assert preview([], profile, STAGES, left_out={ChangeGroup.NAMES}).options_key != key
     sourced = pipeline(Programs(), Path("mkvpropedit"), source="BluRay")
     assert preview([], profile, sourced).options_key != key
     assert preview([], profile, STAGES).is_current(profile, STAGES)
     assert not preview([], profile, STAGES).is_current(profile, STAGES, {"metadata"})
+    assert not preview([], profile, STAGES).is_current(profile, STAGES, left_out={ChangeGroup.TRACKS})
 
 
 def test_one_file_can_be_planned_again(tmp_path: Path, profile: Profile) -> None:
@@ -180,16 +191,9 @@ def test_one_file_can_be_planned_again(tmp_path: Path, profile: Profile) -> None
     merged = whole.with_files(preview([titled], profile, STAGES))
     assert [f.item for f in merged.files] == [first, titled]
     with pytest.raises(ValueError, match="different options"):
-        whole.with_files(preview([titled], headers_only(profile, set_title=False), STAGES))
+        whole.with_files(preview([titled], naming(profile, title_template=""), STAGES))
 
 
 def test_the_pipeline_leaves_out_a_stage_without_its_program() -> None:
     assert [s.id for s in pipeline(Programs(), None)] == ["tracks"]
     assert [s.id for s in pipeline(Programs(), Path("mkvpropedit"))] == ["tracks", "metadata"]
-
-
-def test_metadata_disabled_by_its_switch_is_not_planned(tmp_path: Path, profile: Profile) -> None:
-    off = profile.with_options("metadata", MetadataOptions(enabled=False))
-    (file,) = preview([movie(tmp_path)], off, STAGES).files
-    assert file.plans == ()
-    assert file.outcome is FileOutcome.UNCHANGED

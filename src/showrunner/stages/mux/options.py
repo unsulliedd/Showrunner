@@ -23,8 +23,6 @@ class NameField(StrEnum):
 @REGISTRY.register("mux")
 @dataclass(frozen=True, slots=True)
 class MuxOptions:
-    # Off by default: Mux is the stage that moves originals away, so it starts only when the user asks.
-    enabled: bool = False
     original: Original = Original.RECYCLE
     # A folder beside the video for kept originals and the subtitle files the remux added. A dot name keeps it out
     # of the next scan, so a kept original is not read as a second copy of the episode.

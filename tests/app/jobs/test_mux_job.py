@@ -43,8 +43,8 @@ def setup(real_episode: Any, tmp_path: Path) -> Any:
     stages = (TracksStage(), MuxStage(real_episode.mkvmerge, programs, recycle=Bin(tmp_path / "bin")))
     stages += (MetadataStage(propedit, programs),)
     profile = Profile.defaults("Test")
-    profile = profile.with_options("tracks", TracksOptions(enabled=True, rules=[DROP_FRENCH]))
-    profile = profile.with_options("mux", MuxOptions(enabled=True))
+    profile = profile.with_options("tracks", TracksOptions(rules=[DROP_FRENCH]))
+    profile = profile.with_options("mux", MuxOptions())
     profile = profile.with_options("naming", replace(NamingOptions(), title_template="{show} {episode}"))
     item = MediaItem(
         Episode("Show Name", 1, 1),
@@ -76,11 +76,14 @@ def test_a_remuxed_file_gets_its_header_from_the_remux_alone(setup: Any, tmp_pat
     assert probe(setup.ep.video, Programs(mkvmerge=setup.ep.mkvmerge)).title == "Show Name 1"
 
 
-def test_with_mux_off_a_file_that_needs_a_remux_is_not_written(setup: Any) -> None:
-    profile = setup.profile.with_options("mux", MuxOptions(enabled=False))
-    file = preview([setup.item], profile, setup.stages).files[0]
-    assert file.outcome is FileOutcome.NEEDS_REMUX
-    assert file.writes == ()
+def test_without_mkvmerge_or_with_mux_blocked_a_file_that_needs_a_remux_is_not_written(setup: Any) -> None:
+    no_mux = tuple(s for s in setup.stages if s.id != "mux")
+    for file in (
+        preview([setup.item], setup.profile, no_mux).files[0],
+        preview([setup.item], setup.profile, setup.stages, blocked={"mux"}).files[0],
+    ):
+        assert file.outcome is FileOutcome.NEEDS_REMUX
+        assert file.writes == ()
 
 
 def test_a_mkvmerge_error_fails_the_step_and_leaves_the_original(setup: Any, tmp_path: Path) -> None:
@@ -110,7 +113,7 @@ def test_resume_after_an_interrupted_mux_removes_its_partial_file_and_runs_again
 
 def test_a_new_name_is_reported_and_marked_finished(setup: Any, tmp_path: Path) -> None:
     store = JobStore(tmp_path / "jobs.sqlite3")
-    profile = setup.profile.with_options("mux", MuxOptions(enabled=True, suffix=" [remux]"))
+    profile = setup.profile.with_options("mux", MuxOptions(suffix=" [remux]"))
     planned = preview([setup.item], profile, setup.stages)
     result = run_job(store, create_job(store, planned, profile, setup.stages), setup.stages, read=setup.read)
     written = result.steps[0].written

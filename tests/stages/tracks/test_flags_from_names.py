@@ -45,7 +45,7 @@ def test_flags_the_file_sets_are_kept() -> None:
 
 def drop_commentary(*, from_names: bool) -> TracksOptions:
     rule = TrackRule(match=TrackMatch(kind=KindTest.AUDIO, commentary=FlagTest.SET), verdict=Verdict.DROP)
-    return TracksOptions(enabled=True, rules=[rule], flags_from_names=from_names)
+    return TracksOptions(rules=[rule], flags_from_names=from_names)
 
 
 def test_a_rule_on_the_commentary_flag_catches_a_track_named_commentary(b: SimpleNamespace) -> None:
@@ -65,7 +65,7 @@ def test_a_flag_implied_by_a_name_is_not_written_as_a_change(b: SimpleNamespace)
     # Reading a flag from the name affects matching only; the plan does not claim to set it.
     rule = TrackRule(match=TrackMatch(kind=KindTest.AUDIO), verdict=Verdict.KEEP)
     item = b.item(b.video(0), b.audio(1, name="Commentary"))
-    plan = b_plan(item, TracksOptions(enabled=True, rules=[rule]))
+    plan = b_plan(item, TracksOptions(rules=[rule]))
     assert all(k.flag_changes == () for k in plan.kept)
 
 

@@ -86,14 +86,16 @@ class TrackRule:
     verdict: Verdict = Verdict.PASS
     default: FlagShape = FlagShape.LEAVE
     forced: FlagShape = FlagShape.LEAVE
+    # Written by a choice made directly on a track (a chip, a card or a column of the track matrix) rather than by
+    # hand. It matches like any other rule; the mark tells the views which rule a choice owns.
+    from_choice: bool = False
 
 
 @REGISTRY.register("tracks")
 @dataclass(frozen=True, slots=True)
 class TracksOptions:
-    # Off: tracks stay as they are and paired subtitle files are not added. Off by default, so that a
-    # profile without rules does not remux anything.
-    enabled: bool = False
+    # Without a switched-on rule, tracks stay as they are and paired subtitle files are not added, so a profile
+    # without rules remuxes nothing.
     rules: list[TrackRule] = field(default_factory=list)
     # Rules also see the commentary, hearing impaired and forced flags a track's name implies, since many
     # files name such tracks without setting the flag.

@@ -91,7 +91,7 @@ def test_a_failure_marks_its_file_and_the_batch_goes_on(
 def test_later_steps_of_a_file_whose_step_failed_are_skipped(
     files: SimpleNamespace, store: JobStore, profile: Profile
 ) -> None:
-    profile = profile.with_options("tracks", TracksOptions(enabled=True))
+    profile = profile.with_options("tracks", TracksOptions())
     stages = (files.FakeStage(), files.SecondStage())
     job = start(store, profile, stages, [files.item("a.mkv", "will fail")])
     result = run_job(store, job, stages, read=files.read)
@@ -107,7 +107,7 @@ def test_a_preview_made_with_other_options_is_refused(
     stage = files.FakeStage()
     made = preview([files.item("a.mkv")], profile, (stage,))
     with pytest.raises(StalePreviewError):
-        create_job(store, made, profile.with_options("tracks", TracksOptions(enabled=True)), (stage,))
+        create_job(store, made, profile.with_options("tracks", TracksOptions(flags_from_names=False)), (stage,))
     with pytest.raises(StalePreviewError):
         create_job(store, made, profile, (stage,), blocked={"metadata"})
 

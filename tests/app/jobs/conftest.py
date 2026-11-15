@@ -62,7 +62,7 @@ class FakeStage:
 
 @dataclass(frozen=True)
 class SecondStage(FakeStage):
-    """A second stage that writes, under the id of a stage that is off by default."""
+    """A second stage that writes, under the id of the tracks stage."""
 
     id: ClassVar[str] = "tracks"
 

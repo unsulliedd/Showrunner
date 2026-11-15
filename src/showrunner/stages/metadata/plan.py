@@ -95,8 +95,6 @@ def plan_metadata(
 ) -> MetadataPlan | MetadataRefused:
     """The header changes for the file, or the problems that stop the plan."""
     file = item.file
-    if not options.enabled:
-        return MetadataPlan(file.path, ())
     refusals: list[MetadataProblem] = []
     if not file.ids_from_mkvmerge:
         refusals.append(MetadataProblem(MetadataProblemKind.IDS_NOT_FROM_MKVMERGE))
@@ -107,12 +105,11 @@ def plan_metadata(
     if isinstance(track_plan, PlanRefused):
         # The file keeps its tracks as they are, so names and languages are planned for those tracks and the
         # rules' flag changes are left out with the rest of the refused plan.
-        tracks = replace(tracks, enabled=False)
+        tracks = replace(tracks, rules=[])
         track_plan = plan_tracks(item, tracks)
         assert isinstance(track_plan, TrackPlan)
-    language = _language(options.untagged_language, refusals)
-    if refusals:
-        return MetadataRefused(tuple(refusals))
+    invalid: list[MetadataProblem] = []  # a problem of the options, which refuses every file
+    language = _language(options.untagged_language, invalid)
 
     found: dict[str, dict[Problem, None]] = {}  # template option -> its problems, without repeats
 
@@ -128,31 +125,32 @@ def plan_metadata(
 
     # A flag a rule picks tracks for ("the first Turkish subtitle is forced") is left to the rules, so that a
     # name cannot add a second track to the one they chose.
-    ruled = (
-        {"forced"} if tracks.enabled and any(r.enabled and r.forced is FlagShape.FIRST for r in tracks.rules) else set()
-    )
+    ruled = {"forced"} if any(r.enabled and r.forced is FlagShape.FIRST for r in tracks.rules) else set()
 
     changes: list[HeaderChange] = []
     # An empty result leaves a title or name alone: a template never clears one by accident.
-    if naming.enabled and options.set_title and (title := render("title_template", None)) and title != file.title:
+    if (title := render("title_template", None)) and title != file.title:
         changes.append(HeaderChange(Property.TITLE, file.title, title))
     # A subtitle file that is added is planned under its stand-in track's negative ID; only a remux adds files, so
     # those changes go into the remux and never to mkvpropedit.
     for planned in track_plan.kept:
         track = planned.track
-        if naming.enabled and options.set_track_names:
-            name = render(_TEMPLATES[track.kind], planned)
-            if name and name != track.name:
-                changes.append(HeaderChange(Property.NAME, track.name, name, track.id))
+        name = render(_TEMPLATES[track.kind], planned)
+        if name and name != track.name:
+            changes.append(HeaderChange(Property.NAME, track.name, name, track.id))
         if language and track.language is None and track.kind is not TrackKind.VIDEO:
             changes.append(HeaderChange(Property.LANGUAGE, "", language, track.id))
         changes += _flag_changes(planned, track_plan.needs_remux, options.write_implied_flags, ruled)
 
-    if problems := [
+    problems = [
         MetadataProblem(MetadataProblemKind.TEMPLATE, template, tuple(template_problems))
         for template, template_problems in found.items()
         if template_problems
-    ]:
+    ]
+    # A file the options ask nothing of is not refused for what it is: nothing would be edited on it.
+    if invalid or (refusals and (changes or problems)):
+        return MetadataRefused(tuple(refusals + invalid))
+    if problems:
         return MetadataRefused(tuple(problems))
     return MetadataPlan(file.path, tuple(changes), track_plan.needs_remux)
 

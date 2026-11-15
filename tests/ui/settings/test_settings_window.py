@@ -106,7 +106,7 @@ def test_default_is_saved_as_a_new_profile(window: SettingsWindow, session: Prof
 def test_a_broken_rule_is_marked_and_explained(window: SettingsWindow, session: ProfileSession) -> None:
     window.set_item(ITEM)
     rule = TrackRule(label="Keep English", match=TrackMatch(kind=KindTest.AUDIO, languages=["egn"]))
-    session.update("tracks", enabled=True, rules=[rule])
+    session.update("tracks", rules=[rule])
     page = window.tracks
     page.select_rule(0)
     assert page.languages.shown == ["Not a language code: egn. Did you mean eng?"]
@@ -121,7 +121,7 @@ def test_a_broken_rule_is_marked_and_explained(window: SettingsWindow, session: 
 def test_the_result_shows_a_refusal(window: SettingsWindow, session: ProfileSession) -> None:
     window.set_item(ITEM)
     drop = TrackRule(label="Drop audio", match=TrackMatch(kind=KindTest.AUDIO), verdict=Verdict.DROP)
-    session.update("tracks", enabled=True, rules=[drop])
+    session.update("tracks", rules=[drop])
     page = window.tracks
     assert page.strip.text().startswith("No plan for this file: the rules would leave no audio track")
     outcomes = [page.result_model.item(row, 4).text() for row in range(page.result_model.rowCount())]
@@ -152,7 +152,7 @@ def test_profiles_duplicate_and_switch(window: SettingsWindow, session: ProfileS
 
 
 def test_typing_a_list_keeps_the_text_as_typed(window: SettingsWindow, session: ProfileSession) -> None:
-    session.update("tracks", enabled=True, rules=[TrackRule()])
+    session.update("tracks", rules=[TrackRule()])
     page = window.tracks
     page.select_rule(0)
     page.languages.field.setPlainText("tur,eng")

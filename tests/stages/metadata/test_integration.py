@@ -58,11 +58,8 @@ def episode(tmp_path: Path) -> MediaItem:
 
 
 def test_a_plan_is_applied_to_a_real_file_and_found_there_afterwards(episode: MediaItem) -> None:
-    tracks = TracksOptions(
-        enabled=True,
-        rules=[TrackRule(match=TrackMatch(kind=KindTest.AUDIO), default=FlagShape.FIRST)],
-    )
-    options = MetadataOptions(untagged_language="pt-BR")
+    tracks = TracksOptions(rules=[TrackRule(match=TrackMatch(kind=KindTest.AUDIO), default=FlagShape.FIRST)])
+    options = MetadataOptions(untagged_language="pt-BR", write_implied_flags=True)
     plan = plan_metadata(episode, options, NamingOptions(), tracks, source="WEB-DL")
     assert isinstance(plan, MetadataPlan)
     assert not plan.needs_remux

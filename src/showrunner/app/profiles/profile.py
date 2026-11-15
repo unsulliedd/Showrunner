@@ -17,6 +17,15 @@ from showrunner.core.options.serialization import (
 
 FORMAT_VERSION = 1
 
+# Keys that earlier versions wrote and that no longer mean anything: they are dropped on load without a warning.
+# They were on/off switches; what runs now follows from the rules and templates themselves.
+_RETIRED = {
+    "tracks": {"enabled"},
+    "mux": {"enabled"},
+    "metadata": {"enabled", "set_title", "set_track_names"},
+    "naming": {"enabled"},
+}
+
 
 @dataclass(frozen=True)
 class Profile:
@@ -63,6 +72,9 @@ def profile_from_json(name: str, data: Any, registry: OptionsRegistry = REGISTRY
         stages = {}
     options: dict[str, Any] = {}
     for stage_id in registry.ids():
-        options[stage_id] = from_sparse(registry.get(stage_id), stages.get(stage_id, {}), stage_id, warnings)
+        raw = stages.get(stage_id, {})
+        if isinstance(raw, dict) and (retired := _RETIRED.get(stage_id)):
+            raw = {key: value for key, value in raw.items() if key not in retired}
+        options[stage_id] = from_sparse(registry.get(stage_id), raw, stage_id, warnings)
     warnings.extend(LoadWarning(WarningKind.UNKNOWN_STAGE, key) for key in stages if key not in options)
     return Loaded(Profile(name, options), warnings)
