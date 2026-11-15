@@ -2,11 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from showrunner.app.batches.choices import NO_CHOICE, TrackChoice, TrackSignature, choice_of, choose
+from showrunner.app.batches.choices import NO_CHOICE, TrackChoice, TrackSignature, add_paired, choice_of, choose
 from showrunner.core.language import Language
 from showrunner.core.media import Episode, MediaFile, MediaItem, SubtitleFile
 from showrunner.core.track import AudioProperties, SubtitleProperties, Track, TrackFlags, TrackKind, VideoProperties
-from showrunner.stages.tracks import KindTest, TrackMatch, TrackPlan, TrackRule, TracksOptions, Verdict, plan_tracks
+from showrunner.stages.tracks import (
+    KindTest,
+    PairedFile,
+    TrackMatch,
+    TrackPlan,
+    TrackRule,
+    TracksOptions,
+    Verdict,
+    plan_tracks,
+)
 
 VIDEO = Track(0, TrackKind.VIDEO, "V_MPEGH/ISO/HEVC", video=VideoProperties(1920, 1080, 23.976))
 ENGLISH = Track(
@@ -116,13 +125,26 @@ def test_a_track_without_a_language_has_its_own_signature() -> None:
     assert [d.track.id for d in plan(options, episode(VIDEO, ENGLISH, untagged)).dropped] == [untagged.id]
 
 
-def test_any_choice_also_adds_the_paired_subtitle_files() -> None:
-    # A rule that is on is what asks for paired files, so one star on an episode with a paired file means a new file.
-    paired = MediaItem(
-        Episode("Show Name", 1, 1),
-        MediaFile(Path("Show Name - S01E01.mkv"), "matroska", tracks=(VIDEO, ENGLISH, TURKISH)),
-        (SubtitleFile(Path("Show Name - S01E01.tr.srt"), Language("tur")),),
-    )
-    assert not plan(TracksOptions(), paired).needs_remux
+PAIRED = MediaItem(
+    Episode("Show Name", 1, 1),
+    MediaFile(Path("Show Name - S01E01.mkv"), "matroska", tracks=(VIDEO, ENGLISH, TURKISH)),
+    (SubtitleFile(Path("Show Name - S01E01.tr.srt"), Language("tur")),),
+)
+
+
+def test_a_star_alone_never_adds_a_paired_file() -> None:
     options = choose(TracksOptions(), TrackSignature.of(TURKISH), TrackChoice(default=True))
-    assert plan(options, paired).needs_remux
+    assert not plan(options, PAIRED).needs_remux
+
+
+def test_a_paired_file_is_added_by_its_own_choice_and_then_chosen_like_a_track() -> None:
+    srt = PairedFile.of(PAIRED.subtitles[0])
+    options = add_paired(TracksOptions(), srt, True)
+    assert add_paired(options, srt, True) == options  # chosen once
+    added = plan(options, PAIRED)
+    assert added.needs_remux
+    stand_in = added.kept[-1].track
+    assert added.kept[-1].external == PAIRED.subtitles[0]
+    starred = choose(options, TrackSignature.of(stand_in), TrackChoice(default=True))
+    assert flagged(starred, "default", PAIRED) == [ENGLISH.id, stand_in.id]
+    assert add_paired(options, srt, False) == TracksOptions()

@@ -76,19 +76,18 @@ def scan(paths: Iterable[Path], options: ScanOptions | None = None) -> ScanResul
         suffix = path.suffix.lower()
         if suffix in VIDEO_EXTENSIONS:
             videos.setdefault(path.parent, []).append(path)
-        elif options.enabled and suffix in SUBTITLE_EXTENSIONS:
+        elif suffix in SUBTITLE_EXTENSIONS:
             add_subtitle(path)
 
     # Subtitle files that only came along with a dropped video are matched, but not reported when they fit none:
     # they most likely belong to videos that were not dropped.
     incidental: set[Path] = set()
-    if options.enabled:
-        for root in roots:
-            if root.is_file() and root.suffix.lower() in VIDEO_EXTENSIONS:
-                for neighbour in _neighbour_subtitles(root, options):
-                    if neighbour not in known:
-                        add_subtitle(neighbour)
-                        incidental.add(neighbour)
+    for root in roots:
+        if root.is_file() and root.suffix.lower() in VIDEO_EXTENSIONS:
+            for neighbour in _neighbour_subtitles(root, options):
+                if neighbour not in known:
+                    add_subtitle(neighbour)
+                    incidental.add(neighbour)
 
     items: list[MediaItem] = []
     alternatives: list[Alternatives] = []

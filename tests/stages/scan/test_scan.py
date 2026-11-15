@@ -188,15 +188,6 @@ def test_a_dropped_subtitle_file_alone_is_unpaired(make: Make) -> None:
     assert [s.path for s in result.unpaired] == [subtitle]
 
 
-def test_stage_off_finds_videos_without_collecting_subtitles(make: Make, tmp_path: Path) -> None:
-    make("Show S01E01.mkv")
-    make("Show S01E01.en.srt")
-    result = scan([tmp_path], ScanOptions(enabled=False))
-    assert len(result.items) == 1
-    assert result.items[0].subtitles == ()
-    assert result.unpaired == ()
-
-
 def test_options_are_registered_with_defaults_that_keep_today_behaviour() -> None:
     assert REGISTRY.get("scan") is ScanOptions
-    assert ScanOptions() == ScanOptions(enabled=True, detect_untagged_languages=True, subtitle_subfolders=True)
+    assert ScanOptions() == ScanOptions(detect_untagged_languages=True, subtitle_subfolders=True)

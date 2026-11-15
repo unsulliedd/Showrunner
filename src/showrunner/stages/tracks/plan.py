@@ -11,7 +11,7 @@ from showrunner.core.naming.names import channel_layout, codec_display
 from showrunner.core.track import ObjectAudio, SubtitleProperties, Track, TrackFlags, TrackKind
 from showrunner.stages.scan.extensions import TEXT_SUBTITLE_EXTENSIONS
 from showrunner.stages.tracks.matching import matches
-from showrunner.stages.tracks.options import FlagShape, TrackRule, TracksOptions, Verdict
+from showrunner.stages.tracks.options import FlagShape, PairedFile, TrackRule, TracksOptions, Verdict
 
 # Matroska codec IDs of the subtitle formats the scan collects, so codec rules see a subtitle file like a track.
 _SUBTITLE_CODECS = {
@@ -102,13 +102,15 @@ def describe_track(track: Track) -> str:
 
 
 def plan_tracks(item: MediaItem, options: TracksOptions) -> TrackPlan | PlanRefused:
-    """Apply the rules to the tracks of the file and to its paired subtitle files."""
-    entries = [(track, None) for track in item.file.tracks]
+    """Apply the rules to the tracks of the file and to the paired subtitle files chosen to be added."""
+    entries: list[tuple[Track, SubtitleFile | None]] = [(track, None) for track in item.file.tracks]
+    # A stand-in keeps the number of its place among all paired files, so a choice on one file renumbers no other.
+    entries += [
+        (_stand_in(subtitle, index), subtitle)
+        for index, subtitle in enumerate(item.subtitles)
+        if PairedFile.of(subtitle) in options.add_paired
+    ]
     active = [(index, rule) for index, rule in enumerate(options.rules) if rule.enabled]
-    # Without a rule that is on, nothing was asked for: paired subtitle files are not added either.
-    if not active:
-        return TrackPlan(tuple(PlannedTrack(track) for track, _ in entries), ())
-    entries += [(_stand_in(subtitle, index), subtitle) for index, subtitle in enumerate(item.subtitles)]
 
     from_names = options.flags_from_names
     kept: list[tuple[Track, SubtitleFile | None]] = []

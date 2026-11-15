@@ -38,7 +38,8 @@ def test_an_empty_template_blocks_nothing_and_needs_no_token_check() -> None:
 
 def test_a_broken_token_definition_blocks_metadata() -> None:
     custom = [CustomToken("group", CustomKind.PATTERN, "(")]
-    assert len(blocked_stages(profile(naming={"custom_tokens": custom}))["metadata"].tokens) == 1
+    naming = {"custom_tokens": custom, "title_template": "{file_name}"}
+    assert len(blocked_stages(profile(naming=naming))["metadata"].tokens) == 1
 
 
 def test_an_untagged_language_that_is_not_one_blocks_metadata() -> None:

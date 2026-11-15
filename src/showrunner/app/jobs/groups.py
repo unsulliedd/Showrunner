@@ -17,8 +17,8 @@ TRACK_TEMPLATES = ("video_track_template", "audio_track_template", "subtitle_tra
 
 
 class ChangeGroup(StrEnum):
-    # The track rules: tracks dropped, paired subtitle files added, default and forced flags moved. Every new file
-    # goes with them, since only the rules ask for one.
+    # The track choices: tracks dropped, paired subtitle files added, default and forced flags moved. Every new
+    # file goes with them, since only these ask for one.
     TRACKS = "tracks"
     # What Metadata decides on its own: the title, track names, the language of untagged tracks, implied flags.
     NAMES = "names"
@@ -27,7 +27,7 @@ class ChangeGroup(StrEnum):
 def without(profile: Profile, group: ChangeGroup) -> Profile:
     """`profile` with the options of `group` asking for no change; the rest stays as it is."""
     if group is ChangeGroup.TRACKS:
-        return profile.with_options("tracks", replace(profile.for_stage("tracks"), rules=[]))
+        return profile.with_options("tracks", replace(profile.for_stage("tracks"), rules=[], add_paired=[]))
     naming = replace(profile.for_stage("naming"), **dict.fromkeys((TITLE_TEMPLATE, *TRACK_TEMPLATES), ""))
     metadata = replace(profile.for_stage("metadata"), untagged_language="", write_implied_flags=False)
     return profile.with_options("naming", naming).with_options("metadata", metadata)

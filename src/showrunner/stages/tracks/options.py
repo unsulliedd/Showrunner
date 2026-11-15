@@ -13,7 +13,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 
+from showrunner.core.media import SubtitleFile
 from showrunner.core.options.registry import REGISTRY
 
 
@@ -91,12 +93,31 @@ class TrackRule:
     from_choice: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class PairedFile:
+    """Which paired subtitle files go into the video: the files of a language and format, with the forced and
+    hearing impaired marks their names carry, so `tr.srt` and `tr.forced.srt` are chosen apart."""
+
+    language: str = "und"  # IETF tag, `und` for a file without one
+    format: str = ""  # the file's extension without the dot, lower case: `srt`, `ass`, `sup`
+    forced: bool = False
+    sdh: bool = False
+
+    @classmethod
+    def of(cls, subtitle: SubtitleFile) -> PairedFile:
+        language = subtitle.language.ietf if subtitle.language else "und"
+        return cls(language, Path(subtitle.path).suffix.lower().lstrip("."), subtitle.forced, subtitle.sdh)
+
+
 @REGISTRY.register("tracks")
 @dataclass(frozen=True, slots=True)
 class TracksOptions:
-    # Without a switched-on rule, tracks stay as they are and paired subtitle files are not added, so a profile
-    # without rules remuxes nothing.
+    # Without a switched-on rule, tracks stay as they are.
     rules: list[TrackRule] = field(default_factory=list)
+    # The paired subtitle files added to the video; the rules then treat each like a track (drop it, flag it). A
+    # file is added only when chosen here, never because a rule is on, so a profile without these remuxes nothing
+    # for a paired file.
+    add_paired: list[PairedFile] = field(default_factory=list)
     # Rules also see the commentary, hearing impaired and forced flags a track's name implies, since many
     # files name such tracks without setting the flag.
     flags_from_names: bool = True

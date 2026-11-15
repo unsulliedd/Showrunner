@@ -1,4 +1,5 @@
-"""Choices made directly on a track (keep, drop, default, forced) written as ordinary track rules.
+"""Choices made directly on a track (keep, drop, default, forced) written as ordinary track rules, and the choice
+to add a paired subtitle file.
 
 A choice is made on a track signature, the group of alike tracks across a batch that one chip or matrix column
 stands for. It becomes one rule marked `from_choice`, so what a chip shows is what the rules produce: there is no
@@ -13,7 +14,16 @@ import re
 from dataclasses import dataclass, replace
 
 from showrunner.core.track import Track, TrackKind
-from showrunner.stages.tracks import NO_LANGUAGE, FlagShape, KindTest, TrackMatch, TrackRule, TracksOptions, Verdict
+from showrunner.stages.tracks import (
+    NO_LANGUAGE,
+    FlagShape,
+    KindTest,
+    PairedFile,
+    TrackMatch,
+    TrackRule,
+    TracksOptions,
+    Verdict,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +104,13 @@ def choose(options: TracksOptions, signature: TrackSignature, choice: TrackChoic
             ),
         )
     return replace(options, rules=rules)
+
+
+def add_paired(options: TracksOptions, paired: PairedFile, add: bool) -> TracksOptions:
+    """The options with the paired files of `paired` (`PairedFile.of(subtitle)`) added to the video or not. Once
+    added, such a file is a subtitle track like the others: `choose` on its `TrackSignature` flags or drops it."""
+    rest = [chosen for chosen in options.add_paired if chosen != paired]
+    return replace(options, add_paired=[*rest, paired] if add else rest)
 
 
 def _index(rules: list[TrackRule], signature: TrackSignature) -> int | None:

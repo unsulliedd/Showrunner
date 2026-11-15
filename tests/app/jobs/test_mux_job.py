@@ -20,7 +20,7 @@ from showrunner.core.language import Language
 from showrunner.core.media import Episode, MediaFile, MediaItem, SubtitleFile
 from showrunner.core.naming import NamingOptions
 from showrunner.stages.mux import MuxOptions, MuxResult, apply_mux
-from showrunner.stages.tracks import KindTest, TrackMatch, TrackRule, TracksOptions, Verdict
+from showrunner.stages.tracks import KindTest, PairedFile, TrackMatch, TrackRule, TracksOptions, Verdict
 from showrunner.tools.probe import Programs, probe
 
 DROP_FRENCH = TrackRule(match=TrackMatch(kind=KindTest.AUDIO, languages=["fre"]), verdict=Verdict.DROP)
@@ -43,7 +43,8 @@ def setup(real_episode: Any, tmp_path: Path) -> Any:
     stages = (TracksStage(), MuxStage(real_episode.mkvmerge, programs, recycle=Bin(tmp_path / "bin")))
     stages += (MetadataStage(propedit, programs),)
     profile = Profile.defaults("Test")
-    profile = profile.with_options("tracks", TracksOptions(rules=[DROP_FRENCH]))
+    added = [PairedFile(language="tr", format="srt")]
+    profile = profile.with_options("tracks", TracksOptions(rules=[DROP_FRENCH], add_paired=added))
     profile = profile.with_options("mux", MuxOptions())
     profile = profile.with_options("naming", replace(NamingOptions(), title_template="{show} {episode}"))
     item = MediaItem(

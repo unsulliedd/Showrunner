@@ -1,4 +1,4 @@
-"""The default templates against the names expected for common source, HDR and audio presets."""
+"""The suggested templates against the names expected for common source, HDR and audio presets."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from collections.abc import Callable
 import pytest
 
 from showrunner.core.media import MediaItem
-from showrunner.core.naming import NamingContext, NamingOptions, preview
+from showrunner.core.naming import SUGGESTED_TEMPLATES, NamingContext, NamingOptions, preview
 from showrunner.core.track import HdrKind, ObjectAudio, Track
 
 MakeItem = Callable[..., MediaItem]
@@ -65,7 +65,7 @@ def test_defaults_name_each_preset(
 ) -> None:
     picture, sound, text = video(*size, hdr), audio(*audio_spec), subtitle()
     item = make_item(picture, sound, text)
-    options = NamingOptions()
+    options = NamingOptions(**SUGGESTED_TEMPLATES)
     assert names(item, picture, source, options)["video"] == f"{base} ({video_name})", preset
     assert names(item, sound, source, options)["audio"] == f"{base} ({audio_name})", preset
     assert names(item, text, source, options)["subtitle"] == base
@@ -75,7 +75,7 @@ def test_defaults_name_each_preset(
 def test_two_audio_tracks(make_item: MakeItem, video: Build, audio: Build, base: str) -> None:
     atmos, plain = audio("A_TRUEHD", 8, ObjectAudio.ATMOS), audio("A_EAC3", 6, track_id=2)
     item = make_item(video(3840, 2160, DV), atmos, plain)
-    options = NamingOptions()
+    options = NamingOptions(**SUGGESTED_TEMPLATES)
     assert names(item, atmos, "Hybrid Bluray", options)["audio"] == f"{base} (Dolby Atmos 7.1)"
     assert names(item, plain, "Hybrid Bluray", options)["audio"] == f"{base} (Dolby Digital Plus 5.1)"
 
@@ -84,7 +84,8 @@ def test_overrides_name_the_remaining_presets(make_item: MakeItem, video: Build,
     # DTS-HD Master Audio and `HDR10+/DV` come from value maps.
     dts, picture = audio("A_DTS", 6), video(3840, 2160, DV)
     item = make_item(picture, dts)
-    options = NamingOptions(value_maps={"codec": {"DTS": "DTS-HD Master Audio"}, "hdr": {"HDR/DV": "HDR10+/DV"}})
+    maps = {"codec": {"DTS": "DTS-HD Master Audio"}, "hdr": {"HDR/DV": "HDR10+/DV"}}
+    options = NamingOptions(**SUGGESTED_TEMPLATES, value_maps=maps)
     assert names(item, dts, "Hybrid WEB-DL", options)["audio"] == f"{base} (DTS-HD Master Audio 5.1)"
     assert names(item, picture, "Hybrid WEB-DL", options)["video"] == f"{base} (2160p HDR10+/DV Hybrid WEB-DL)"
 
@@ -104,4 +105,4 @@ def test_atmos_after_the_channels_with_a_user_template(
 def test_sparse_names_do_not_leave_empty_brackets(make_item: MakeItem, video: Build) -> None:
     picture = video(1920, 1080)
     item = make_item(picture, stem="Plain Name")
-    assert names(item, picture, "", NamingOptions())["video"] == "Plain Name (1080p)"
+    assert names(item, picture, "", NamingOptions(**SUGGESTED_TEMPLATES))["video"] == "Plain Name (1080p)"

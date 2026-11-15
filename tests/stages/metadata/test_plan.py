@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from showrunner.core.media import SubtitleFile
-from showrunner.core.naming import NamingOptions, ProblemKind
+from showrunner.core.naming import SUGGESTED_TEMPLATES, NamingOptions, ProblemKind
 from showrunner.stages.metadata import (
     HeaderChange,
     MetadataOptions,
@@ -16,19 +16,18 @@ from showrunner.stages.metadata import (
     MetadataRefused,
     plan_metadata,
 )
-from showrunner.stages.tracks import FlagShape, KindTest, TrackMatch, TrackRule, TracksOptions, Verdict
+from showrunner.stages.tracks import FlagShape, KindTest, PairedFile, TrackMatch, TrackRule, TracksOptions, Verdict
 from showrunner.tools.mkvtoolnix.propedit import Property
 
 NO_RULES = TracksOptions()
 SOURCE = "WEB-DL"
 IMPLIED = MetadataOptions(write_implied_flags=True)
-NO_NAMES = NamingOptions(
-    title_template="", video_track_template="", audio_track_template="", subtitle_track_template=""
-)
+NO_NAMES = NamingOptions()
+SUGGESTED = NamingOptions(**SUGGESTED_TEMPLATES)
 
 
 def plan(item, options=None, naming=None, tracks=NO_RULES):
-    return plan_metadata(item, options or MetadataOptions(), naming or NamingOptions(), tracks, source=SOURCE)
+    return plan_metadata(item, options or MetadataOptions(), naming or SUGGESTED, tracks, source=SOURCE)
 
 
 def changes(result) -> list[tuple]:
@@ -56,7 +55,7 @@ def episode(b: SimpleNamespace):
 # --- title and names ---
 
 
-def test_the_default_templates_set_the_title_and_every_track_name(episode) -> None:
+def test_the_suggested_templates_set_the_title_and_every_track_name(episode) -> None:
     assert changes(plan(episode)) == [
         (Property.TITLE, None, "Old Title", "Show Name - S01E01"),
         (Property.NAME, 0, "", "Show Name - S01E01 (1080p WEB-DL)"),
@@ -85,7 +84,7 @@ def test_custom_templates_are_used(episode) -> None:
 @pytest.mark.parametrize(
     ("naming", "left"),
     [
-        (NamingOptions(title_template=""), {Property.NAME}),
+        (replace(SUGGESTED, title_template=""), {Property.NAME}),
         (replace(NO_NAMES, title_template="{file_name}"), {Property.TITLE}),
         (NO_NAMES, set()),
     ],
@@ -134,7 +133,7 @@ def test_implied_flags_are_not_written_unless_asked_for(b: SimpleNamespace) -> N
 
 
 def test_implied_flags_come_from_the_name_the_file_has_now(b: SimpleNamespace) -> None:
-    # The default template replaces "English SDH", so the flag has to be read before that.
+    # The suggested template replaces "English SDH", so the flag has to be read before that.
     result = changes(plan(b.item(b.subtitle(0, "English SDH")), IMPLIED))
     assert (Property.FLAG_HEARING_IMPAIRED, 0, False, True) in result
     assert (Property.NAME, 0, "English SDH", "Show Name - S01E01 (SDH)") in result
@@ -162,7 +161,7 @@ def test_default_changes_of_the_track_rules_are_header_edits_when_no_remux_is_ne
 def test_a_remux_carries_the_track_rules_flags_and_the_plan_says_so(b: SimpleNamespace) -> None:
     item = b.item(b.video(0), b.audio(1, "A", language="eng", default=True), b.audio(2, "B", language="tur"))
     tracks = rules(first(KindTest.AUDIO, "default", languages=["tr"]), drop(languages=["en"]))
-    result = plan(item, naming=NamingOptions(title_template=""), tracks=tracks)
+    result = plan(item, naming=replace(SUGGESTED, title_template=""), tracks=tracks)
     assert result.needs_remux
     # The dropped track gets nothing, and the flags are the track plan's to write.
     assert changes(result) == [
@@ -173,8 +172,8 @@ def test_a_remux_carries_the_track_rules_flags_and_the_plan_says_so(b: SimpleNam
 
 def test_a_subtitle_file_that_is_added_is_named_under_its_stand_in_id_for_the_remux(b: SimpleNamespace) -> None:
     item = b.item(b.audio(0, "A"), subtitles=(SubtitleFile(Path("Show Name - S01E01.tr.srt"), None),))
-    keep = TrackRule(verdict=Verdict.KEEP)
-    result = plan(item, MetadataOptions(untagged_language="tr"), NamingOptions(title_template=""), rules(keep))
+    added = TracksOptions(add_paired=[PairedFile.of(item.subtitles[0])])
+    result = plan(item, MetadataOptions(untagged_language="tr"), replace(SUGGESTED, title_template=""), added)
     assert result.needs_remux
     assert changes(result) == [
         (Property.NAME, 0, "A", "Show Name - S01E01 (Dolby Digital 5.1)"),
@@ -183,10 +182,10 @@ def test_a_subtitle_file_that_is_added_is_named_under_its_stand_in_id_for_the_re
     ]
 
 
-def test_track_options_without_a_rule_that_is_on_add_no_subtitle_file(b: SimpleNamespace) -> None:
+def test_a_paired_file_not_chosen_is_not_added_even_with_a_rule_on(b: SimpleNamespace) -> None:
     item = b.item(b.audio(0, "A"), subtitles=(SubtitleFile(Path("Show Name - S01E01.tr.srt"), None),))
     assert not plan(item).needs_remux
-    assert not plan(item, tracks=rules(TrackRule(enabled=False, verdict=Verdict.KEEP))).needs_remux
+    assert not plan(item, tracks=rules(TrackRule(verdict=Verdict.KEEP))).needs_remux
 
 
 # --- problems ---

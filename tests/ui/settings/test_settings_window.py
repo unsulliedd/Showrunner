@@ -10,6 +10,7 @@ from showrunner.app.profiles.store import ProfileStore
 from showrunner.app.settings.app_settings import Startup, load_settings
 from showrunner.core.language import Language
 from showrunner.core.media import Episode, MediaFile, MediaItem
+from showrunner.core.naming import SUGGESTED_TEMPLATES
 from showrunner.core.track import AudioProperties, Track, TrackKind, VideoProperties
 from showrunner.stages.tracks import KindTest, TrackMatch, TrackRule, Verdict
 from showrunner.ui.settings.general import Workspace
@@ -85,7 +86,8 @@ def test_an_unknown_token_is_underlined_and_offers_the_fix(window: SettingsWindo
     assert editor.shown == []
 
 
-def test_the_previews_follow_the_selected_file(window: SettingsWindow) -> None:
+def test_the_previews_follow_the_selected_file(window: SettingsWindow, session: ProfileSession) -> None:
+    session.update("naming", audio_track_template=SUGGESTED_TEMPLATES["audio_track_template"])
     window.set_item(ITEM)
     lines = window.naming.previews["audio_track_template"]
     texts = [lines.itemAt(i).layout().itemAt(1).widget().text() for i in range(lines.count())]

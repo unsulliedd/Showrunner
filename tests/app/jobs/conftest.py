@@ -13,6 +13,7 @@ from showrunner.app.jobs.store import JobStore
 from showrunner.app.profiles import registered  # noqa: F401
 from showrunner.app.profiles.profile import Profile
 from showrunner.core.media import MediaFile, MediaItem, Movie
+from showrunner.core.naming import SUGGESTED_TEMPLATES, NamingOptions
 
 
 class Killed(BaseException):
@@ -85,4 +86,6 @@ def store(tmp_path: Path) -> JobStore:
 
 @pytest.fixture
 def profile() -> Profile:
-    return Profile.defaults("Test")
+    """The defaults with the suggested templates, so every file has a title and names to change."""
+    base = Profile.defaults("Test")
+    return base.with_options("naming", NamingOptions(**SUGGESTED_TEMPLATES))

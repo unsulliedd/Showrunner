@@ -39,6 +39,7 @@ def test_keys_of_retired_switches_are_dropped_without_a_warning() -> None:
     data = {
         "format": 1,
         "stages": {
+            "scan": {"enabled": False},
             "tracks": {"enabled": True, "flags_from_names": False},
             "mux": {"enabled": True, "suffix": " [new]"},
             "metadata": {"enabled": False, "set_title": False, "set_track_names": False, "untagged_language": "tr"},
@@ -48,6 +49,7 @@ def test_keys_of_retired_switches_are_dropped_without_a_warning() -> None:
     loaded = profile_from_json("old", data)
     assert loaded.warnings == []
     assert loaded.value.for_stage("tracks") == TracksOptions(flags_from_names=False)
+    assert loaded.value.for_stage("scan") == REGISTRY.get("scan")()
     assert loaded.value.for_stage("mux").suffix == " [new]"
     assert loaded.value.for_stage("metadata") == MetadataOptions(untagged_language="tr")
     assert loaded.value.for_stage("naming") == replace(NamingOptions(), title_template="{show}")

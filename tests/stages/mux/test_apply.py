@@ -17,7 +17,7 @@ from showrunner.core.naming import NamingOptions
 from showrunner.stages.metadata import MetadataOptions
 from showrunner.stages.mux import Failure, MuxOptions, MuxPlan, Original, apply_mux, check, plan_mux, resume_mux
 from showrunner.stages.mux import apply as module
-from showrunner.stages.tracks import KindTest, TrackMatch, TrackRule, TracksOptions, Verdict
+from showrunner.stages.tracks import KindTest, PairedFile, TrackMatch, TrackRule, TracksOptions, Verdict
 from showrunner.tools.probe import Programs, probe
 from showrunner.tools.process import ProcessCancelledError
 
@@ -60,7 +60,7 @@ def make_plan(episode: Any, **mux: Any) -> tuple[MuxPlan, Programs]:
     result = plan_mux(
         item,
         MuxOptions(**mux),
-        TracksOptions(rules=[DROP_FRENCH]),
+        TracksOptions(rules=[DROP_FRENCH], add_paired=[PairedFile.of(subtitle)]),
         MetadataOptions(),
         naming,
     )

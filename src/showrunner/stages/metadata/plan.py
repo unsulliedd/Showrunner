@@ -105,7 +105,7 @@ def plan_metadata(
     if isinstance(track_plan, PlanRefused):
         # The file keeps its tracks as they are, so names and languages are planned for those tracks and the
         # rules' flag changes are left out with the rest of the refused plan.
-        tracks = replace(tracks, rules=[])
+        tracks = replace(tracks, rules=[], add_paired=[])
         track_plan = plan_tracks(item, tracks)
         assert isinstance(track_plan, TrackPlan)
     invalid: list[MetadataProblem] = []  # a problem of the options, which refuses every file

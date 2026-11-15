@@ -6,16 +6,17 @@ from types import SimpleNamespace
 
 from showrunner.core.language import Language
 from showrunner.core.media import MediaItem, SubtitleFile
-from showrunner.core.naming import NamingOptions
+from showrunner.core.naming import SUGGESTED_TEMPLATES, NamingOptions
 from showrunner.core.track import TrackFlags
 from showrunner.stages.metadata import MetadataOptions
 from showrunner.stages.mux import MuxOptions, MuxPlan, MuxProblemKind, MuxRefused, NameField, Original, check_names
 from showrunner.stages.mux import plan_mux as plan_mux_
-from showrunner.stages.tracks import FlagShape, KindTest, TrackMatch, TrackRule, TracksOptions, Verdict
+from showrunner.stages.tracks import FlagShape, KindTest, PairedFile, TrackMatch, TrackRule, TracksOptions, Verdict
 
 DROP_FRENCH = TrackRule(match=TrackMatch(kind=KindTest.AUDIO, languages=["fre"]), verdict=Verdict.DROP)
 TRACKS = TracksOptions(rules=[DROP_FRENCH])
 ON = MuxOptions()
+SUGGESTED = NamingOptions(**SUGGESTED_TEMPLATES)
 
 
 def plan_mux(
@@ -25,7 +26,7 @@ def plan_mux(
     metadata: MetadataOptions | None = None,
     naming: NamingOptions | None = None,
 ) -> MuxPlan | MuxRefused | None:
-    return plan_mux_(item, mux, tracks, metadata or MetadataOptions(), naming or NamingOptions())
+    return plan_mux_(item, mux, tracks, metadata or MetadataOptions(), naming or SUGGESTED)
 
 
 def two_audio(b: SimpleNamespace, **kwargs: object) -> MediaItem:
@@ -48,7 +49,7 @@ def test_tracks_read_without_mkvmerge_are_refused(b: SimpleNamespace) -> None:
 
 
 def test_the_plan_keeps_the_rules_tracks_with_metadatas_names_and_title(b: SimpleNamespace) -> None:
-    naming = replace(NamingOptions(), audio_track_template="{language}", title_template="{show} {episode}")
+    naming = replace(SUGGESTED, audio_track_template="{language}", title_template="{show} {episode}")
     result = plan_mux(two_audio(b, title="Old"), naming=naming)
     assert isinstance(result, MuxPlan)
     assert [t.planned.track.id for t in result.tracks] == [0, 1]
@@ -72,9 +73,9 @@ def test_empty_templates_keep_names_and_title_but_the_rules_flags_are_written(b:
 def test_an_added_subtitle_is_named_with_the_subtitle_template_and_flagged_by_the_rules(b: SimpleNamespace) -> None:
     srt = SubtitleFile(Path("Show Name - S01E01.tr.forced.srt"), Language("tur"), forced=True)
     rules = [TrackRule(match=TrackMatch(kind=KindTest.SUBTITLE, languages=["tr"]), default=FlagShape.FIRST)]
-    naming = replace(NamingOptions(), subtitle_track_template="{language}[ ({flags})]")
+    naming = replace(SUGGESTED, subtitle_track_template="{language}[ ({flags})]")
     item = b.item(b.video(0), b.audio(1, "English", "eng"), subtitles=(srt,))
-    result = plan_mux(item, tracks=replace(TRACKS, rules=rules), naming=naming)
+    result = plan_mux(item, tracks=TracksOptions(rules=rules, add_paired=[PairedFile.of(srt)]), naming=naming)
     assert isinstance(result, MuxPlan)
     added = result.tracks[-1]
     assert added.planned.external == srt

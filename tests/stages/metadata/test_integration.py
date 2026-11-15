@@ -12,7 +12,7 @@ import pytest
 
 from showrunner.core.language import Language
 from showrunner.core.media import Episode, MediaItem
-from showrunner.core.naming import NamingOptions
+from showrunner.core.naming import SUGGESTED_TEMPLATES, NamingOptions
 from showrunner.stages.metadata import MetadataOptions, MetadataPlan, apply_metadata, plan_metadata
 from showrunner.stages.tracks import FlagShape, KindTest, TrackMatch, TrackRule, TracksOptions
 from showrunner.tools.probe import Programs, probe
@@ -60,7 +60,7 @@ def episode(tmp_path: Path) -> MediaItem:
 def test_a_plan_is_applied_to_a_real_file_and_found_there_afterwards(episode: MediaItem) -> None:
     tracks = TracksOptions(rules=[TrackRule(match=TrackMatch(kind=KindTest.AUDIO), default=FlagShape.FIRST)])
     options = MetadataOptions(untagged_language="pt-BR", write_implied_flags=True)
-    plan = plan_metadata(episode, options, NamingOptions(), tracks, source="WEB-DL")
+    plan = plan_metadata(episode, options, NamingOptions(**SUGGESTED_TEMPLATES), tracks, source="WEB-DL")
     assert isinstance(plan, MetadataPlan)
     assert not plan.needs_remux
     assert len(plan.changes) == 10  # title, four names, two languages, two defaults, the implied flag

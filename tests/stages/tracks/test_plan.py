@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from showrunner.core.media import SubtitleFile
+from showrunner.core.media import MediaItem, SubtitleFile
 from showrunner.core.track import ObjectAudio
 from showrunner.stages.tracks import (
     Flag,
@@ -14,6 +14,7 @@ from showrunner.stages.tracks import (
     FlagShape,
     FlagTest,
     KindTest,
+    PairedFile,
     PlanProblemKind,
     PlanRefused,
     TrackMatch,
@@ -40,6 +41,11 @@ def keep(**match: object) -> TrackRule:
 
 def make_first(flag: str, **match: object) -> TrackRule:
     return TrackRule(match=TrackMatch(**match), **{flag: FlagShape.FIRST})  # type: ignore[arg-type]
+
+
+def adding(media: MediaItem, chosen: TracksOptions) -> TracksOptions:
+    """`chosen` with every paired file of `media` chosen to be added."""
+    return replace(chosen, add_paired=[PairedFile.of(subtitle) for subtitle in media.subtitles])
 
 
 def planned(result: TrackPlan | PlanRefused) -> TrackPlan:
@@ -105,13 +111,21 @@ def test_a_disabled_rule_is_skipped(b: SimpleNamespace) -> None:
     assert plan.dropped[0].rule_index == 1  # positions count disabled rules too
 
 
-@pytest.mark.parametrize("rules", [[], [replace(drop(kind=KindTest.AUDIO), enabled=False)]])
-def test_without_a_rule_that_is_on_nothing_changes_and_nothing_is_added(b: SimpleNamespace, rules) -> None:
+@pytest.mark.parametrize("rules", [[], [replace(drop(kind=KindTest.AUDIO), enabled=False)], [keep()]])
+def test_a_paired_file_not_chosen_is_not_added_whatever_the_rules(b: SimpleNamespace, rules) -> None:
     media = b.item(b.video(), b.audio(1), subtitles=(b.srt(b.tr),))
     plan = planned(plan_tracks(media, TracksOptions(rules=rules)))
     assert kept_ids(plan) == [0, 1]
     assert plan.dropped == ()
     assert not plan.needs_remux
+
+
+def test_a_chosen_paired_file_is_added_without_any_rule_and_keeps_its_number(b: SimpleNamespace) -> None:
+    media = b.item(b.video(), b.audio(1), subtitles=(b.srt(b.en), b.srt(b.tr), b.srt(b.tr, forced=True)))
+    chosen = TracksOptions(add_paired=[PairedFile.of(media.subtitles[1])])
+    plan = planned(plan_tracks(media, chosen))
+    assert kept_ids(plan) == [0, 1, -2]  # the forced Turkish file is another choice
+    assert plan.needs_remux
 
 
 def test_default_moves_to_the_first_matching_track_of_its_kind(b: SimpleNamespace) -> None:
@@ -188,7 +202,8 @@ def test_make_the_turkish_external_subtitle_default(b: SimpleNamespace) -> None:
         b.subtitle(2, b.en, default=True),
         subtitles=(b.srt(b.en), b.srt(b.tr)),
     )
-    plan = planned(plan_tracks(media, options(make_first("default", kind=KindTest.SUBTITLE, languages=["tr"]))))
+    rules = options(make_first("default", kind=KindTest.SUBTITLE, languages=["tr"]))
+    plan = planned(plan_tracks(media, adding(media, rules)))
     assert [k.flags.default for k in plan.kept] == [False, True, False, False, True]
     turkish = plan.kept[-1]
     assert turkish.external == media.subtitles[1]
@@ -207,7 +222,7 @@ def test_external_subtitles_are_matched_like_tracks(b: SimpleNamespace) -> None:
         drop(kind=KindTest.SUBTITLE, languages=["und"]),
         drop(codecs=["SubRip"], forced=FlagTest.SET),
     )
-    plan = planned(plan_tracks(media, rules))
+    plan = planned(plan_tracks(media, adding(media, rules)))
     assert {(d.external.path.name, d.rule_index) for d in plan.dropped if d.external} == {
         ("Show Name - S01E01.en.sdh.srt", 0),
         ("Show Name - S01E01.srt", 1),
@@ -219,9 +234,9 @@ def test_external_subtitles_are_matched_like_tracks(b: SimpleNamespace) -> None:
     ]
 
 
-def test_keeping_an_external_subtitle_adds_it(b: SimpleNamespace) -> None:
+def test_a_chosen_external_subtitle_is_added_after_the_tracks(b: SimpleNamespace) -> None:
     media = b.item(b.video(), b.audio(1), b.subtitle(2, b.en), subtitles=(b.srt(b.tr),))
-    plan = planned(plan_tracks(media, options(keep())))
+    plan = planned(plan_tracks(media, adding(media, options())))
     assert kept_ids(plan) == [0, 1, 2, -1]
     assert [k.external is not None for k in plan.kept] == [False, False, False, True]
     added = plan.kept[-1].track
@@ -232,7 +247,7 @@ def test_keeping_an_external_subtitle_adds_it(b: SimpleNamespace) -> None:
 
 def test_an_image_subtitle_file_is_not_text_based(b: SimpleNamespace) -> None:
     media = b.item(b.video(), b.audio(1), subtitles=(SubtitleFile(Path("Show Name - S01E01.sup"), b.en),))
-    track = planned(plan_tracks(media, options(keep()))).kept[-1].track
+    track = planned(plan_tracks(media, adding(media, options()))).kept[-1].track
     assert track.subtitle is not None
     assert not track.subtitle.text_based
     assert track.codec == "S_HDMV/PGS"
@@ -240,7 +255,7 @@ def test_an_image_subtitle_file_is_not_text_based(b: SimpleNamespace) -> None:
 
 def test_external_flags_come_from_the_file(b: SimpleNamespace) -> None:
     media = b.item(b.video(), b.audio(1), subtitles=(b.srt(b.en, forced=True, sdh=True),))
-    flags = planned(plan_tracks(media, options(keep()))).kept[-1].flags
+    flags = planned(plan_tracks(media, adding(media, options()))).kept[-1].flags
     assert flags.forced
     assert flags.hearing_impaired
     assert not flags.default
@@ -255,12 +270,12 @@ def test_needs_remux(b: SimpleNamespace) -> None:
     assert planned(plan_tracks(base, options(drop(languages=["en"])))).needs_remux
     # An added subtitle file.
     with_file = b.item(b.video(), b.audio(1), subtitles=(b.srt(b.tr),))
-    assert planned(plan_tracks(with_file, options(keep()))).needs_remux
+    assert planned(plan_tracks(with_file, adding(with_file, options()))).needs_remux
 
 
 def test_a_subtitle_file_left_out_needs_no_remux(b: SimpleNamespace) -> None:
     media = b.item(b.video(), b.audio(1), subtitles=(b.srt(b.en),))
-    plan = planned(plan_tracks(media, options(drop(kind=KindTest.SUBTITLE))))
+    plan = planned(plan_tracks(media, adding(media, options(drop(kind=KindTest.SUBTITLE)))))
     assert [d.external is not None for d in plan.dropped] == [True]
     assert not plan.needs_remux
 

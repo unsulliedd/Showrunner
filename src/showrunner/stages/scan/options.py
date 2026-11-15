@@ -10,8 +10,6 @@ from showrunner.core.options.registry import REGISTRY
 @REGISTRY.register("scan")
 @dataclass(frozen=True, slots=True)
 class ScanOptions:
-    # Off: videos are still found and identified, but no subtitle files are collected or paired.
-    enabled: bool = True
     # Read untagged subtitle files and guess their language from the text.
     detect_untagged_languages: bool = True
     # Treat the files of `Subs` and `Subtitles` folders as belonging to the videos beside the folder.

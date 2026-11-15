@@ -18,8 +18,9 @@ from showrunner.core.options.serialization import (
 FORMAT_VERSION = 1
 
 # Keys that earlier versions wrote and that no longer mean anything: they are dropped on load without a warning.
-# They were on/off switches; what runs now follows from the rules and templates themselves.
+# They were on/off switches; what runs now follows from the rules, choices and templates themselves.
 _RETIRED = {
+    "scan": {"enabled"},
     "tracks": {"enabled"},
     "mux": {"enabled"},
     "metadata": {"enabled", "set_title", "set_track_names"},
