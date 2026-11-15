@@ -5,7 +5,18 @@ from collections.abc import Callable
 import pytest
 
 from showrunner.core.media import MediaItem
-from showrunner.core.naming import NamingContext, Problem, ProblemKind, parse, preview
+from showrunner.core.naming import (
+    SUGGESTED_TEMPLATES,
+    NamingContext,
+    Piece,
+    PieceKind,
+    Problem,
+    ProblemKind,
+    parse,
+    pieces,
+    preview,
+    write,
+)
 from showrunner.core.track import HdrKind, Track
 
 MakeItem = Callable[..., MediaItem]
@@ -117,3 +128,37 @@ def test_valid_template_has_no_problems(episode_context: NamingContext) -> None:
 def test_track_tokens_are_empty_without_a_track(make_item: MakeItem, video: Build, audio: Build) -> None:
     context = NamingContext(make_item(video(), audio()))
     assert text("{file_name}[ ({codec})]", context) == "Show Name (2020) - 1x05 - Episode Name"
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        *SUGGESTED_TEMPLATES.values(),
+        "{show} - S{season:00}E{episode:000}[ - {episode_title}]",
+        r"a \{brace\} and \[bracket\] and \ backslash",
+        "[outer [{inner}] {year}]",
+        "",
+    ],
+)
+def test_pieces_write_back_to_the_same_template(template: str) -> None:
+    parsed = parse(template)
+    written = write(pieces(parsed))
+    assert parse(written) == parsed
+    assert parse(written).problems == ()
+
+
+def test_write_escapes_typed_text() -> None:
+    text = "S[1]{x}\\"
+    written = write([Piece(PieceKind.TEXT, text), Piece(PieceKind.TOKEN, "season", 2)])
+    assert written == "S\\[1\\]\\{x\\}\\\\{season:00}"
+    assert pieces(parse(written)) == [Piece(PieceKind.TEXT, text), Piece(PieceKind.TOKEN, "season", 2)]
+
+
+def test_pieces_flatten_groups() -> None:
+    assert pieces(parse("a[ {year}]")) == [
+        Piece(PieceKind.TEXT, "a"),
+        Piece(PieceKind.OPEN),
+        Piece(PieceKind.TEXT, " "),
+        Piece(PieceKind.TOKEN, "year"),
+        Piece(PieceKind.CLOSE),
+    ]

@@ -20,6 +20,7 @@ from pytestqt.qtbot import QtBot
 from showrunner.app.batches.batch import BatchKind
 from showrunner.app.library.library import Library
 from showrunner.ui.i18n.catalog import STRINGS_DIR
+from showrunner.ui.quick import names
 from showrunner.ui.quick.engine import QML_DIR, build_engine, prepare
 from showrunner.ui.quick.window import SIDE_PANELS, WORKSPACE_TABS, WindowController
 from showrunner.ui.theme.tokens import SIZES
@@ -281,6 +282,8 @@ def test_every_string_key_the_qml_asks_for_exists() -> None:
     keys |= {f"overview.title.{kind}" for kind in BatchKind}
     keys |= {f"matrix.group.{kind}" for kind in ("audio", "subtitle")}
     keys |= {f"tracks.flag_tip.{flag}" for flag in ("default", "forced")}
+    keys |= {f"tokens.editor.kind.{kind}" for kind in names.KINDS}
+    keys |= {f"tokens.editor.source.{source}" for source in names.SOURCES}
     keys |= {f"matrix.legend.{entry}" for entry in re.findall(r'"(\w+)"', _legend(text))}
     keys = {key for key in keys if not key.endswith(".")}
     assert sorted(key for key in keys if key not in catalog) == []
@@ -300,3 +303,101 @@ def test_qml_files_hold_no_literal_colors_or_text() -> None:
         assert re.findall(r"#[0-9a-fA-F]{3,8}\b", text) == [], path.name
         assert re.findall(r'\b(?:text|title|label|placeholderText): *"[^"]', text) == [], path.name
         assert re.findall(r"\bQt\.(?:rgba|hsla|hsva|lighter|darker)\(", text) == [], path.name
+
+
+def _drag(window: Any, qtbot: QtBot, start: QPoint, end: QPoint) -> None:
+    QTest.mousePress(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+    steps = 12
+    for step in range(1, steps + 1):
+        x = start.x() + (end.x() - start.x()) * step // steps
+        y = start.y() + (end.y() - start.y()) * step // steps
+        QTest.mouseMove(window, QPoint(x, y))
+        qtbot.wait(10)
+    QTest.mouseRelease(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
+
+
+def _centre(item: QQuickItem, x: float = 0.5) -> QPoint:
+    return item.mapToScene(QPointF(item.width() * x, item.height() / 2)).toPoint()
+
+
+def test_names_and_tokens_answer_the_pointer(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    load.window.setProperty("place", "names")
+    assert load() == []
+    root = load.window.contentItem()
+
+    def naming() -> Any:
+        assert controller._key is not None
+        return controller.batches.profile(controller._key).for_stage("naming")
+
+    # An empty card's suggestion starts the template.
+    _click(load.window, _item(_item(root, "templateCard_title_template"), "startTemplate"))
+    load()
+    assert naming().title_template == "{file_name}"
+    # A token dragged from the panel onto the left half of a chip goes before it.
+    _drag(load.window, qtbot, _centre(_item(root, "tokenChip_show")), _centre(_item(root, "railChip_file_name"), 0.2))
+    load()
+    assert naming().title_template == "{show}{file_name}"
+    # A chip dragged onto the free end of the rail moves there; a click on a panel token adds it at the end.
+    frame = _item(root, "railFrame")
+    end = frame.mapToScene(QPointF(frame.width() - 10, frame.height() / 2)).toPoint()
+    _drag(load.window, qtbot, _centre(_item(root, "railChip_show"), 0.3), end)
+    load()
+    assert naming().title_template == "{file_name}{show}"
+    year = _item(root, "tokenChip_year")
+    _click(load.window, year)
+    load()
+    assert naming().title_template == "{file_name}{show}{year}"
+    # A new custom token opens in the editor, and its fields are written when left.
+    _click(load.window, _item(root, "addToken"))
+    load()
+    assert controller.tokens["editor"]["name"] == "token_1"
+    field = _item(root, "tokenText")
+    _click(load.window, field)
+    for key in (Qt.Key.Key_G, Qt.Key.Key_R, Qt.Key.Key_P):
+        QTest.keyClick(load.window, key)
+    QTest.keyClick(load.window, Qt.Key.Key_Return)
+    load()
+    assert naming().custom_tokens[0].text == "grp"
+    assert controller.tokens["editor"]["found"] == "10 of 10"
+    # A focused chip shows its buttons: the format steps, the dashed box makes it optional, x takes it out.
+    _click(load.window, _item(root, "tokenChip_season"))
+    load()
+    _click(load.window, _item(root, "railChip_season"))
+    load()
+    _click(load.window, _item(_item(root, "railChip_season"), "chipFormat"))
+    load()
+    assert naming().title_template == "{file_name}{show}{year}{season:00}"
+    _click(load.window, _item(root, "railChip_year"))
+    load()
+    _click(load.window, _item(_item(root, "railChip_year"), "chipRemove"))
+    load()
+    assert naming().title_template == "{file_name}{show}{season:00}"
+    _click(load.window, _item(root, "railChip_season"))
+    load()
+    _click(load.window, _item(_item(root, "railChip_season"), "chipOptional"))
+    load()
+    assert naming().title_template == "{file_name}{show}[{season:00}]"
+    # Text typed into the place before the first chip is written on Enter.
+    first = min((s for s in _items(root, "railSlot") if s.isVisible()), key=lambda s: s.mapToScene(QPointF()).x())
+    _click(load.window, first)
+    QTest.keyClick(load.window, Qt.Key.Key_X)
+    QTest.keyClick(load.window, Qt.Key.Key_Return)
+    load()
+    assert naming().title_template == "x{file_name}{show}[{season:00}]"
+    for card in ("video_track_template", "audio_track_template", "subtitle_track_template", "title_template"):
+        _click(load.window, _item(root, "templateCard_" + card))
+        assert load() == [], card
+    # A movie names its title card for movies.
+    movie = next(i for i in library.items if i.file.path.name.startswith("Movie.Title"))
+    controller.select(controller.tree.index_of(str(movie.file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    assert load() == []
+    assert controller.names["title"] == "Movie titles"
+    assert qt_warnings() == []

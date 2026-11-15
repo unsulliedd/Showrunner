@@ -119,9 +119,14 @@ Panel {
                 visible: workspace.place === "tracks"
             }
 
+            Names {
+                anchors.fill: parent
+                visible: workspace.place === "names"
+            }
+
             Placeholder {
                 anchors.fill: parent
-                visible: workspace.place !== "overview" && workspace.place !== "tracks"
+                visible: workspace.place === "review"
                 title: Strings.t("workspace.placeholder." + workspace.place + ".title")
                 lead: Strings.t("workspace.placeholder." + workspace.place + ".lead")
             }

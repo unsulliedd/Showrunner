@@ -50,9 +50,14 @@ Panel {
                 visible: side.tab === "rules"
             }
 
+            TokensPanel {
+                anchors.fill: parent
+                visible: side.tab === "tokens"
+            }
+
             Placeholder {
                 anchors.fill: parent
-                visible: side.tab !== "inspector" && side.tab !== "rules"
+                visible: side.tab !== "inspector" && side.tab !== "rules" && side.tab !== "tokens"
                 title: side.tab !== "" ? Strings.t("panel.placeholder." + side.tab + ".title") : ""
                 lead: side.tab !== "" ? Strings.t("panel.placeholder." + side.tab + ".lead") : ""
             }

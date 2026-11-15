@@ -32,8 +32,8 @@ from showrunner.app.batches.workspace import load_batches, save_batches
 from showrunner.app.dependencies.service import check, mkvpropedit_from, programs_from
 from showrunner.app.jobs.blocked import blocked_stages
 from showrunner.app.jobs.counts import count_changes
-from showrunner.app.jobs.groups import ChangeGroup
-from showrunner.app.jobs.preview import FileOutcome, Preview, preview
+from showrunner.app.jobs.groups import TITLE_TEMPLATE, ChangeGroup
+from showrunner.app.jobs.preview import FileOutcome, FilePreview, Preview, preview
 from showrunner.app.jobs.stages import pipeline
 from showrunner.app.library.library import LibraryLoad
 from showrunner.app.library.loader import BackgroundJob, LibraryLoader
@@ -41,12 +41,22 @@ from showrunner.app.profiles.errors import ProfileError, ProfileExistsError
 from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME, ProfileStore
 from showrunner.app.settings.app_settings import Startup, load_settings, save_settings, with_recent
 from showrunner.core.media import MediaItem
+from showrunner.core.naming import (
+    SUGGESTED_TEMPLATES,
+    CustomKind,
+    CustomToken,
+    NamingOptions,
+    PatternSource,
+    parse,
+    pieces,
+)
 from showrunner.stages.scan.extensions import SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS
 from showrunner.stages.tracks import TracksOptions, Verdict
 from showrunner.tools.dependencies.detect import DependencyStatus, State
 from showrunner.tools.dependencies.specs import SPEC_BY_ID
 from showrunner.ui.i18n.catalog import tr, tr_plural
 from showrunner.ui.library.model import Kind, LibraryModel
+from showrunner.ui.quick import names as rail
 from showrunner.ui.quick.facts import heading, video_summary, when
 from showrunner.ui.quick.library import LibraryTree
 from showrunner.ui.quick.plans import LivePlanner
@@ -103,6 +113,7 @@ class WindowController(QObject):
     filter_changed = Signal()
     plans_changed = Signal()  # the live plan or the choices of the selected batch changed
     planning_changed = Signal()
+    names_changed = Signal()  # what the Names place or the Tokens panel shows changed
 
     def __init__(
         self,
@@ -143,6 +154,10 @@ class WindowController(QObject):
         self._preview: Preview | None = None  # the live plan of the selected batch, once it arrived
         self._view: BatchView | None = None
         self._shown: dict[str, Any] = {}  # what QML reads about the batch, built once per plan or choice
+        self._template = TITLE_TEMPLATE  # the template the Names builder shows
+        self._token_query = ""
+        self._editing = -1  # the custom token open in the Tokens panel's editor
+        self._names: dict[str, Any] = {}  # what the Names place and the Tokens panel read
         self._marks: dict[Path, str] = {}  # tree dots from the live plans of every batch opened
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
@@ -304,6 +319,7 @@ class WindowController(QObject):
         items = [item for path in paths if (item := self.model.library.item(path)) is not None]
         kind = self.model.kind(source)
         self._focus = items[0] if kind.is_video and items else None
+        previous = self._key
         if not items:
             self._key, self._items = None, []
         elif kind is Kind.EPISODE:
@@ -315,6 +331,8 @@ class WindowController(QObject):
             self._key, self._items = BatchKey.of(items[0], whole_show=True), items
         else:
             self._key, self._items = BatchKey.selection(paths, Media.MOVIES), items
+        if self._key != previous:
+            self._editing = -1  # the open token belongs to the other batch's profile
         self._replan()
         self.batch_changed.emit()
 
@@ -583,6 +601,190 @@ class WindowController(QObject):
     def inspector(self) -> dict[str, Any]:
         return self._shown.get("inspector", {})
 
+    # Names: the templates and the custom tokens of the selected batch
+
+    def _naming(self) -> NamingOptions:
+        assert self._key is not None
+        return self.batches.profile(self._key).for_stage("naming")
+
+    def _set_naming(self, options: NamingOptions) -> None:
+        if self._key is None or options == self._naming():
+            self._refresh_names()
+            return
+        self.batches.copy(self._key).set_options("naming", options)
+        self._copy_changed()
+
+    def _set_template(self, text: str) -> None:
+        if self._key is not None:
+            self._set_naming(replace(self._naming(), **{self._template: text}))
+
+    def _template_text(self) -> str:
+        return getattr(self._naming(), self._template) if self._key is not None else ""
+
+    @Property("QVariantMap", notify=names_changed)
+    def names(self) -> dict[str, Any]:
+        """The template cards, the builder rail of the picked one, its result and the batch before and after."""
+        return self._names.get("place", {})
+
+    @Property("QVariantMap", notify=names_changed)
+    def tokens(self) -> dict[str, Any]:
+        return self._names.get("tokens", {"groups": [], "editor": {}})
+
+    @Slot(str)
+    def pick_template(self, template: str) -> None:
+        if template in rail.TEMPLATES and template != self._template:
+            self._template = template
+            self._refresh_names()
+
+    @Slot(str)
+    def start_template(self, template: str) -> None:
+        """Pick a card and fill its empty template with the suggested one."""
+        if template not in rail.TEMPLATES:
+            return
+        self._template = template
+        if self._template_text():
+            self._refresh_names()
+            return
+        self._set_template(SUGGESTED_TEMPLATES[template])
+
+    @Slot()
+    def clear_template(self) -> None:
+        self._set_template("")
+
+    @Slot(int, str)
+    def rail_insert(self, at: int, name: str) -> None:
+        self._set_template(rail.insert_token(self._template_text(), at, name))
+
+    @Slot(str)
+    def rail_append(self, name: str) -> None:
+        text = self._template_text()
+        self._set_template(rail.insert_token(text, len(pieces(parse(text))), name))
+
+    @Slot(int, int)
+    def rail_move(self, source: int, target: int) -> None:
+        self._set_template(rail.move_token(self._template_text(), source, target))
+
+    @Slot(int)
+    def rail_remove(self, at: int) -> None:
+        self._set_template(rail.remove_piece(self._template_text(), at))
+
+    @Slot(int, str)
+    def rail_set_text(self, at: int, text: str) -> None:
+        self._set_template(rail.set_text(self._template_text(), at, text))
+
+    @Slot(int, str)
+    def rail_add_text(self, at: int, text: str) -> None:
+        self._set_template(rail.add_text(self._template_text(), at, text))
+
+    @Slot(int)
+    def rail_optional(self, at: int) -> None:
+        self._set_template(rail.toggle_optional(self._template_text(), at))
+
+    @Slot(int)
+    def rail_padding(self, at: int) -> None:
+        self._set_template(rail.cycle_padding(self._template_text(), at))
+
+    def _get_token_query(self) -> str:
+        return self._token_query
+
+    def _set_token_query(self, text: str) -> None:
+        if text != self._token_query:
+            self._token_query = text
+            self._refresh_names()
+
+    token_query = Property(str, _get_token_query, _set_token_query, notify=names_changed)
+
+    def _custom(self) -> list[CustomToken]:
+        return list(self._naming().custom_tokens) if self._key is not None else []
+
+    @Slot()
+    def add_token(self) -> None:
+        """A new text token with a free name, open in the editor."""
+        if self._key is None:
+            return
+        custom = self._custom()
+        self._editing = len(custom)
+        self._set_naming(replace(self._naming(), custom_tokens=[*custom, CustomToken(rail.new_token_name(custom))]))
+
+    @Slot(int)
+    def edit_token(self, index: int) -> None:
+        """Open a custom token in the editor; -1 closes it."""
+        self._editing = index if 0 <= index < len(self._custom()) else -1
+        self._refresh_names()
+
+    def _change_token(self, index: int, **changes: Any) -> None:
+        custom = self._custom()
+        if 0 <= index < len(custom):
+            custom[index] = replace(custom[index], **changes)
+            self._set_naming(replace(self._naming(), custom_tokens=custom))
+
+    @Slot(int, str)
+    def rename_token(self, index: int, name: str) -> None:
+        """Rename a custom token, and its uses in the templates, other tokens and value maps with it."""
+        custom = self._custom()
+        if not 0 <= index < len(custom) or name == custom[index].name:
+            return
+        naming = rail.rename_token(self._naming(), custom[index].name, name)
+        tokens = list(naming.custom_tokens)
+        tokens[index] = replace(tokens[index], name=name)
+        self._set_naming(replace(naming, custom_tokens=tokens))
+
+    @Slot(int, str)
+    def set_token_kind(self, index: int, kind: str) -> None:
+        if kind in rail.KINDS:
+            self._change_token(index, kind=CustomKind(kind))
+
+    @Slot(int, str)
+    def set_token_text(self, index: int, text: str) -> None:
+        self._change_token(index, text=text)
+
+    @Slot(int, str)
+    def set_token_source(self, index: int, source: str) -> None:
+        if source in rail.SOURCES:
+            self._change_token(index, source=PatternSource(source))
+
+    @Slot(int)
+    def remove_token(self, index: int) -> None:
+        custom = self._custom()
+        if not 0 <= index < len(custom):
+            return
+        self._editing = -1
+        name, kept = custom[index].name, custom[:index] + custom[index + 1 :]
+        maps = self._naming().value_maps
+        # A value map of a token that is gone would block Metadata, with nothing here to fix it.
+        if all(t.name != name for t in kept):
+            maps = {token: values for token, values in maps.items() if token != name}
+        self._set_naming(replace(self._naming(), custom_tokens=kept, value_maps=maps))
+
+    def _refresh_names(self) -> None:
+        """Build what Names and Tokens show; QML hears of it only when it changed, so a plan that arrives while text
+        is typed does not rebuild the rail under the cursor."""
+        built: dict[str, Any] = {}
+        if self._key is not None:
+            profile = self.batches.profile(self._key)
+            given = rail.NamesInput(
+                items=self._items,
+                focus=self._focus,
+                media=self._key.media,
+                naming=profile.for_stage("naming"),
+                tracks=profile.for_stage("tracks"),
+                template=self._template,
+                files=self._current_files(),
+                block=blocked_stages(profile).get("metadata"),
+                batch_title=heading(self._key, self._items).title,
+            )
+            built = {"place": rail.place(given), "tokens": rail.tokens(given, self._token_query, self._editing)}
+        if built != self._names:
+            self._names = built
+            self.names_changed.emit()
+
+    def _current_files(self) -> tuple[FilePreview, ...]:
+        """The live plan's files when it was made for the batch's files as they are now."""
+        paths = [i.file.path for i in self._items]
+        if self._preview is None or [f.item.file.path for f in self._preview.files] != paths:
+            return ()
+        return self._preview.files
+
     # Live plans
 
     def _replan(self) -> None:
@@ -624,10 +826,9 @@ class WindowController(QObject):
         if self._key is None:
             self._view, self._shown = None, {}
             self.plans_changed.emit()
+            self._refresh_names()
             return
-        paths = [i.file.path for i in self._items]
-        current = self._preview is not None and [f.item.file.path for f in self._preview.files] == paths
-        files = self._preview.files if current and self._preview is not None else ()
+        files = self._current_files()
         profile = self.batches.profile(self._key)
         view = BatchView.build(self._items, profile.for_stage("tracks"), files)
         focus = self._focus or (self._items[0] if self._items else None)
@@ -651,6 +852,7 @@ class WindowController(QObject):
             shown["movie"] = {"video": video_summary(self._items[0]), "groups": view.card_groups(self._items[0])}
         self._view, self._shown = view, shown
         self.plans_changed.emit()
+        self._refresh_names()
 
     # Programs
 

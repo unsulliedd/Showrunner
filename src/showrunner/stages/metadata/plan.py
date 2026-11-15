@@ -85,6 +85,29 @@ class MetadataPlan:
     needs_remux: bool = False
 
 
+def named_tracks(item: MediaItem, tracks: TracksOptions) -> tuple[TrackPlan, TracksOptions]:
+    """The tracks the file keeps, which the names are made for, and the track options that kept them."""
+    track_plan = plan_tracks(item, tracks)
+    if isinstance(track_plan, PlanRefused):
+        # The file keeps its tracks as they are, so names and languages are planned for those tracks and the
+        # rules' flag changes are left out with the rest of the refused plan.
+        tracks = replace(tracks, rules=[], add_paired=[])
+        track_plan = plan_tracks(item, tracks)
+        assert isinstance(track_plan, TrackPlan)
+    return track_plan, tracks
+
+
+def naming_context(
+    item: MediaItem, naming: NamingOptions, tracks: TracksOptions, track: PlannedTrack | None, source: str = ""
+) -> NamingContext:
+    """What a template reads for the file's title (`track` None) or for one kept track."""
+    # The flags after the rules, so `{flags}` names what the track will be.
+    named = replace(track.track, flags=track.flags) if track else None
+    return NamingContext(
+        item, named, source, naming.custom_tokens, naming.value_maps, flags_from_names=tracks.flags_from_names
+    )
+
+
 def plan_metadata(
     item: MediaItem,
     options: MetadataOptions,
@@ -101,25 +124,14 @@ def plan_metadata(
     # mkvpropedit edits Matroska and WebM files only.
     if file.container.casefold() not in {"matroska", "webm"}:
         refusals.append(MetadataProblem(MetadataProblemKind.NOT_MATROSKA, detail=file.container))
-    track_plan = plan_tracks(item, tracks)
-    if isinstance(track_plan, PlanRefused):
-        # The file keeps its tracks as they are, so names and languages are planned for those tracks and the
-        # rules' flag changes are left out with the rest of the refused plan.
-        tracks = replace(tracks, rules=[], add_paired=[])
-        track_plan = plan_tracks(item, tracks)
-        assert isinstance(track_plan, TrackPlan)
+    track_plan, tracks = named_tracks(item, tracks)
     invalid: list[MetadataProblem] = []  # a problem of the options, which refuses every file
     language = _language(options.untagged_language, invalid)
 
     found: dict[str, dict[Problem, None]] = {}  # template option -> its problems, without repeats
 
     def render(template: str, track: PlannedTrack | None) -> str:
-        # The flags after the rules, so `{flags}` names what the track will be.
-        named = replace(track.track, flags=track.flags) if track else None
-        context = NamingContext(
-            item, named, source, naming.custom_tokens, naming.value_maps, flags_from_names=tracks.flags_from_names
-        )
-        result = preview(getattr(naming, template), context)
+        result = preview(getattr(naming, template), naming_context(item, naming, tracks, track, source))
         found.setdefault(template, {}).update(dict.fromkeys(result.problems))
         return result.text
 

@@ -220,7 +220,7 @@ class BatchView:
                 {
                     "path": str(item.file.path),
                     "number": _number(item),
-                    "title": _title(item),
+                    "title": item_title(item),
                     "file": item.file.path.stem,
                     "cells": cells,
                     "audio": [p for p, k in zip(pills, _pill_kinds(cells, kinds), strict=True) if k is TrackKind.AUDIO],
@@ -358,7 +358,7 @@ class BatchView:
         title = _new_title(file)
         changes = _what_changes(item, file, tracks, original)
         return {
-            "name": _title(item) or item.file.path.stem,
+            "name": item_title(item) or item.file.path.stem,
             "facts": _facts(item),
             "file": item.file.path.name,
             "count": sum(count_changes(file).values()) if file is not None else 0,
@@ -466,7 +466,7 @@ def _number(item: MediaItem) -> str:
     return f"{item.identity.episode:02d}" if isinstance(item.identity, Episode) else ""
 
 
-def _title(item: MediaItem) -> str:
+def item_title(item: MediaItem) -> str:
     identity = item.identity
     if isinstance(identity, Episode):
         return identity.episode_title or tr("library.episode_untitled", number=identity.episode)

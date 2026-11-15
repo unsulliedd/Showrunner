@@ -14,6 +14,7 @@ the position of the part at fault, and a broken token renders as empty.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -160,6 +161,59 @@ def parse(text: str) -> Template:
         close_group()
     flush()
     return Template(tuple(stack[0][1]), tuple(problems))
+
+
+class PieceKind(StrEnum):
+    TEXT = "text"
+    TOKEN = "token"
+    OPEN = "open"  # the `[` of a group
+    CLOSE = "close"  # its `]`
+
+
+@dataclass(frozen=True, slots=True)
+class Piece:
+    """One part of a template in a flat list, for an editor that shows the parts and edits the list."""
+
+    kind: PieceKind
+    text: str = ""  # the literal text without escapes, or the token's name
+    padding: int = 0
+
+
+def pieces(template: Template) -> list[Piece]:
+    """The template's parts in order, a group as its `OPEN` piece, its parts and its `CLOSE` piece. A template with
+    syntax problems loses what was wrong (a broken token, an unmatched bracket): edit only a template without."""
+    found: list[Piece] = []
+
+    def walk(nodes: tuple[_Node, ...]) -> None:
+        for node in nodes:
+            if isinstance(node, str):
+                found.append(Piece(PieceKind.TEXT, node))
+            elif isinstance(node, _Group):
+                found.append(Piece(PieceKind.OPEN))
+                walk(node.nodes)
+                found.append(Piece(PieceKind.CLOSE))
+            else:
+                found.append(Piece(PieceKind.TOKEN, node.name, node.padding))
+
+    walk(template.nodes)
+    return found
+
+
+_SPECIAL = re.compile(r"([\\{}\[\]])")
+
+
+def write(parts: Sequence[Piece]) -> str:
+    """The template text of `parts`, the inverse of `parse` then `pieces`; text is escaped where it holds a brace, a
+    bracket or a backslash."""
+    out = []
+    for part in parts:
+        if part.kind is PieceKind.TEXT:
+            out.append(_SPECIAL.sub(r"\\\1", part.text))
+        elif part.kind is PieceKind.TOKEN:
+            out.append(f"{{{part.text}:{'0' * part.padding}}}" if part.padding else f"{{{part.text}}}")
+        else:
+            out.append("[" if part.kind is PieceKind.OPEN else "]")
+    return "".join(out)
 
 
 def _read_field(inner: str, start: int, end: int, problems: list[Problem]) -> _Field:

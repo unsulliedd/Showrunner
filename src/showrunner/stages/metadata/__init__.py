@@ -8,6 +8,8 @@ from showrunner.stages.metadata.plan import (
     MetadataProblem,
     MetadataProblemKind,
     MetadataRefused,
+    named_tracks,
+    naming_context,
     plan_metadata,
 )
 
@@ -20,5 +22,7 @@ __all__ = [
     "MetadataProblemKind",
     "MetadataRefused",
     "apply_metadata",
+    "named_tracks",
+    "naming_context",
     "plan_metadata",
 ]
