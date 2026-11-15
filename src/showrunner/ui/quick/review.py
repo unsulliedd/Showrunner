@@ -1,0 +1,346 @@
+"""What the Review place draws, as plain lists and dicts for QML: the run's changes grouped by kind, each group in or
+out of the run, and one card per file with what changes in it.
+
+Two plans come in. `run` is planned with the left-out groups emptied, as Apply will run it; `full` with every group
+in, so a left-out group can still show what it would do. Left-out files are in both plans and only left out of the
+counts here and of the job (`create_job(left_out_files=...)`).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence, Set
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from showrunner.app.batches.batch import Media
+from showrunner.app.jobs.blocked import StageBlock
+from showrunner.app.jobs.counts import name_changes, track_changes
+from showrunner.app.jobs.groups import ChangeGroup
+from showrunner.app.jobs.preview import FileOutcome, FilePreview
+from showrunner.core.media import MediaItem
+from showrunner.core.track import TrackFlags, TrackKind
+from showrunner.stages.metadata import MetadataPlan
+from showrunner.stages.mux.options import MuxOptions
+from showrunner.stages.tracks import NO_LANGUAGE, TrackPlan, TracksOptions
+from showrunner.tools.mkvtoolnix.propedit import Property
+from showrunner.ui.i18n.catalog import tr, tr_plural
+from showrunner.ui.quick.names import blocked_lines
+from showrunner.ui.quick.tracks import (
+    KINDS,
+    BatchView,
+    Seen,
+    code,
+    item_number,
+    item_title,
+    language_kind,
+    new_names,
+    new_title,
+    seen,
+)
+
+# The kinds of change of each group, in the order its card lists them.
+LINES: dict[ChangeGroup, tuple[str, ...]] = {
+    ChangeGroup.TRACKS: ("new_file", "flags"),
+    ChangeGroup.NAMES: ("titles", "names", "other"),
+}
+GROUP_ICONS = {ChangeGroup.TRACKS: "audio", ChangeGroup.NAMES: "names"}
+FILTERS = ("all", "run", "look", "out")
+# What no stage of this version changes, listed under "Stays as it is".
+STAYS = ("chapters", "attachments", "artwork")
+_LOOK = (FileOutcome.REFUSED, FileOutcome.NEEDS_REMUX, FileOutcome.UNWRITTEN, FileOutcome.MISSING)
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewInput:
+    items: Sequence[MediaItem]
+    media: Media
+    tracks: TracksOptions
+    mux: MuxOptions
+    run: Sequence[FilePreview]  # empty until the run plan for the batch's files arrived
+    full: Sequence[FilePreview]
+    groups_out: Set[ChangeGroup] = frozenset()
+    files_out: Set[Path] = frozenset()
+    blocks: dict[str, StageBlock] = field(default_factory=dict)
+    mkvtoolnix_missing: bool = False
+    filter: str = "all"
+
+
+def parts(file: FilePreview | None) -> dict[str, int]:
+    """A file's changes by kind: the new file and the flags the rules move (Tracks and new files), then titles,
+    track names and every other header edit (Names and flags). They add up to `count_changes`."""
+    found = dict.fromkeys((key for keys in LINES.values() for key in keys), 0)
+    if file is None:
+        return found
+    stage = file.plan_for("tracks")
+    tracks = stage.plan if stage is not None and isinstance(stage.plan, TrackPlan) else None
+    if tracks is not None:
+        found["new_file"] = int(tracks.needs_remux)
+        found["flags"] = track_changes(tracks) - found["new_file"]
+    stage = file.plan_for("metadata")
+    if stage is not None and isinstance(stage.plan, MetadataPlan):
+        found["titles"] = sum(c.prop is Property.TITLE for c in stage.plan.changes)
+        found["names"] = sum(c.prop is Property.NAME for c in stage.plan.changes)
+        found["other"] = name_changes(stage.plan, tracks) - found["titles"] - found["names"]
+    return found
+
+
+def _group_count(found: dict[str, int], group: ChangeGroup) -> int:
+    return sum(found[key] for key in LINES[group])
+
+
+def _by_path(files: Sequence[FilePreview]) -> dict[Path, FilePreview]:
+    return {f.item.file.path: f for f in files}
+
+
+def review(given: ReviewInput) -> dict[str, object]:
+    run, full = _by_path(given.run), _by_path(given.full)
+    included = [i for i in given.items if i.file.path not in given.files_out]
+    # Counted are the changes Apply writes: a file whose plans write nothing (MKVToolNix missing) is a look, not a run.
+    writing = [i for i in included if (f := run.get(i.file.path)) is not None and f.writes]
+    run_parts = {i.file.path: parts(run.get(i.file.path)) for i in given.items}
+    full_parts = {i.file.path: parts(full.get(i.file.path)) for i in given.items}
+    per_file = {path: sum(found.values()) for path, found in run_parts.items()}
+    changes = sum(per_file[i.file.path] for i in writing)
+    files = sum(per_file[i.file.path] > 0 for i in writing)
+    run_view = BatchView.build(given.items, given.tracks, given.run)
+    full_view = BatchView.build(given.items, given.tracks, given.full)
+    rows = [_row(given, item, run_view, full_view, run_parts[item.file.path]) for item in given.items]
+    counts = {
+        "all": len(rows),
+        "run": sum(r["state"] != "out" for r in rows),
+        "look": sum(r["state"] == "look" for r in rows),
+        "out": sum(r["state"] == "out" for r in rows),
+    }
+    stays = ([tr("review.stays.file_names")] if not given.mux.suffix else []) + [tr(f"review.stays.{k}") for k in STAYS]
+    return {
+        "count": changes,
+        "files": files,
+        "title": _changes_in(changes, files) if changes else tr("review.nothing"),
+        "groups": [_group(given, group, included, writing, run_parts, full_parts) for group in ChangeGroup],
+        "stays": stays,
+        "filters": [{"key": key, "label": tr(f"review.filter.{key}"), "count": counts[key]} for key in FILTERS],
+        "rows": [r for r in rows if given.filter == "all" or r["state"] == given.filter or _in_run(given, r)],
+        "apply_text": tr("review.apply", changes=tr_plural("top.changes", changes), files=tr_plural("top.files", files))
+        if changes
+        else tr("review.apply_none"),
+    }
+
+
+def _changes_in(changes: int, files: int) -> str:
+    return tr("top.changes_in", changes=tr_plural("top.changes", changes), files=tr_plural("top.files", files))
+
+
+def _in_run(given: ReviewInput, row: dict[str, object]) -> bool:
+    return given.filter == "run" and row["state"] != "out"
+
+
+def _group(
+    given: ReviewInput,
+    group: ChangeGroup,
+    included: Sequence[MediaItem],
+    writing: Sequence[MediaItem],
+    run_parts: dict[Path, dict[str, int]],
+    full_parts: dict[Path, dict[str, int]],
+) -> dict[str, object]:
+    """A group's card: in the run its lines count the run plan; left out they count what it would do, struck."""
+    out = group in given.groups_out
+    source, files = (full_parts, included) if out else (run_parts, writing)
+    lines = [
+        {"label": tr(f"review.line.{key}"), "count": count}
+        for key in LINES[group]
+        if (count := sum(source[i.file.path][key] for i in files))
+    ]
+    problems = _problems(given, group)
+    if out:
+        note = tr(f"review.left_out.{group.value}")
+    elif not lines and not problems:
+        note = tr(f"review.nothing.{group.value}")
+    else:
+        note = ""
+    card: dict[str, object] = {
+        "key": group.value,
+        "icon": GROUP_ICONS[group],
+        "title": tr(f"review.group.{group.value}"),
+        "in_run": not out,
+        "lines": lines,
+        "note": note,
+        "problems": problems,
+        "program": given.mkvtoolnix_missing,
+    }
+    if group is ChangeGroup.TRACKS:
+        card["original"] = given.mux.original.value
+        card["original_text"] = _original(given.mux, given.mux.original.value)
+        card["originals"] = [{"key": o, "label": _original(given.mux, o)} for o in ("recycle", "keep")]
+    return card
+
+
+def _original(mux: MuxOptions, original: str) -> str:
+    return tr(f"review.original.{original}", folder=mux.keep_folder)
+
+
+def _problems(given: ReviewInput, group: ChangeGroup) -> list[str]:
+    """Why a group plans nothing or less than asked, worded, with a missing program first."""
+    found = [tr(f"review.program.{group.value}")] if given.mkvtoolnix_missing else []
+    if group is ChangeGroup.TRACKS:
+        if block := given.blocks.get("tracks"):
+            numbers = sorted({p.rule_index + 1 for p in block.rules})
+            found.append(tr("review.blocked.rules", rules=tr("common.list_separator").join(map(str, numbers))))
+        if block := given.blocks.get("mux"):
+            found += [tr(f"review.blocked.{name.value}", folder=given.mux.keep_folder) for name in block.names]
+    else:
+        found += blocked_lines(given.blocks.get("metadata"), given.media)
+    return found
+
+
+# File cards
+
+
+def _row(
+    given: ReviewInput, item: MediaItem, run_view: BatchView, full_view: BatchView, found: dict[str, int]
+) -> dict[str, object]:
+    path = item.file.path
+    run_file, full_file = run_view.file(item), full_view.file(item)
+    warning = run_view.warning(item) if run_file is not None else ""
+    if path in given.files_out:
+        state = "out"
+    elif warning or (run_file is not None and run_file.outcome in _LOOK):
+        state = "look"
+    else:
+        state = "in"
+    count = sum(found.values())
+    every = parts(full_file)
+    return {
+        "path": str(path),
+        "number": item_number(item),
+        "title": item_title(item),
+        "state": state,
+        "count": count,
+        "summary": _summary(found) if count else tr("review.file.nothing"),
+        "warning": warning,
+        # One mark per group: amber where the group changes this file in the run, faint where it would but is out.
+        "marks": [
+            {
+                "key": group.value,
+                "on": _group_count(found, group) > 0 and state != "out",
+                "out": _group_count(every, group) > 0 and (group in given.groups_out or state == "out"),
+            }
+            for group in ChangeGroup
+        ],
+        "detail": _detail(given, item, run_file, full_file),
+    }
+
+
+def _summary(found: dict[str, int]) -> str:
+    """ "3 changes · new file, 2 flags"."""
+    what = [
+        tr(f"review.part.{key}") if key == "new_file" else tr_plural(f"review.part.{key}", n)
+        for key, n in found.items()
+        if n
+    ]
+    total = tr_plural("review.file.changes", sum(found.values()))
+    return f"{total} {tr('status.separator')} {tr('common.list_separator').join(what)}"
+
+
+def _pills(tracks: Sequence[Seen], kind: TrackKind, *, before: bool) -> list[dict[str, object]]:
+    if before:
+        return [
+            {"code": code(s.track.language), "state": "kept", "added": False, **_flags(s, s.track.flags)}
+            for s in tracks
+            if s.track.kind is kind and s.external is None
+        ]
+    return [
+        {"code": code(s.track.language), "state": s.state, "added": s.external is not None, **_flags(s, s.flags)}
+        for s in tracks
+        if s.track.kind is kind
+    ]
+
+
+def _flags(s: Seen, flags: TrackFlags) -> dict[str, bool]:
+    kept = s.state != "dropped"
+    return {"default": kept and flags.default, "forced": kept and flags.forced}
+
+
+def _defaults(tracks: Sequence[Seen], *, before: bool) -> str:
+    """ "English audio · no subtitles": the default track of each kind."""
+    found = []
+    for kind in KINDS:
+        default = next(
+            (
+                s.track
+                for s in tracks
+                if s.track.kind is kind
+                and (
+                    s.external is None and s.track.flags.default if before else s.state != "dropped" and s.flags.default
+                )
+            ),
+            None,
+        )
+        language = default.language.ietf if default is not None and default.language else NO_LANGUAGE
+        found.append(language_kind(language, kind) if default is not None else tr(f"inspector.none_kind.{kind.value}"))
+    return f" {tr('status.separator')} ".join(found)
+
+
+def _detail(
+    given: ReviewInput, item: MediaItem, run_file: FilePreview | None, full_file: FilePreview | None
+) -> list[dict[str, object]]:
+    """The expanded card: tracks before and after, the defaults, the file, the title and the track names. A row of a
+    left-out group shows what the group would do, marked left out."""
+    tracks_out = ChangeGroup.TRACKS in given.groups_out
+    names_out = ChangeGroup.NAMES in given.groups_out
+    after = seen(item, full_file if tracks_out else run_file)
+    now = seen(item, None)
+    rows: list[dict[str, object]] = []
+    for kind in KINDS:
+        before_pills = _pills(now, kind, before=True)
+        after_pills = _pills(after, kind, before=False)
+        if before_pills or after_pills:
+            rows.append(_line(f"kind_{kind.value}", before_pills, after_pills, tracks_out, pills=True))
+    before_defaults, after_defaults = _defaults(now, before=True), _defaults(after, before=False)
+    if before_defaults != after_defaults:
+        rows.append(_line("defaults", before_defaults, after_defaults, tracks_out))
+    rows.append(
+        _line(
+            "file",
+            item.file.path.name,
+            _file_after(given, full_file if tracks_out else run_file),
+            tracks_out,
+            mono=True,
+        )
+    )
+    named = full_file if names_out else run_file
+    if title := new_title(named):
+        rows.append(_line("title", item.file.title or tr("inspector.title_empty"), title, names_out, mono=True))
+    if renamed := new_names(named):
+        tracks = {t.id: t for t in item.file.tracks}
+        before_names = [tracks[i].name for i in renamed if i in tracks]
+        rows.append(_line("names", _joined(before_names), _joined(list(renamed.values())), names_out))
+    return rows
+
+
+def _joined(names: list[str]) -> str:
+    return tr("common.list_separator").join(name or tr("review.unnamed") for name in names)
+
+
+def _line(
+    key: str, before: object, after: object, out: bool, *, pills: bool = False, mono: bool = False
+) -> dict[str, object]:
+    return {
+        "label": tr(f"review.detail.{key}"),
+        "before": before,
+        "after": after,
+        "out": out,
+        "pills": pills,
+        "mono": mono,
+    }
+
+
+def _file_after(given: ReviewInput, file: FilePreview | None) -> str:
+    stage = file.plan_for("tracks") if file is not None else None
+    plan = stage.plan if stage is not None else None
+    if file is not None and file.outcome is FileOutcome.NEEDS_REMUX:
+        return tr("inspector.new_file.cannot")
+    if isinstance(plan, TrackPlan) and plan.needs_remux:
+        return tr(f"review.file_after.{given.mux.original.value}", folder=given.mux.keep_folder)
+    if file is not None and file.writes:
+        return tr("review.file_after.in_place")
+    return tr("review.file_after.stays")

@@ -51,6 +51,7 @@ def _run_quick(app: QApplication) -> int:
     controller.start()
     QTimer.singleShot(0, controller.restore_workspace)
     code = app.exec()
+    controller.stop_jobs()
     controller.save_workspace()
     return code
 

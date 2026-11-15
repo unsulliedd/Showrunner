@@ -26,6 +26,7 @@ ApplicationWindow {
 
         drawerOpen: window.drawerOpen
         onDrawerToggled: window.drawerOpen = !window.drawerOpen
+        onReviewAsked: window.place = "review"
     }
 
     footer: StatusBar {}
@@ -107,6 +108,9 @@ ApplicationWindow {
             }
 
             BottomDrawer {
+                id: drawer
+
+                objectName: "drawer"
                 visible: window.drawerOpen
                 SplitView.preferredHeight: Theme.drawer_height
                 SplitView.minimumHeight: Theme.drawer_tabs * 2
@@ -117,11 +121,25 @@ ApplicationWindow {
         SidePanel {
             objectName: "sidePanel"
             visible: window.sideShown
+            // The Rules and Tokens of a batch being applied wait until its job ends.
+            enabled: !app.locked
             place: window.place
             SplitView.preferredWidth: Theme.inspector_width
             SplitView.minimumWidth: Theme.panel_min_width
         }
     }
+
+    // The drawer opens on its Jobs tab when a job starts.
+    Connections {
+        target: app.jobs
+
+        function onStarted() {
+            drawer.tab = "jobs"
+            window.drawerOpen = true
+        }
+    }
+
+    JobOffer {}
 
     DropArea {
         anchors.fill: parent

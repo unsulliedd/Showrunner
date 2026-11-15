@@ -34,6 +34,8 @@ ICONS: dict[str, str] = {
     "play": '<path d="M8 5.5v13l10.5-6.5z"/>',
     "alert": '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17h.01"/>',
     "resume": '<path d="M19.5 12A7.5 7.5 0 1 1 17.3 6.7"/><path d="M19.5 4v4h-4"/>',
+    "recycle": '<path d="M4 7h16M9 7V4.5h6V7M6 7l1 12.5h10L18 7"/>',
+    "lock": '<rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
     "names": '<path d="M4 7h10M4 12h7M4 17h9"/><path d="M15.5 13.5l4-4 1.5 1.5-4 4H15.5z"/>',
     "arrow": '<path d="M5 12h14M13.5 6.5L19 12l-5.5 5.5"/>',
     "chapters": '<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />',

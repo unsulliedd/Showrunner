@@ -88,6 +88,30 @@ def test_a_failure_marks_its_file_and_the_batch_goes_on(
     assert result.steps[0].message == "disk full"
 
 
+def test_each_step_is_told_as_it_starts_and_ends(files: SimpleNamespace, store: JobStore, profile: Profile) -> None:
+    profile = profile.with_options("tracks", TracksOptions())
+    stages = (files.FakeStage(), files.SecondStage())
+    job = start(store, profile, stages, [files.item("a.mkv", "will fail"), files.item("b.mkv")])
+    told: list[tuple[str, str, StepState, str]] = []
+    run_job(
+        store,
+        job,
+        stages,
+        read=files.read,
+        step_changed=lambda r: told.append((r.path.name, r.stage, r.state, r.message)),
+    )
+    # A skipped step never runs, so it is told only as it ends.
+    assert told == [
+        ("a.mkv", "metadata", StepState.RUNNING, ""),
+        ("a.mkv", "metadata", StepState.FAILED, "disk full"),
+        ("a.mkv", "tracks", StepState.SKIPPED, ""),
+        ("b.mkv", "metadata", StepState.RUNNING, ""),
+        ("b.mkv", "metadata", StepState.DONE, ""),
+        ("b.mkv", "tracks", StepState.RUNNING, ""),
+        ("b.mkv", "tracks", StepState.DONE, ""),
+    ]
+
+
 def test_later_steps_of_a_file_whose_step_failed_are_skipped(
     files: SimpleNamespace, store: JobStore, profile: Profile
 ) -> None:

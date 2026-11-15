@@ -21,6 +21,8 @@ Progress = Callable[[int, int], None]  # steps finished, steps in the job
 # The file and stage of the running step, and the fraction of it done; for a step that takes long, a remux.
 StepProgress = Callable[[Path, str, float], None]
 Read = Callable[[Path], MediaFile]  # reads a file's tracks again, as the library load does
+# Told of each step as it starts running and as it ends, with what the step gave; for a view of the job.
+StepChanged = Callable[["StepRecord"], None]
 
 
 class StalePreviewError(Exception):
@@ -82,6 +84,7 @@ def run_job(
     progress: Progress | None = None,
     step_progress: StepProgress | None = None,
     cancel: threading.Event | None = None,
+    step_changed: StepChanged | None = None,
 ) -> JobResult:
     """Run every step that has not finished. A file whose stamp differs from the preview is not written. A step
     that was running when the app stopped is first given to its stage's `resume`; by default it is checked
@@ -129,6 +132,8 @@ def run_job(
         if verdict is not None:
             return verdict, message, None
         record(step, StepState.RUNNING)
+        if step_changed is not None:
+            step_changed(StepRecord(step.position, step.path, step.plan.stage, StepState.RUNNING))
         report = None if step_progress is None else lambda fraction: step_progress(step.path, step.plan.stage, fraction)
         try:
             result = stage.apply(step.plan, cancel, report)
@@ -154,6 +159,9 @@ def run_job(
             if result.moved_to is not None:
                 written[step.position] = result.moved_to
         record(step, state, message)
+        if step_changed is not None:
+            ended = (details.get(step.position), written.get(step.position))
+            step_changed(StepRecord(step.position, step.path, step.plan.stage, state, message, *ended))
         if all(states[s.position][0] is StepState.DONE for s in job.steps if s.path == step.path):
             moved = [written[s.position] for s in job.steps if s.path == step.path and s.position in written]
             _mark_finished(store, job.options_key, moved[-1] if moved else step.path)

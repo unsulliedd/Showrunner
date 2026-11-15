@@ -41,9 +41,17 @@ Panel {
             }
         }
 
+        JobsPanel {
+            objectName: "jobsPanel"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: drawer.tab === "jobs" && app.jobs.view.title !== undefined
+        }
+
         Placeholder {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            visible: drawer.tab !== "jobs" || app.jobs.view.title === undefined
             title: Strings.t("drawer.placeholder." + drawer.tab + ".title")
             lead: Strings.t("drawer.placeholder." + drawer.tab + ".lead")
         }

@@ -18,6 +18,7 @@ AbstractButton {
     required property string summary
     required property string problem
     required property bool planned
+    required property bool left_out
     required property string row_id
 
     readonly property bool isSelected: row_id === app.selected
@@ -111,11 +112,19 @@ AbstractButton {
                 font.pixelSize: mono ? Theme.text_xs : Theme.text_sm
             }
 
+            UiText {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: row.left_out
+                text: Strings.t("library.left_out")
+                color: Theme.faint
+                font.pixelSize: Theme.text_xs
+            }
+
             Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Theme.icon_sm
                 height: Theme.icon_sm
-                visible: row.problem !== "" || row.planned
+                visible: !row.left_out && (row.problem !== "" || row.planned)
 
                 Icon {
                     anchors.centerIn: parent

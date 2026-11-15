@@ -78,12 +78,14 @@ Panel {
             }
 
             ActionButton {
+                objectName: "leaveOutBatch"
                 Layout.alignment: Qt.AlignTop
-                kind: "ghost"
-                iconName: "x"
-                text: Strings.t("workspace.leave_out")
-                // Leaving a batch out of the run comes with Review.
-                enabled: false
+                kind: app.batch_left_out ? "outline" : "ghost"
+                iconName: app.batch_left_out ? "" : "x"
+                text: app.batch_left_out ? Strings.t("workspace.put_back") : Strings.t("workspace.leave_out")
+                Accessible.description: Strings.t("workspace.leave_out_help")
+                enabled: !app.locked
+                onClicked: app.leave_out_batch()
             }
         }
 
@@ -99,9 +101,33 @@ Panel {
             onPicked: key => workspace.placePicked(key)
         }
 
+        RowLayout {
+            objectName: "lockLine"
+            Layout.fillWidth: true
+            Layout.leftMargin: Theme.space_lg + Theme.space_sm
+            Layout.topMargin: Theme.space_md
+            visible: app.locked
+            spacing: Theme.space_md
+
+            Icon {
+                name: "lock"
+                size: Theme.icon_sm
+                color: Theme.muted
+            }
+
+            UiText {
+                Layout.fillWidth: true
+                text: Strings.t("workspace.locked")
+                color: Theme.muted
+                font.pixelSize: Theme.text_sm
+            }
+        }
+
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            // A batch being applied keeps its choices until the job ends; Review stays open to read.
+            enabled: !app.locked || workspace.place === "review"
 
             Overview {
                 anchors.fill: parent
@@ -124,11 +150,9 @@ Panel {
                 visible: workspace.place === "names"
             }
 
-            Placeholder {
+            Review {
                 anchors.fill: parent
                 visible: workspace.place === "review"
-                title: Strings.t("workspace.placeholder." + workspace.place + ".title")
-                lead: Strings.t("workspace.placeholder." + workspace.place + ".lead")
             }
         }
     }

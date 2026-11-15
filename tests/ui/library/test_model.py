@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication
 
 from showrunner.app.library.library import Library, LibraryLoad, Mark
 from showrunner.core.media import Episode, MediaItem
+from showrunner.ui.i18n.catalog import tr
 from showrunner.ui.library.model import Kind, LibraryModel
 
 
@@ -122,3 +123,17 @@ def test_adding_a_load_rebuilds_the_tree_with_the_new_videos(model: LibraryModel
 
 def test_a_path_is_looked_up_in_the_tree(model: LibraryModel) -> None:
     assert not model.index_for_path(Path("nowhere.mkv")).isValid()
+
+
+def test_files_read_again_update_their_rows_or_rebuild_the_tree_for_a_new_name(
+    model: LibraryModel, sample_library: Library
+) -> None:
+    first = sample_library.items[0]
+    keep = QPersistentModelIndex(index_of(model, sample_library, "S01E01"))
+    model.replace_files({first.file.path: replace(first.file, title="New")}, gone=[first.subtitles[0].path])
+    assert keep.isValid()
+    assert model.index(keep.row(), 1, keep.parent()).data() == tr("common.none")
+    renamed = first.file.path.with_name("Alpha S01E01 new.mkv")
+    model.replace_files({first.file.path: replace(first.file, path=renamed)})
+    assert not keep.isValid()
+    assert model.index_for_path(renamed).isValid()

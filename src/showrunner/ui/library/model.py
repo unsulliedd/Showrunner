@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from enum import StrEnum
 from pathlib import Path
 
@@ -144,9 +145,13 @@ class LibraryModel(QStandardItemModel):
     def pair_instead(self, video: Path, subtitle: SubtitleFile) -> None:
         self._replace(self._library.pair_instead(video, subtitle))
 
-    def replace_files(self, files: dict[Path, MediaFile]) -> None:
-        """Take the files read again after Apply in place of the ones the library holds."""
-        self._replace(self._library.with_files(files))
+    def replace_files(self, files: dict[Path, MediaFile], gone: Iterable[Path] = ()) -> None:
+        """Take the files read again after Apply in place of the ones the library holds; see `Library.with_files`."""
+        library = self._library.with_files(files, gone)
+        if [i.file.path for i in library.items] == [i.file.path for i in self._library.items]:
+            self._replace(library)
+        else:
+            self.set_library(library)  # a file took a new name, which the rows are keyed by
 
     def _replace(self, library: Library) -> None:
         """Take a library with the same videos in the same order and update only the rows that differ."""

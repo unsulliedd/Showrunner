@@ -93,3 +93,18 @@ def test_merge_adds_new_videos_and_does_not_list_a_known_subtitle_twice(sample_l
     merged = sample_library.merge(load)
     assert merged.unpaired == (known,)
     assert merged.roots == (Path("lib"), Path("other"))
+
+
+def test_files_read_again_after_apply_take_their_place_and_lose_the_subtitles_moved_away(
+    sample_library: Library,
+) -> None:
+    first = sample_library.item(path_of(sample_library, "S01E01"))
+    renamed = replace(first.file, path=first.file.path.with_name("Alpha S01E01 new.mkv"), title="New")
+    gone = first.subtitles[0].path
+    library = sample_library.with_files({first.file.path: renamed}, gone=[gone])
+    moved = library.item(renamed.path)
+    assert moved is not None
+    assert moved.identity == first.identity
+    assert (moved.file.title, moved.subtitles) == ("New", ())
+    assert library.item(first.file.path) is None
+    assert [i.file.path for i in library.items][1:] == [i.file.path for i in sample_library.items][1:]

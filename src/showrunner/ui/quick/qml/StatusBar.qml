@@ -43,7 +43,7 @@ Item {
         anchors.right: parent.right
         anchors.rightMargin: Theme.space_lg + Theme.space_xs
         anchors.verticalCenter: parent.verticalCenter
-        text: app.job_text
+        text: app.jobs.status || app.job_text
         color: Theme.ink
         font.pixelSize: Theme.text_sm
     }

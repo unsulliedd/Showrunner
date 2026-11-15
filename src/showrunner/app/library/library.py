@@ -111,11 +111,14 @@ class Library:
             tuple(dict.fromkeys((*self.roots, *load.roots))),
         )
 
-    def with_files(self, files: dict[Path, MediaFile]) -> Library:
-        """The library with these files, read again after they were written, in place of the ones at their
-        paths."""
-        items = tuple(replace(i, file=files[i.file.path]) if i.file.path in files else i for i in self.items)
-        return replace(self, items=items)
+    def with_files(self, files: dict[Path, MediaFile], gone: Iterable[Path] = ()) -> Library:
+        """The library with these files, read again after they were written, in place of the ones at the paths
+        they are keyed by; a file read under a new name keeps its place in a show or movie. The subtitle files in
+        `gone` were moved away (added to a new file) and are no longer paired."""
+        gone = set(gone)
+        items = (replace(i, file=files[i.file.path]) if i.file.path in files else i for i in self.items)
+        items = (replace(i, subtitles=tuple(s for s in i.subtitles if s.path not in gone)) for i in items)
+        return replace(self, items=tuple(sorted(items, key=lambda i: natural_key(i.file.path))))
 
     def pair(self, subtitle: SubtitleFile, video: Path) -> Library:
         """Give an unpaired file to a video."""

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from PySide6.QtCore import QPoint, QPointF, Qt, QUrl
+from PySide6.QtCore import QObject, QPoint, QPointF, Qt, QUrl
 from PySide6.QtQml import QQmlApplicationEngine, QQmlComponent, QQmlEngine, QQmlError, QQmlExpression
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
@@ -19,6 +19,7 @@ from pytestqt.qtbot import QtBot
 
 from showrunner.app.batches.batch import BatchKind
 from showrunner.app.library.library import Library
+from showrunner.tools.probe import Programs
 from showrunner.ui.i18n.catalog import STRINGS_DIR
 from showrunner.ui.quick import names
 from showrunner.ui.quick.engine import QML_DIR, build_engine, prepare
@@ -259,6 +260,80 @@ def test_a_show_and_a_selection_keep_their_batch_when_a_row_is_picked(
         load.window.setProperty("place", place)
         assert load() == [], place
     assert qt_warnings() == []
+
+
+def test_review_apply_and_the_job_offer_draw_without_warnings(
+    qapp: QApplication, qtbot: QtBot, tmp_path: Path, qt_warnings: Any
+) -> None:
+    """Review with a group and a file left out driven by clicks, Apply from its button, the job in the drawer while
+    it holds half way, then finished, and the offer of a cancelled job in a second window."""
+    from .conftest import program_statuses
+    from .test_apply import COMMENTARY, StandInMux, make_setup
+
+    made = make_setup(qtbot, tmp_path)
+    controller = made.controller
+    warnings: list[str] = []
+    engine = build_engine(controller, on_warnings=lambda errors: warnings.extend(e.toString() for e in errors))
+    window = engine.rootObjects()[0]
+    qtbot.waitUntil(window.isExposed)
+    window.setProperty("place", "review")
+    qtbot.wait(50)
+    root = window.contentItem()
+    controller.start_template("title_template")
+    qtbot.waitUntil(lambda: not controller.planning)
+    qtbot.wait(50)
+    _click(window, _item(root, "inRun_names"))
+    qtbot.waitUntil(lambda: not controller.planning and not controller.review["groups"][1]["in_run"])
+    qtbot.wait(50)
+    _click(window, _items(root, "leaveOut")[1])
+    assert controller.left_out.files == {made.season[1]}
+    qtbot.wait(50)
+    _click(window, _items(root, "expand")[0])
+    qtbot.wait(50)
+    assert warnings == []
+    made.hold.clear()
+    _click(window, _item(root, "applyButton"))
+    qtbot.waitUntil(lambda: controller.jobs.running)
+    assert window.property("drawerOpen") is True
+    assert _item(root, "jobsPanel").isVisible()
+    assert controller.locked
+    qtbot.wait(100)
+    made.hold.set()
+    qtbot.waitUntil(lambda: not controller.applying, timeout=10_000)
+    qtbot.wait(100)
+    assert [r["state"] for r in controller.jobs.view["rows"]] == ["done"] * 9
+    assert warnings == []
+    controller.toggle_keep(COMMENTARY)  # unlocked again
+    window.close()
+    engine.deleteLater()
+
+    # An unfinished job, offered in a new window and discarded there.
+    made.hold.clear()
+    again = make_setup(qtbot, tmp_path / "again")
+    again.hold.clear()
+    again.controller.apply()
+    qtbot.waitUntil(lambda: again.controller.jobs.running)
+    with qtbot.waitSignal(again.controller.jobs.ended, timeout=10_000):
+        again.controller.jobs.cancel()
+    stage = StandInMux(Path("mkvmerge"), Programs(mkvmerge=Path("mkvmerge")), bin=again.bin)
+    after = WindowController(
+        statuses=program_statuses, jobs=again.store, make_pipeline=lambda _s: (stage,), get_program=lambda _i: None
+    )
+    engine = build_engine(after, on_warnings=lambda errors: warnings.extend(e.toString() for e in errors))
+    window = engine.rootObjects()[0]
+    qtbot.waitUntil(window.isExposed)
+    after.start()
+    qtbot.waitUntil(lambda: bool(after.jobs.offer))
+    qtbot.wait(100)
+    popup = window.findChild(QObject, "jobOffer")
+    assert popup.property("visible") is True
+    _click(window, _item(window.contentItem(), "discardJob"))
+    assert after.jobs.offer == {}
+    assert again.store.unfinished() == []
+    assert warnings == []
+    assert qt_warnings() == []
+    window.close()
+    engine.deleteLater()
 
 
 def _qml_text() -> str:

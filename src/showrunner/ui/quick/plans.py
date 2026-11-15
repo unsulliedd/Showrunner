@@ -7,18 +7,17 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QObject, Signal
 
-from showrunner.app.jobs.preview import Preview
 from showrunner.app.library.loader import BackgroundJob
 
 _log = logging.getLogger(__name__)
 
-type Work = Callable[[], Preview]
+type Work = Callable[[], object]  # returns what the window shows: the full plan and the run plan
 
 
 class LivePlanner(QObject):
     """One plan at a time. A request while one runs replaces any request still waiting and starts when the running
     plan ends, whose result is then dropped: only the newest choices reach the screen, and an old plan never
-    overwrites a newer one. `planned` carries the request's token and the preview."""
+    overwrites a newer one. `planned` carries the request's token and the work's result."""
 
     planned = Signal(object, object)
     busy_changed = Signal()
@@ -51,7 +50,7 @@ class LivePlanner(QObject):
         if not was_busy:
             self.busy_changed.emit()
 
-    def _on_finished(self, result: Preview) -> None:
+    def _on_finished(self, result: object) -> None:
         self._end()
         if self._waiting is not None:
             self._start()

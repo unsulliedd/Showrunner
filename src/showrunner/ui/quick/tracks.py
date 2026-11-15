@@ -219,7 +219,7 @@ class BatchView:
             rows.append(
                 {
                     "path": str(item.file.path),
-                    "number": _number(item),
+                    "number": item_number(item),
                     "title": item_title(item),
                     "file": item.file.path.stem,
                     "cells": cells,
@@ -256,13 +256,13 @@ class BatchView:
             column = next(c for c in self.cols if c.signature == first)
             if column.paired is not None:
                 continue
-            missing = _language_kind(first.language, kind)
+            missing = language_kind(first.language, kind)
             fallback = next(
                 (s for s in tracks if s.track.kind is kind and s.state != "dropped" and s.flags.default), None
             )
             if fallback is None:
                 return tr("tracks.warning.missing", missing=missing)
-            other = _language_kind(fallback.track.language.ietf if fallback.track.language else NO_LANGUAGE, kind)
+            other = language_kind(fallback.track.language.ietf if fallback.track.language else NO_LANGUAGE, kind)
             return tr("tracks.warning.fallback", missing=missing, other=other)
         return ""
 
@@ -271,7 +271,7 @@ class BatchView:
     def cards(self, item: MediaItem) -> list[dict[str, object]]:
         """The movie's tracks as cards, by kind: the choice on each, and its name now and after."""
         cells = self.cells(item)
-        names = _new_names(self.file(item))
+        names = new_names(self.file(item))
         tracks = seen(item, self.file(item))
         cards = []
         for index, (column, found) in enumerate(zip(self.cols, cells, strict=True)):
@@ -354,8 +354,8 @@ class BatchView:
     def inspector(self, item: MediaItem, original: Original) -> dict[str, object]:
         file = self.file(item)
         tracks = seen(item, file)
-        names = _new_names(file)
-        title = _new_title(file)
+        names = new_names(file)
+        title = new_title(file)
         changes = _what_changes(item, file, tracks, original)
         return {
             "name": item_title(item) or item.file.path.stem,
@@ -462,7 +462,7 @@ def _all(item: MediaItem, options: TracksOptions) -> list[Track]:
     return [*item.file.tracks, *added]
 
 
-def _number(item: MediaItem) -> str:
+def item_number(item: MediaItem) -> str:
     return f"{item.identity.episode:02d}" if isinstance(item.identity, Episode) else ""
 
 
@@ -487,7 +487,7 @@ def _facts(item: MediaItem) -> str:
     return f" {tr('status.separator')} ".join(p for p in parts if p)
 
 
-def _language_kind(language: str, kind: TrackKind) -> str:
+def language_kind(language: str, kind: TrackKind) -> str:
     parsed = Language.parse(language) if language != NO_LANGUAGE else None
     name = parsed.name if parsed is not None else tr("tracks.no_language")
     return tr(f"tracks.language_kind.{kind.value}", language=name)
@@ -502,7 +502,7 @@ def _metadata(file: FilePreview | None) -> MetadataPlan | None:
     return stage.plan if stage is not None and isinstance(stage.plan, MetadataPlan) else None
 
 
-def _new_names(file: FilePreview | None) -> dict[int, str]:
+def new_names(file: FilePreview | None) -> dict[int, str]:
     plan = _metadata(file)
     return (
         {c.track_id: str(c.new) for c in plan.changes if c.prop is Property.NAME and c.track_id is not None}
@@ -511,7 +511,7 @@ def _new_names(file: FilePreview | None) -> dict[int, str]:
     )
 
 
-def _new_title(file: FilePreview | None) -> str:
+def new_title(file: FilePreview | None) -> str:
     plan = _metadata(file)
     return next((str(c.new) for c in plan.changes if c.prop is Property.TITLE), "") if plan else ""
 
@@ -545,7 +545,7 @@ def _what_changes(
                 after = [s for s in tracks if s.track.kind is kind and s.state != "dropped" and getattr(s.flags, flag)]
                 if before != {s.track.id for s in after}:
                     moved.append(
-                        _language_kind(after[0].track.language.ietf if after[0].track.language else NO_LANGUAGE, kind)
+                        language_kind(after[0].track.language.ietf if after[0].track.language else NO_LANGUAGE, kind)
                         if after
                         else tr(f"inspector.none_kind.{kind.value}")
                     )

@@ -2,6 +2,10 @@
 
 QML reads its properties and calls its slots; it holds no logic of its own. Loading, checking programs and saving
 go through the app layer, and slow work runs on pool threads through `BackgroundJob`.
+
+Apply never runs from a live plan: it plans the batch again with stamps on a pool thread, refuses to start when a
+file changed since it was read, stores the job and hands it to `Jobs`, which runs it on a pool thread too. The batch is
+locked from the press until the job ends.
 """
 
 from __future__ import annotations
@@ -9,13 +13,13 @@ from __future__ import annotations
 import base64
 import binascii
 import logging
-from collections.abc import Callable
-from dataclasses import replace
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Property, QByteArray, QModelIndex, QObject, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import Property, QByteArray, QModelIndex, QObject, QThreadPool, QTimer, QUrl, Signal, Slot
 from PySide6.QtWidgets import QFileDialog
 
 from showrunner.app.batches.batch import Batches, BatchKey, BatchKind, Media
@@ -28,19 +32,23 @@ from showrunner.app.batches.choices import (
     move_rule,
     pause_rule,
 )
+from showrunner.app.batches.leave_out import LeftOut
 from showrunner.app.batches.workspace import load_batches, save_batches
-from showrunner.app.dependencies.service import check, mkvpropedit_from, programs_from
+from showrunner.app.dependencies.service import check, mkvpropedit_from, probe_file, programs_from
 from showrunner.app.jobs.blocked import blocked_stages
 from showrunner.app.jobs.counts import count_changes
 from showrunner.app.jobs.groups import TITLE_TEMPLATE, ChangeGroup
 from showrunner.app.jobs.preview import FileOutcome, FilePreview, Preview, preview
-from showrunner.app.jobs.stages import pipeline
+from showrunner.app.jobs.run import JobResult, Read, StalePreviewError, create_job
+from showrunner.app.jobs.stages import Stage, pipeline
+from showrunner.app.jobs.store import JobStore, StepState
 from showrunner.app.library.library import LibraryLoad
 from showrunner.app.library.loader import BackgroundJob, LibraryLoader
 from showrunner.app.profiles.errors import ProfileError, ProfileExistsError
 from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME, ProfileStore
 from showrunner.app.settings.app_settings import Startup, load_settings, save_settings, with_recent
-from showrunner.core.media import MediaItem
+from showrunner.app.storage.paths import jobs_path
+from showrunner.core.media import MediaFile, MediaItem
 from showrunner.core.naming import (
     SUGGESTED_TEMPLATES,
     CustomKind,
@@ -50,6 +58,7 @@ from showrunner.core.naming import (
     parse,
     pieces,
 )
+from showrunner.stages.mux import MuxResult, Original
 from showrunner.stages.scan.extensions import SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS
 from showrunner.stages.tracks import TracksOptions, Verdict
 from showrunner.tools.dependencies.detect import DependencyStatus, State
@@ -58,10 +67,12 @@ from showrunner.ui.i18n.catalog import tr, tr_plural
 from showrunner.ui.library.model import Kind, LibraryModel
 from showrunner.ui.quick import names as rail
 from showrunner.ui.quick.facts import heading, video_summary, when
+from showrunner.ui.quick.jobs import Jobs
 from showrunner.ui.quick.library import LibraryTree
 from showrunner.ui.quick.plans import LivePlanner
 from showrunner.ui.quick.programs_dialog import run_programs_dialog
-from showrunner.ui.quick.tracks import BatchView, Column
+from showrunner.ui.quick.review import FILTERS, ReviewInput, review
+from showrunner.ui.quick.tracks import BatchView, Column, item_number, item_title
 
 _log = logging.getLogger(__name__)
 
@@ -90,8 +101,29 @@ SAVE_DELAY_MS = 400
 # The tree dot of a file whose plan needs a decision, and of one with planned changes.
 _LOOK_DOT, _PLANNED_DOT = "accent_ink", "control"
 _LOOK = (FileOutcome.REFUSED, FileOutcome.NEEDS_REMUX, FileOutcome.UNWRITTEN)
+# How long closing the window waits for a cancelled job to stop its program and leave the files in a known place.
+STOP_WAIT_MS = 10_000
 
 type Statuses = dict[str, DependencyStatus]
+type MakePipeline = Callable[[Statuses], Sequence[Stage]]
+
+
+def default_pipeline(statuses: Statuses) -> tuple[Stage, ...]:
+    return pipeline(programs_from(statuses), mkvpropedit_from(statuses))
+
+
+@dataclass(frozen=True, slots=True)
+class _Applying:
+    """What an Apply was pressed with, kept while its stamped preview is made."""
+
+    paths: frozenset[Path]
+    profile: Any
+    stages: tuple[Stage, ...]
+    blocked: frozenset[str]
+    groups: frozenset[ChangeGroup]
+    out: frozenset[Path]
+    live: dict[Path, Any]  # each file's plans in the run plan on screen
+    name: str  # the batch, as the job names it
 
 
 def check_shown() -> Statuses:
@@ -114,6 +146,7 @@ class WindowController(QObject):
     plans_changed = Signal()  # the live plan or the choices of the selected batch changed
     planning_changed = Signal()
     names_changed = Signal()  # what the Names place or the Tokens panel shows changed
+    apply_changed = Signal()  # whether Apply can start, or why it did not
 
     def __init__(
         self,
@@ -123,6 +156,9 @@ class WindowController(QObject):
         store: ProfileStore | None = None,
         get_program: Callable[[str], None] = run_programs_dialog,
         clock: Callable[[], datetime] = datetime.now,
+        jobs: JobStore | None = None,
+        make_pipeline: MakePipeline = default_pipeline,
+        read: Read | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -151,7 +187,19 @@ class WindowController(QObject):
         self._planner = LivePlanner(self)
         self._planner.planned.connect(self._on_planned)
         self._planner.busy_changed.connect(self.planning_changed)
+        self._planner.busy_changed.connect(self.apply_changed)
         self._preview: Preview | None = None  # the live plan of the selected batch, once it arrived
+        self._run_preview: Preview | None = None  # the same with the left-out groups emptied, as Apply runs it
+        self.left_out = LeftOut()
+        self._review_filter = "all"
+        self._make_pipeline = make_pipeline
+        self._read_file = read
+        self._applying: _Applying | None = None  # an Apply whose stamped preview is being made
+        self._apply_message = ""
+        self._offered = False  # unfinished jobs are offered once, when the programs are first known
+        self._job_view = Jobs(jobs or JobStore(jobs_path()), self._job_pipeline, self._names_of, parent=self)
+        self._job_view.started.connect(self._on_lock_changed)
+        self._job_view.ended.connect(self._on_job_ended)
         self._view: BatchView | None = None
         self._shown: dict[str, Any] = {}  # what QML reads about the batch, built once per plan or choice
         self._template = TITLE_TEMPLATE  # the template the Names builder shows
@@ -191,6 +239,13 @@ class WindowController(QObject):
         except OSError:
             _log.exception("Could not save the workspace")
         self._save_batches()
+
+    def stop_jobs(self) -> None:
+        """Cancel a running job as the window closes and wait for its program to stop. The mux stage removes its
+        partial file and leaves the original untouched; the job is offered to resume at the next start."""
+        if self.jobs.busy:
+            self.jobs.cancel()
+            QThreadPool.globalInstance().waitForDone(STOP_WAIT_MS)
 
     def _save_batches(self) -> None:
         """Write every batch's working copy at once (the file is replaced whole), so a crash loses no choice."""
@@ -362,12 +417,13 @@ class WindowController(QObject):
 
     @Property(int, notify=plans_changed)
     def change_count(self) -> int:
-        return sum(self._shown.get("counts", {}).values())
+        """What Apply would write: the run plan's changes, without left-out groups and files."""
+        return int(self._shown.get("review", {}).get("count", 0))
 
     @Property(str, notify=plans_changed)
     def change_text(self) -> str:
         """The top bar's "68 changes in 10 files", or "Nothing to change yet"."""
-        changes, files = self.change_count, self._shown.get("files", 0)
+        changes, files = self.change_count, int(self._shown.get("review", {}).get("files", 0))
         if not changes:
             return tr("top.nothing")
         return tr("top.changes_in", changes=tr_plural("top.changes", changes), files=tr_plural("top.files", files))
@@ -378,7 +434,7 @@ class WindowController(QObject):
         per_place = {
             "tracks": counts.get(ChangeGroup.TRACKS, 0),
             "names": counts.get(ChangeGroup.NAMES, 0),
-            "review": sum(counts.values()),
+            "review": self.change_count,
         }
         return [
             {"key": key, "icon": icon, "count": per_place.get(key, 0), "later": later}
@@ -419,14 +475,14 @@ class WindowController(QObject):
     @Slot(str)
     def switch_profile(self, name: str) -> None:
         """Start the selected batch from another profile. An edited batch is discarded first, from the menu."""
-        if self._key is None or self.batches.copy(self._key).changed or name == self.profile:
+        if self._key is None or self.locked or self.batches.copy(self._key).changed or name == self.profile:
             return
         self.batches.switch(self._key, name)
         self._copy_changed()
 
     @Slot()
     def discard_profile(self) -> None:
-        if self._key is not None:
+        if self._key is not None and not self.locked:
             self.batches.copy(self._key).revert()
             self._copy_changed()
 
@@ -472,6 +528,8 @@ class WindowController(QObject):
 
     def _set_tracks(self, options: TracksOptions) -> None:
         assert self._key is not None
+        if self.locked:
+            return
         self.batches.copy(self._key).set_options("tracks", options)
         self._copy_changed()
 
@@ -550,7 +608,7 @@ class WindowController(QObject):
 
     @Slot(bool)
     def set_write_implied_flags(self, on: bool) -> None:
-        if self._key is None or on == self.write_implied_flags:
+        if self._key is None or self.locked or on == self.write_implied_flags:
             return
         metadata = self.batches.profile(self._key).for_stage("metadata")
         self.batches.copy(self._key).set_options("metadata", replace(metadata, write_implied_flags=on))
@@ -608,8 +666,8 @@ class WindowController(QObject):
         return self.batches.profile(self._key).for_stage("naming")
 
     def _set_naming(self, options: NamingOptions) -> None:
-        if self._key is None or options == self._naming():
-            self._refresh_names()
+        if self._key is None or self.locked or options == self._naming():
+            self._refresh_names()  # a locked batch's rail shows its template again
             return
         self.batches.copy(self._key).set_options("naming", options)
         self._copy_changed()
@@ -778,12 +836,13 @@ class WindowController(QObject):
             self._names = built
             self.names_changed.emit()
 
-    def _current_files(self) -> tuple[FilePreview, ...]:
+    def _current_files(self, plan: Preview | None = None) -> tuple[FilePreview, ...]:
         """The live plan's files when it was made for the batch's files as they are now."""
+        plan = plan or self._preview
         paths = [i.file.path for i in self._items]
-        if self._preview is None or [f.item.file.path for f in self._preview.files] != paths:
+        if plan is None or [f.item.file.path for f in plan.files] != paths:
             return ()
-        return self._preview.files
+        return plan.files
 
     # Live plans
 
@@ -794,23 +853,31 @@ class WindowController(QObject):
             return
         profile = self.batches.profile(self._key)
         statuses = self._statuses or {}
-        stages = pipeline(programs_from(statuses), mkvpropedit_from(statuses))
+        stages = tuple(self._make_pipeline(statuses))
         blocked = set(blocked_stages(profile)) & {s.id for s in stages}
         items = tuple(self._items)
-        self._planner.request(
-            self._plan_token(), lambda: preview(items, profile, stages, blocked=blocked, stamped=False)
-        )
+        groups = self.left_out.groups_of(self._key)
+
+        def work() -> tuple[Preview, Preview]:
+            full = preview(items, profile, stages, blocked=blocked, stamped=False)
+            run = preview(items, profile, stages, blocked=blocked, left_out=groups, stamped=False) if groups else full
+            return full, run
+
+        self._planner.request(self._plan_token(), work)
 
     def _plan_token(self) -> tuple[Any, ...]:
         """What a plan was made for; a result for another token is out of date when it arrives."""
-        options = self.batches.profile(self._key).options if self._key is not None else None
-        return (self._key, tuple(i.file.path for i in self._items), repr(options), repr(self._statuses))
+        if self._key is None:
+            return (None,)
+        options = self.batches.profile(self._key).options
+        groups = sorted(self.left_out.groups_of(self._key))
+        return (self._key, tuple(i.file.path for i in self._items), repr(options), repr(self._statuses), groups)
 
-    def _on_planned(self, token: object, result: Preview) -> None:
+    def _on_planned(self, token: object, result: tuple[Preview, Preview]) -> None:
         if token != self._plan_token():
             return  # the batch or its choices changed while it was planned; a newer plan is on its way
-        self._preview = result
-        for file in result.files:
+        self._preview, self._run_preview = result
+        for file in self._preview.files:
             path = file.item.file.path
             if file.outcome in _LOOK:
                 self._marks[path] = _LOOK_DOT
@@ -826,6 +893,7 @@ class WindowController(QObject):
         if self._key is None:
             self._view, self._shown = None, {}
             self.plans_changed.emit()
+            self.apply_changed.emit()
             self._refresh_names()
             return
         files = self._current_files()
@@ -833,11 +901,8 @@ class WindowController(QObject):
         view = BatchView.build(self._items, profile.for_stage("tracks"), files)
         focus = self._focus or (self._items[0] if self._items else None)
         counts = dict.fromkeys(ChangeGroup, 0)
-        changed = 0
         for file in files:
-            per_file = count_changes(file)
-            changed += any(per_file.values())
-            for group, count in per_file.items():
+            for group, count in count_changes(file).items():
                 counts[group] += count
         shown: dict[str, Any] = {
             "headers": view.headers(),
@@ -845,14 +910,282 @@ class WindowController(QObject):
             "rows": view.rows(),
             "rules": view.rules(),
             "counts": counts,
-            "files": changed,
             "inspector": view.inspector(focus, profile.for_stage("mux").original) if focus is not None else {},
         }
         if self._key.kind is BatchKind.MOVIE and self._items:
             shown["movie"] = {"video": video_summary(self._items[0]), "groups": view.card_groups(self._items[0])}
+        shown["review"] = self._review(profile, files)
         self._view, self._shown = view, shown
         self.plans_changed.emit()
+        self.apply_changed.emit()
         self._refresh_names()
+
+    # Review: what goes into the run
+
+    def _review(self, profile: Any, files: Sequence[FilePreview]) -> dict[str, Any]:
+        assert self._key is not None
+        status = (self._statuses or {}).get("mkvtoolnix")
+        return review(
+            ReviewInput(
+                items=self._items,
+                media=self._key.media,
+                tracks=profile.for_stage("tracks"),
+                mux=profile.for_stage("mux"),
+                run=self._current_files(self._run_preview) if files else (),
+                full=files,
+                groups_out=self.left_out.groups_of(self._key),
+                files_out=self.left_out.files,
+                blocks=blocked_stages(profile),
+                mkvtoolnix_missing=self._statuses is not None and (status is None or status.state is not State.FOUND),
+                filter=self._review_filter,
+            )
+        )
+
+    @Property("QVariantMap", notify=plans_changed)
+    def review(self) -> dict[str, Any]:
+        return self._shown.get("review", {})
+
+    def _get_review_filter(self) -> str:
+        return self._review_filter
+
+    def _set_review_filter(self, key: str) -> None:
+        if key in FILTERS and key != self._review_filter:
+            self._review_filter = key
+            self._refresh()
+
+    review_filter = Property(str, _get_review_filter, _set_review_filter, notify=plans_changed)
+
+    @Slot(str, bool)
+    def set_in_run(self, group: str, on: bool) -> None:
+        """A group's "In this run": left out, it is planned as if its options asked for nothing; they stay."""
+        if self._key is None or self.locked or group not in set(ChangeGroup):
+            return
+        self.left_out.set_group(self._key, ChangeGroup(group), not on)
+        self._replan()
+
+    @Slot(str, bool)
+    def leave_out_file(self, path: str, out: bool) -> None:
+        if self._key is None or self.locked or all(str(i.file.path) != path for i in self._items):
+            return
+        self._set_left_out([Path(path)], out)
+
+    @Property(bool, notify=plans_changed)
+    def batch_left_out(self) -> bool:
+        return bool(self._items) and all(i.file.path in self.left_out.files for i in self._items)
+
+    @Slot()
+    def leave_out_batch(self) -> None:
+        """The header's Leave out: every file of the batch, or all of them back when every one is out."""
+        if self._key is not None and not self.locked:
+            self._set_left_out([i.file.path for i in self._items], not self.batch_left_out)
+
+    def _set_left_out(self, paths: list[Path], out: bool) -> None:
+        self.left_out.set_files(paths, out)
+        self.tree.set_left_out(self.left_out.files)
+        self._refresh()
+
+    @Slot(str)
+    def set_original(self, original: str) -> None:
+        """Where the originals of remuxed files go: the Recycle Bin or the keep folder beside them."""
+        if self._key is None or self.locked or original not in set(Original):
+            return
+        mux = self.batches.profile(self._key).for_stage("mux")
+        if mux.original != original:
+            self.batches.copy(self._key).set_options("mux", replace(mux, original=Original(original)))
+            self._copy_changed()
+
+    # Apply
+
+    @Property(QObject, constant=True)
+    def jobs(self) -> Jobs:
+        """The job of this window and the offer of unfinished ones; the drawer's Jobs tab reads it."""
+        return self._job_view
+
+    def _locked_paths(self) -> set[Path]:
+        return set(self._applying.paths) if self._applying is not None else self.jobs.paths()
+
+    @Property(bool, notify=batch_changed)
+    def locked(self) -> bool:
+        """The selected batch has a file in the job being applied: its choices wait until the job ends."""
+        locked = self._locked_paths()
+        return bool(locked) and any(i.file.path in locked for i in self._items)
+
+    @Property(bool, notify=apply_changed)
+    def applying(self) -> bool:
+        return self._applying is not None or self.jobs.busy
+
+    @Property(bool, notify=apply_changed)
+    def can_apply(self) -> bool:
+        """Only a plan that is on screen and current can be applied, one job at a time."""
+        return (
+            self._key is not None
+            and not self.applying
+            and not self._planner.busy
+            and self._statuses is not None
+            and bool(self._current_files(self._run_preview))
+            and self.change_count > 0
+        )
+
+    @Property(str, notify=apply_changed)
+    def apply_message(self) -> str:
+        """Why the last Apply did not start, worded; empty after one that did."""
+        return self._apply_message
+
+    def _set_apply_message(self, text: str) -> None:
+        self._apply_message = text
+        self.apply_changed.emit()
+
+    @Slot()
+    def apply(self) -> None:
+        """Plan the batch again with stamps on a pool thread; `_on_stamped` decides whether it may run."""
+        if not self.can_apply or self._key is None or self._run_preview is None:
+            return
+        profile = self.batches.profile(self._key)
+        stages = tuple(self._make_pipeline(self._statuses or {}))
+        blocked = frozenset(blocked_stages(profile)) & {s.id for s in stages}
+        items = tuple(self._items)
+        head = heading(self._key, items)
+        self._applying = _Applying(
+            paths=frozenset(i.file.path for i in items),
+            profile=profile,
+            stages=stages,
+            blocked=blocked,
+            groups=self.left_out.groups_of(self._key),
+            out=frozenset(p for p in self.left_out.files if any(i.file.path == p for i in items)),
+            live={f.item.file.path: f.plans for f in self._run_preview.files},
+            name=tr("common.list_separator").join((head.over, head.title)) if self._key.season else head.title,
+        )
+        given, store = self._applying, self.jobs.store
+
+        def work() -> Preview:
+            return preview(
+                items, profile, stages, blocked=given.blocked, left_out=given.groups, finished=store.is_finished
+            )
+
+        job = BackgroundJob(work, self)
+        job.finished.connect(self._on_stamped)
+        job.failed.connect(self._on_stamp_failed)
+        self._jobs.add(job)
+        self._apply_message = ""
+        self._on_lock_changed()
+        job.start()
+
+    def _on_stamped(self, stamped: Preview) -> None:
+        given, self._applying = self._applying, None
+        self._forget_job(self.sender())
+        if given is None:
+            return
+        in_run = [f for f in stamped.files if f.item.file.path not in given.out]
+        # The plans were made from the tracks the library read; a file whose size moved since was changed on disk.
+        changed = [f.item.file.path for f in in_run if f.stamp is None or f.item.file.size not in (0, f.stamp.size)]
+        message = ""
+        if changed:
+            message = tr_plural("review.refused.changed", len(changed))
+            self._read_again({path: path for path in changed})
+        elif any(f.plans != given.live.get(f.item.file.path) for f in in_run):
+            message = tr("review.refused.plans")
+        elif not any(f.writes for f in in_run):
+            message = tr("review.refused.nothing")
+        else:
+            try:
+                job_id = create_job(
+                    self.jobs.store,
+                    stamped,
+                    given.profile,
+                    given.stages,
+                    blocked=given.blocked,
+                    left_out=given.groups,
+                    left_out_files=given.out,
+                )
+            except StalePreviewError:
+                message = tr("review.refused.plans")
+            else:
+                self.jobs.start(job_id, given.name)
+        self._set_apply_message(message)
+        self._on_lock_changed()
+
+    def _on_stamp_failed(self, error: Exception) -> None:
+        _log.error("The preview for Apply failed: %s", error)
+        self._applying = None
+        self._forget_job(self.sender())
+        self._set_apply_message(tr("review.refused.error", error=str(error) or type(error).__name__))
+        self._on_lock_changed()
+
+    def _forget_job(self, job: object) -> None:
+        if isinstance(job, BackgroundJob):
+            self._jobs.discard(job)
+            job.deleteLater()
+
+    def _on_lock_changed(self) -> None:
+        self.batch_changed.emit()
+        self.apply_changed.emit()
+
+    def _job_pipeline(self) -> tuple[Sequence[Stage], Read]:
+        """The stages and the reader a job runs with: those of the programs found now."""
+        return tuple(self._make_pipeline(self._statuses or {})), self._read
+
+    def _read(self, path: Path) -> MediaFile:
+        if self._read_file is not None:
+            return self._read_file(path)
+        return probe_file(path, programs_from(self._statuses or {}))
+
+    def _names_of(self, path: Path) -> tuple[str, str]:
+        """A job row's number and title, from the library when the file is in it."""
+        item = self.model.library.item(path)
+        return (item_number(item), item_title(item)) if item is not None else ("", path.name)
+
+    def _on_job_ended(self, result: JobResult | None) -> None:
+        """Read the written files again, so the window shows them as they are now, and unlock the batch."""
+        self._on_lock_changed()
+        if result is None:
+            return
+        written: dict[Path, Path] = {}
+        gone: list[Path] = []
+        for record in result.steps:
+            if record.state is StepState.DONE:
+                written[record.path] = record.written or written.get(record.path, record.path)
+            if isinstance(record.detail, MuxResult):
+                gone += record.detail.taken
+        self._read_again(written, gone)
+
+    def _read_again(self, paths: dict[Path, Path], gone: Sequence[Path] = ()) -> None:
+        """Read files again on a pool thread, keyed by the path the library knows them by; a file that cannot be read
+        keeps what was read before until the next load."""
+        known = {i.file.path for i in self.model.library.items}
+        targets = {old: new for old, new in paths.items() if old in known}
+        if not targets and not gone:
+            return
+        read = self._read
+
+        def work() -> tuple[dict[Path, MediaFile], tuple[Path, ...]]:
+            files = {}
+            for old, new in targets.items():
+                try:
+                    files[old] = read(new)
+                except Exception:  # one unreadable file does not keep the others from the window
+                    _log.exception("Could not read %s again", new)
+            return files, tuple(gone)
+
+        job = BackgroundJob(work, self)
+        job.finished.connect(self._on_read_again)
+        job.failed.connect(self._forget_sender)
+        self._jobs.add(job)
+        job.start()
+
+    def _on_read_again(self, result: tuple[dict[Path, MediaFile], tuple[Path, ...]]) -> None:
+        self._forget_job(self.sender())
+        files, gone = result
+        self.model.replace_files(files, gone)
+        # The batch is selected again, so it holds the files as read now; a file with a new name opens its season.
+        index = self.tree.index_of(self._selected) if self._selected else QModelIndex()
+        if index.isValid():
+            self.select(index)
+        else:
+            self._select_first()
+
+    def _forget_sender(self, error: Exception) -> None:
+        _log.error("Reading files again failed: %s", error)
+        self._forget_job(self.sender())
 
     # Programs
 
@@ -871,6 +1204,10 @@ class WindowController(QObject):
         self._statuses = statuses
         self.programs_changed.emit()
         self._replan()  # which stages plan depends on the programs found
+        if not self._offered:
+            # Jobs are offered once the programs are known, since resuming one runs them.
+            self._offered = True
+            self.jobs.check_unfinished()
 
     @Property(list, notify=programs_changed)
     def programs(self) -> list[dict[str, Any]]:

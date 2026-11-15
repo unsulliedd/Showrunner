@@ -11,6 +11,7 @@ Item {
     property alias search: search
 
     signal drawerToggled()
+    signal reviewAsked()
 
     implicitHeight: Theme.top_bar
 
@@ -65,17 +66,72 @@ Item {
         }
 
         UiText {
+            objectName: "planning"
+            visible: app.planning && !app.jobs.running
+            text: Strings.t("top.planning")
+            color: Theme.faint
+            font.pixelSize: Theme.text_sm
+        }
+
+        UiText {
+            visible: !app.jobs.running
             text: app.change_text
             color: Theme.muted
             font.pixelSize: Theme.text_md
         }
 
         ActionButton {
+            visible: !app.jobs.running
             text: app.change_count > 0 ? Strings.t("top.review_apply") : Strings.t("top.review")
             kind: app.change_count > 0 ? "primary" : "outline"
             iconName: app.change_count > 0 ? "arrow" : ""
-            // Review and Apply come with the Review place; until then the plans only show.
-            enabled: false
+            enabled: app.has_batch
+            onClicked: bar.reviewAsked()
+        }
+
+        Rectangle {
+            objectName: "jobProgress"
+            visible: app.jobs.running
+            implicitWidth: progress.implicitWidth + 2 * Theme.space_lg
+            implicitHeight: Theme.row_md
+            radius: Theme.radius_md
+            color: Theme.panel
+            border.width: Theme.stroke
+            border.color: Theme.line_strong
+
+            RowLayout {
+                id: progress
+
+                anchors.centerIn: parent
+                spacing: Theme.space_md
+
+                Icon {
+                    name: "resume"
+                    color: Theme.control
+                }
+
+                UiText {
+                    text: Strings.t("top.applying")
+                    font.weight: Font.DemiBold
+                }
+
+                UiText {
+                    text: app.jobs.view.count || ""
+                    color: Theme.muted
+                }
+
+                ProgressLine {
+                    Layout.preferredWidth: Theme.progress_width
+                    value: app.jobs.view.fraction || 0
+                }
+            }
+        }
+
+        ActionButton {
+            visible: app.jobs.running
+            kind: "outline"
+            text: Strings.t("jobs.cancel")
+            onClicked: app.jobs.cancel()
         }
     }
 
