@@ -92,16 +92,26 @@ def _by_path(files: Sequence[FilePreview]) -> dict[Path, FilePreview]:
     return {f.item.file.path: f for f in files}
 
 
+def _writing(given: ReviewInput, run: dict[Path, FilePreview]) -> tuple[list[MediaItem], list[MediaItem]]:
+    """The files not left out, and of those the ones Apply writes: a file whose plans write nothing (MKVToolNix
+    missing) is a look, not a run."""
+    included = [i for i in given.items if i.file.path not in given.files_out]
+    return included, [i for i in included if (f := run.get(i.file.path)) is not None and f.writes]
+
+
+def totals(given: ReviewInput) -> tuple[int, int]:
+    """The changes Apply writes and the files they are in, without building Review's cards."""
+    run = _by_path(given.run)
+    per_file = [sum(parts(run.get(i.file.path)).values()) for i in _writing(given, run)[1]]
+    return sum(per_file), sum(n > 0 for n in per_file)
+
+
 def review(given: ReviewInput) -> dict[str, object]:
     run, full = _by_path(given.run), _by_path(given.full)
-    included = [i for i in given.items if i.file.path not in given.files_out]
-    # Counted are the changes Apply writes: a file whose plans write nothing (MKVToolNix missing) is a look, not a run.
-    writing = [i for i in included if (f := run.get(i.file.path)) is not None and f.writes]
+    included, writing = _writing(given, run)
     run_parts = {i.file.path: parts(run.get(i.file.path)) for i in given.items}
     full_parts = {i.file.path: parts(full.get(i.file.path)) for i in given.items}
-    per_file = {path: sum(found.values()) for path, found in run_parts.items()}
-    changes = sum(per_file[i.file.path] for i in writing)
-    files = sum(per_file[i.file.path] > 0 for i in writing)
+    changes, files = totals(given)
     run_view = BatchView.build(given.items, given.tracks, given.run)
     full_view = BatchView.build(given.items, given.tracks, given.full)
     rows = [_row(given, item, run_view, full_view, run_parts[item.file.path]) for item in given.items]

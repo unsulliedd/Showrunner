@@ -8,6 +8,9 @@ import Showrunner
 Item {
     id: overview
 
+    // Read once: each read of the property converts the whole batch view for QML.
+    readonly property var view: app.overview
+
     signal matrixAsked
 
     ColumnLayout {
@@ -56,7 +59,7 @@ Item {
                 }
 
                 Repeater {
-                    model: app.overview.groups
+                    model: overview.view.groups
 
                     delegate: RowLayout {
                         required property var modelData
@@ -148,7 +151,7 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            model: app.overview.rows
+            model: overview.view.rows
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar {}
 

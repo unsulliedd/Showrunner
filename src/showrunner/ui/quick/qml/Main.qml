@@ -15,7 +15,10 @@ ApplicationWindow {
     Component.onCompleted: {
         width = Theme.quick_window_width
         height = Theme.quick_window_height
+        app.show_place(place)
     }
+    // The controller builds a place's data only while it shows.
+    onPlaceChanged: app.show_place(place)
     minimumWidth: Theme.window_min_width
     minimumHeight: Theme.window_min_height
     visible: true

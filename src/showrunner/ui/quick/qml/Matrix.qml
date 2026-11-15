@@ -8,8 +8,10 @@ import Showrunner
 Item {
     id: matrix
 
-    readonly property var headers: app.matrix.headers
-    readonly property var rows: app.matrix.rows
+    // Read once: each read of the property converts the whole batch view for QML.
+    readonly property var view: app.matrix
+    readonly property var headers: view.headers
+    readonly property var rows: view.rows
 
     component Cell: Item {
         id: cell
@@ -226,18 +228,24 @@ Item {
         anchors.margins: Theme.space_lg
         spacing: Theme.space_md
 
-        ScrollView {
+        // A ListView creates a row only as it scrolls into view, so a whole show does not build every row and cell.
+        ListView {
             id: scroll
 
+            objectName: "matrixRows"
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            contentWidth: grid.implicitWidth
-            contentHeight: grid.implicitHeight
+            contentWidth: Theme.matrix_label + matrix.headers.length * Theme.matrix_column
+            flickableDirection: Flickable.AutoFlickIfNeeded
+            boundsBehavior: Flickable.StopAtBounds
+            // A count, not the rows: new rows of the same batch then update the delegates in place, so the view
+            // keeps its scroll position after a choice.
+            model: matrix.rows.length
+            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.horizontal: ScrollBar {}
 
-            Column {
-                id: grid
-
+            header: Column {
                 Row {
                     Item {
                         width: Theme.matrix_label
@@ -326,67 +334,64 @@ Item {
                         }
                     }
                 }
+            }
 
-                Repeater {
-                    model: matrix.rows
+            delegate: AbstractButton {
+                id: line
 
-                    delegate: AbstractButton {
-                        id: line
+                required property int index
+                readonly property var modelData: matrix.rows[index]
+                readonly property bool focused: modelData.path === app.focus_path
 
-                        required property var modelData
-                        readonly property bool focused: modelData.path === app.focus_path
+                width: Theme.matrix_label + matrix.headers.length * Theme.matrix_column
+                height: Theme.list_row
+                hoverEnabled: true
+                focusPolicy: Qt.StrongFocus
+                Accessible.role: Accessible.Button
+                Accessible.name: modelData.title
+                onClicked: app.focus_file(modelData.path)
 
-                        width: Theme.matrix_label + matrix.headers.length * Theme.matrix_column
+                background: Rectangle {
+                    color: line.focused ? Theme.select : line.hovered ? Theme.panel_2 : "transparent"
+                    border.width: line.visualFocus ? Theme.stroke : 0
+                    border.color: Theme.control
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        height: Theme.stroke
+                        color: Theme.line
+                    }
+                }
+
+                contentItem: Row {
+                    Row {
+                        width: Theme.matrix_label
                         height: Theme.list_row
-                        hoverEnabled: true
-                        focusPolicy: Qt.StrongFocus
-                        Accessible.role: Accessible.Button
-                        Accessible.name: modelData.title
-                        onClicked: app.focus_file(modelData.path)
+                        spacing: Theme.space_md
 
-                        background: Rectangle {
-                            color: line.focused ? Theme.select : line.hovered ? Theme.panel_2 : "transparent"
-                            border.width: line.visualFocus ? Theme.stroke : 0
-                            border.color: Theme.control
-
-                            Rectangle {
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.bottom: parent.bottom
-                                height: Theme.stroke
-                                color: Theme.line
-                            }
+                        UiText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            mono: true
+                            text: line.modelData.number
+                            color: Theme.faint
                         }
 
-                        contentItem: Row {
-                            Row {
-                                width: Theme.matrix_label
-                                height: Theme.list_row
-                                spacing: Theme.space_md
+                        UiText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Theme.matrix_label - Theme.row_md
+                            text: line.modelData.title
+                        }
+                    }
 
-                                UiText {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    mono: true
-                                    text: line.modelData.number
-                                    color: Theme.faint
-                                }
+                    Repeater {
+                        model: line.modelData.cells
 
-                                UiText {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: Theme.matrix_label - Theme.row_md
-                                    text: line.modelData.title
-                                }
-                            }
+                        delegate: Cell {
+                            required property var modelData
 
-                            Repeater {
-                                model: line.modelData.cells
-
-                                delegate: Cell {
-                                    required property var modelData
-
-                                    value: modelData
-                                }
-                            }
+                            value: modelData
                         }
                     }
                 }

@@ -72,7 +72,7 @@ from showrunner.ui.quick.jobs import Jobs
 from showrunner.ui.quick.library import LibraryTree
 from showrunner.ui.quick.palette import Entry, search
 from showrunner.ui.quick.plans import LivePlanner
-from showrunner.ui.quick.review import FILTERS, ReviewInput, review
+from showrunner.ui.quick.review import FILTERS, ReviewInput, review, totals
 from showrunner.ui.quick.settings import SECTIONS, Settings
 from showrunner.ui.quick.tracks import BatchView, Column, item_number, item_title
 
@@ -90,6 +90,8 @@ WORKSPACE_TABS: tuple[tuple[str, str, bool], ...] = (
     ("chapters", "chapters", True),
 )
 # The side panel each place brings; Review takes the whole width.
+# The places whose data is built only while they show, with the signal that tells QML it changed.
+_PLACE_SIGNALS = {"overview": "overview_changed", "tracks": "matrix_changed", "review": "review_changed"}
 SIDE_PANELS: dict[str, tuple[str, ...]] = {
     "overview": ("inspector", "chapters", "attachments"),
     "tracks": ("rules", "inspector"),
@@ -148,6 +150,10 @@ class WindowController(QObject):
     plans_changed = Signal()  # the live plan or the choices of the selected batch changed
     planning_changed = Signal()
     names_changed = Signal()  # what the Names place or the Tokens panel shows changed
+    # What one place shows changed; each is emitted only while its place shows, and on switching to it.
+    overview_changed = Signal()
+    matrix_changed = Signal()
+    review_changed = Signal()
     apply_changed = Signal()  # whether Apply can start, or why it did not
     palette_changed = Signal()
     palette_asked = Signal(str, str)  # the palette asks the window for a place ("place", key) or the drawer
@@ -205,12 +211,16 @@ class WindowController(QObject):
         self._job_view.ended.connect(self._on_job_ended)
         self._view: BatchView | None = None
         self._shown: dict[str, Any] = {}  # what QML reads about the batch, built once per plan or choice
+        # The parts of `_shown` a single place shows, built on first read after a plan or choice.
+        self._built: dict[str, Any] = {}
+        self._place = "overview"  # the workspace place the window shows
+        self._stale: set[str] = set()  # places whose change was not signalled while they were hidden
         self._template = TITLE_TEMPLATE  # the template the Names builder shows
         self._token_query = ""
         self._palette_query = ""
         self._editing = -1  # the custom token open in the Tokens panel's editor
         self._editing_builtin = ""  # or the built-in token open there, for its value map
-        self._names: dict[str, Any] = {}  # what the Names place and the Tokens panel read
+        self._names: dict[str, Any] | None = {}  # what the Names place and the Tokens panel read; None until read
         self._marks: dict[Path, str] = {}  # tree dots from the live plans of every batch opened
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
@@ -428,12 +438,12 @@ class WindowController(QObject):
     @Property(int, notify=plans_changed)
     def change_count(self) -> int:
         """What Apply would write: the run plan's changes, without left-out groups and files."""
-        return int(self._shown.get("review", {}).get("count", 0))
+        return int(self._shown.get("totals", (0, 0))[0])
 
     @Property(str, notify=plans_changed)
     def change_text(self) -> str:
         """The top bar's "68 changes in 10 files", or "Nothing to change yet"."""
-        changes, files = self.change_count, int(self._shown.get("review", {}).get("files", 0))
+        changes, files = self._shown.get("totals", (0, 0))
         if not changes:
             return tr("top.nothing")
         return tr("top.changes_in", changes=tr_plural("top.changes", changes), files=tr_plural("top.files", files))
@@ -559,7 +569,7 @@ class WindowController(QObject):
     def _column(self, column: int) -> tuple[Column, dict[str, Any]] | None:
         if self._view is None or not 0 <= column < len(self._view.cols):
             return None
-        return self._view.cols[column], self._shown["headers"][column]
+        return self._view.cols[column], self._headers()[column]
 
     @Slot(int)
     def toggle_keep(self, column: int) -> None:
@@ -679,7 +689,11 @@ class WindowController(QObject):
             self.select(index)
             return
         self._focus = item
-        self._refresh()
+        # Only the Inspector and the Names result follow the focus; rows, headers and Review stay as built.
+        if self._shown:
+            self._shown["inspector"] = self._inspector()
+        self.plans_changed.emit()
+        self._refresh_names()
 
     @Property(str, notify=plans_changed)
     def focus_path(self) -> str:
@@ -689,14 +703,27 @@ class WindowController(QObject):
     def planning(self) -> bool:
         return self._planner.busy
 
-    @Property("QVariantMap", notify=plans_changed)
+    def _part(self, key: str, build: Callable[[], Any]) -> Any:
+        """A part one place shows, built on its first read after a plan or choice."""
+        if key not in self._built:
+            self._built[key] = build()
+        return self._built[key]
+
+    def _headers(self) -> list[dict[str, Any]]:
+        return self._part("headers", self._view.headers) if self._view is not None else []
+
+    def _rows(self) -> list[dict[str, Any]]:
+        return self._part("rows", self._view.rows) if self._view is not None else []
+
+    @Property("QVariantMap", notify=overview_changed)
     def overview(self) -> dict[str, Any]:
         """Chips by kind and one row per file, for a season, a show or a selection."""
-        return {"groups": self._shown.get("groups", []), "rows": self._shown.get("rows", [])}
+        groups = self._part("groups", self._view.groups) if self._view is not None else []
+        return {"groups": groups, "rows": self._rows()}
 
-    @Property("QVariantMap", notify=plans_changed)
+    @Property("QVariantMap", notify=matrix_changed)
     def matrix(self) -> dict[str, Any]:
-        return {"headers": self._shown.get("headers", []), "rows": self._shown.get("rows", [])}
+        return {"headers": self._headers(), "rows": self._rows()}
 
     @Property("QVariantMap", notify=plans_changed)
     def movie(self) -> dict[str, Any]:
@@ -734,11 +761,16 @@ class WindowController(QObject):
     @Property("QVariantMap", notify=names_changed)
     def names(self) -> dict[str, Any]:
         """The template cards, the builder rail of the picked one, its result and the batch before and after."""
-        return self._names.get("place", {})
+        return self._names_built().get("place", {})
 
     @Property("QVariantMap", notify=names_changed)
     def tokens(self) -> dict[str, Any]:
-        return self._names.get("tokens", {"groups": [], "editor": {}})
+        return self._names_built().get("tokens", {"groups": [], "editor": {}})
+
+    def _names_built(self) -> dict[str, Any]:
+        if self._names is None:
+            self._names = self._build_names()
+        return self._names
 
     @Slot(str)
     def pick_template(self, template: str) -> None:
@@ -881,7 +913,19 @@ class WindowController(QObject):
 
     def _refresh_names(self) -> None:
         """Build what Names and Tokens show; QML hears of it only when it changed, so a plan that arrives while text
-        is typed does not rebuild the rail under the cursor."""
+        is typed does not rebuild the rail under the cursor. While Names is hidden nothing is built: it is built when
+        read, and QML hears of it on switching to Names."""
+        if self._place != "names":
+            self._names = None
+            self._stale.add("names")
+            return
+        self._stale.discard("names")
+        built = self._build_names()
+        if built != self._names:
+            self._names = built
+            self.names_changed.emit()
+
+    def _build_names(self) -> dict[str, Any]:
         built: dict[str, Any] = {}
         if self._key is not None:
             profile = self.batches.profile(self._key)
@@ -900,9 +944,7 @@ class WindowController(QObject):
                 "place": rail.place(given),
                 "tokens": rail.tokens(given, self._token_query, self._editing, self._editing_builtin),
             }
-        if built != self._names:
-            self._names = built
-            self.names_changed.emit()
+        return built
 
     def _current_files(self, plan: Preview | None = None) -> tuple[FilePreview, ...]:
         """The live plan's files when it was made for the batch's files as they are now."""
@@ -957,61 +999,76 @@ class WindowController(QObject):
         self._refresh()
 
     def _refresh(self) -> None:
-        """Build what QML reads about the batch from its items, its choices and the live plan if it is current."""
+        """Build what QML reads about the batch from its items, its choices and the live plan if it is current. What
+        only one place shows (rows, chips, headers, Review, Names) is built when read, and signalled only while that
+        place shows, so a whole show's 300 rows are not built for places nobody looks at."""
+        self._built = {}
+        self._stale |= set(_PLACE_SIGNALS)
         if self._key is None:
             self._view, self._shown = None, {}
-            self.plans_changed.emit()
-            self.apply_changed.emit()
-            self._refresh_names()
-            return
-        files = self._current_files()
-        profile = self.batches.profile(self._key)
-        view = BatchView.build(self._items, profile.for_stage("tracks"), files)
-        focus = self._focus or (self._items[0] if self._items else None)
-        counts = dict.fromkeys(ChangeGroup, 0)
-        for file in files:
-            for group, count in count_changes(file).items():
-                counts[group] += count
-        shown: dict[str, Any] = {
-            "headers": view.headers(),
-            "groups": view.groups(),
-            "rows": view.rows(),
-            "rules": view.rules(),
-            "counts": counts,
-            "inspector": view.inspector(focus, profile.for_stage("mux").original) if focus is not None else {},
-        }
-        if self._key.kind is BatchKind.MOVIE and self._items:
-            shown["movie"] = {"video": video_summary(self._items[0]), "groups": view.card_groups(self._items[0])}
-        shown["review"] = self._review(profile, files)
-        self._view, self._shown = view, shown
+        else:
+            files = self._current_files()
+            profile = self.batches.profile(self._key)
+            self._view = BatchView.build(self._items, profile.for_stage("tracks"), files)
+            counts = dict.fromkeys(ChangeGroup, 0)
+            for file in files:
+                for group, count in count_changes(file).items():
+                    counts[group] += count
+            self._shown = {"rules": self._view.rules(), "counts": counts, "inspector": self._inspector()}
+            if self._key.kind is BatchKind.MOVIE and self._items:
+                groups = self._view.card_groups(self._items[0])
+                self._shown["movie"] = {"video": video_summary(self._items[0]), "groups": groups}
+            self._shown["review_input"] = given = self._review_input()
+            self._shown["totals"] = totals(given)
         self.plans_changed.emit()
         self.apply_changed.emit()
+        self._signal_shown()
         self._refresh_names()
+
+    def _inspector(self) -> dict[str, Any]:
+        focus = self._focus or (self._items[0] if self._items else None)
+        if self._view is None or self._key is None or focus is None:
+            return {}
+        return self._view.inspector(focus, self.batches.profile(self._key).for_stage("mux").original)
+
+    def _signal_shown(self) -> None:
+        signal = _PLACE_SIGNALS.get(self._place)
+        if signal is not None and self._place in self._stale:
+            self._stale.discard(self._place)
+            getattr(self, signal).emit()
+
+    @Slot(str)
+    def show_place(self, place: str) -> None:
+        """The window shows another workspace place; what changed there while it was hidden is signalled now."""
+        self._place = place
+        self._signal_shown()
+        if place == "names" and "names" in self._stale:
+            self._refresh_names()
 
     # Review: what goes into the run
 
-    def _review(self, profile: Any, files: Sequence[FilePreview]) -> dict[str, Any]:
+    def _review_input(self) -> ReviewInput:
         assert self._key is not None
+        profile, files = self.batches.profile(self._key), self._current_files()
         status = (self._statuses or {}).get("mkvtoolnix")
-        return review(
-            ReviewInput(
-                items=self._items,
-                media=self._key.media,
-                tracks=profile.for_stage("tracks"),
-                mux=profile.for_stage("mux"),
-                run=self._current_files(self._run_preview) if files else (),
-                full=files,
-                groups_out=self.left_out.groups_of(self._key),
-                files_out=self.left_out.files,
-                blocks=blocked_stages(profile),
-                mkvtoolnix_missing=self._statuses is not None and (status is None or status.state is not State.FOUND),
-                filter=self._review_filter,
-            )
+        return ReviewInput(
+            items=self._items,
+            media=self._key.media,
+            tracks=profile.for_stage("tracks"),
+            mux=profile.for_stage("mux"),
+            run=self._current_files(self._run_preview) if files else (),
+            full=files,
+            groups_out=self.left_out.groups_of(self._key),
+            files_out=self.left_out.files,
+            blocks=blocked_stages(profile),
+            mkvtoolnix_missing=self._statuses is not None and (status is None or status.state is not State.FOUND),
+            filter=self._review_filter,
         )
 
-    @Property("QVariantMap", notify=plans_changed)
+    @Property("QVariantMap", notify=review_changed)
     def review(self) -> dict[str, Any]:
-        return self._shown.get("review", {})
+        given = self._shown.get("review_input")
+        return self._part("review", lambda: review(given)) if given is not None else {}
 
     def _get_review_filter(self) -> str:
         return self._review_filter
@@ -1365,7 +1422,7 @@ class WindowController(QObject):
                 " · ".join(str(p) for p in (h["code"], h["title"], h["name"]) if p),
                 tr(f"palette.track.{h['kind']}"),
             )
-            for h in self._shown.get("headers", [])
+            for h in self._headers()
         ]
         custom = [t.name for t in self._custom()]
         tokens = [Entry("token", name, rail.token_label(name), f"{{{name}}}", batch) for name in [*TOKENS, *custom]]

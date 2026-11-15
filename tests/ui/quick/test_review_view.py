@@ -20,7 +20,7 @@ from showrunner.core.media import MediaItem
 from showrunner.stages.mux.options import MuxOptions, Original
 from showrunner.stages.tracks import TrackMatch, TrackRule, TracksOptions
 from showrunner.tools.probe import Programs
-from showrunner.ui.quick.review import ReviewInput, parts, review
+from showrunner.ui.quick.review import ReviewInput, parts, review, totals
 
 from .test_tracks_view import STAGES, chosen
 
@@ -36,23 +36,25 @@ def profile_for(items: list[MediaItem], **mux: Any) -> Profile:
     return profile.with_options("naming", naming).with_options("mux", MuxOptions(**mux))
 
 
-def built(items: list[MediaItem], profile: Profile, stages: Any = STAGES, **given: Any) -> dict[str, Any]:
+def given_for(items: list[MediaItem], profile: Profile, stages: Any = STAGES, **given: Any) -> ReviewInput:
     out = frozenset(given.pop("groups_out", ()))
     full = preview(items, profile, stages, stamped=False).files
     run = preview(items, profile, stages, left_out=out, stamped=False).files if out else full
-    return review(
-        ReviewInput(
-            items=items,
-            media=Media.EPISODES,
-            tracks=profile.for_stage("tracks"),
-            mux=profile.for_stage("mux"),
-            run=run,
-            full=full,
-            groups_out=out,
-            blocks=blocked_stages(profile),
-            **given,
-        )
+    return ReviewInput(
+        items=items,
+        media=Media.EPISODES,
+        tracks=profile.for_stage("tracks"),
+        mux=profile.for_stage("mux"),
+        run=run,
+        full=full,
+        groups_out=out,
+        blocks=blocked_stages(profile),
+        **given,
     )
+
+
+def built(items: list[MediaItem], profile: Profile, stages: Any = STAGES, **given: Any) -> dict[str, Any]:
+    return review(given_for(items, profile, stages, **given))
 
 
 def lines(card: dict[str, Any]) -> list[tuple[str, int]]:
@@ -98,6 +100,17 @@ def test_a_left_out_file_stays_listed_and_leaves_the_counts(season: list[MediaIt
     looks = built(season, profile, filter="look")["rows"]
     assert [r["title"] for r in looks] == ["Episode Seven"]  # no Turkish audio: English takes the default
     assert looks[0]["warning"] == "No Turkish audio: English audio becomes the default"
+
+
+def test_the_totals_are_the_reviews_count_without_its_cards(season: list[MediaItem]) -> None:
+    profile = profile_for(season)
+    for given in (
+        given_for(season, profile),
+        given_for(season, profile, groups_out={ChangeGroup.NAMES}),
+        given_for(season, profile, files_out={season[8].file.path}),
+    ):
+        shown = review(given)
+        assert totals(given) == (shown["count"], shown["files"])
 
 
 def test_a_file_card_shows_its_tracks_defaults_file_and_title_before_and_after(season: list[MediaItem]) -> None:

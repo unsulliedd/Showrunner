@@ -9,7 +9,7 @@ or whose track plan was refused or blocked, is shown with its tracks as they are
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from showrunner.app.batches.choices import TrackChoice, TrackSignature, choice_of, signature_of
 from showrunner.app.jobs.counts import count_changes
@@ -132,21 +132,30 @@ class BatchView:
     options: TracksOptions
     files: dict[str, FilePreview]  # by path
     cols: list[Column]
+    firsts: dict[TrackKind, TrackSignature] = field(default_factory=dict)
+    # Each file's cells, built on first use: the headers, the rows and the Inspector all read them.
+    _cells: dict[str, list[dict[str, object]]] = field(default_factory=dict, compare=False, repr=False)
 
     @classmethod
     def build(cls, items: Sequence[MediaItem], options: TracksOptions, files: Sequence[FilePreview]) -> BatchView:
-        return cls(items, options, {str(f.item.file.path): f for f in files}, columns(items))
+        cols = columns(items)
+        return cls(items, options, {str(f.item.file.path): f for f in files}, cols, _first_defaults(options, cols))
 
     def file(self, item: MediaItem) -> FilePreview | None:
         return self.files.get(str(item.file.path))
 
     def cells(self, item: MediaItem) -> list[dict[str, object]]:
+        key = str(item.file.path)
+        if key not in self._cells:
+            self._cells[key] = self._cells_of(item)
+        return self._cells[key]
+
+    def _cells_of(self, item: MediaItem) -> list[dict[str, object]]:
         tracks = seen(item, self.file(item))
-        firsts = _first_defaults(self.options, self.cols)
         result = []
         for column in self.cols:
             found = cell(column, item, tracks)
-            first = firsts.get(column.signature.kind)
+            first = self.firsts.get(column.signature.kind)
             # A default that lands on another track than the first choice of its kind: the choice has no track here.
             found["fallback"] = bool(found["default"]) and first is not None and first != column.signature
             result.append(found)

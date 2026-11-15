@@ -121,6 +121,13 @@ def neutral_library() -> Library:
     return Library(tuple(items), (doubt,))
 
 
+def long_show(seasons: int = 12, episodes: int = 25) -> Library:
+    """One show of `seasons` seasons of `episodes` episodes each (300 by default), with the sample's track set, for
+    timing the whole show against one season."""
+    items = [_episode("Long Show", 2001, s, n) for s in range(1, seasons + 1) for n in range(1, episodes + 1)]
+    return Library(tuple(items))
+
+
 def program_statuses() -> dict[str, DependencyStatus]:
     """MKVToolNix found, FFmpeg missing, as on the approved first-run screen. The path is made up: plans name the
     program, nothing runs it."""
