@@ -44,6 +44,9 @@ class MediaFile:
     container: str
     duration: float | None = None  # seconds
     size: int = 0  # bytes
+    # The file's modification time when its tracks were read, in nanoseconds; 0 when it was not read. A later time
+    # on disk means another program wrote the file since, so what was read may no longer hold.
+    modified_ns: int = 0
     title: str = ""
     tracks: tuple[Track, ...] = ()
     chapters: tuple[Chapter, ...] = ()

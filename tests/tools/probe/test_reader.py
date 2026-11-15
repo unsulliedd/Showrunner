@@ -103,6 +103,7 @@ def test_without_ffprobe_mkvmerge_alone_builds_the_file(recorded, fake_tools, me
     media = probe(media_file, MKVTOOLNIX_ONLY)
     assert tools.calls == ["mkvmerge", "mkvextract"]
     assert media.ids_from_mkvmerge
+    assert media.modified_ns == media_file.stat().st_mtime_ns
     assert media.video_tracks[0].video.bit_depth is None
     assert media.video_tracks[0].video.frame_rate == pytest.approx(23.976, abs=0.001)
 
@@ -133,6 +134,7 @@ def test_without_mkvmerge_ffprobe_alone_builds_the_file_and_marks_the_ids(record
     # ffprobe reports one title per chapter and no language, so names per language need mkvextract.
     assert (media.chapters[1].start, media.chapters[1].end) == (2.5, 4.0)
     assert (media.chapters[1].names[0].language, media.chapters[1].names[0].text) == (None, "Scene")
+    assert media.modified_ns == media_file.stat().st_mtime_ns
 
 
 def test_a_file_mkvmerge_rejects_is_still_read_by_ffprobe(recorded, fake_tools, media_file) -> None:

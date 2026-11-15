@@ -1076,8 +1076,15 @@ class WindowController(QObject):
         if given is None:
             return
         in_run = [f for f in stamped.files if f.item.file.path not in given.out]
-        # The plans were made from the tracks the library read; a file whose size moved since was changed on disk.
-        changed = [f.item.file.path for f in in_run if f.stamp is None or f.item.file.size not in (0, f.stamp.size)]
+        # The plans were made from the tracks the library read; a file whose size or modification time moved since
+        # was written by another program, even when its size stayed.
+        changed = [
+            f.item.file.path
+            for f in in_run
+            if f.stamp is None
+            or f.item.file.size not in (0, f.stamp.size)
+            or f.item.file.modified_ns not in (0, f.stamp.mtime_ns)
+        ]
         message = ""
         if changed:
             message = tr_plural("review.refused.changed", len(changed))

@@ -4,6 +4,7 @@ placeholder files; a stand-in mux stage writes and checks nothing real. A last t
 
 from __future__ import annotations
 
+import os
 import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
@@ -71,7 +72,8 @@ class Setup:
 
 
 def rooted_library(root: Path) -> Library:
-    """The neutral library with the first season's files written under `root`, their sizes as the library read them."""
+    """The neutral library with the first season's files written under `root`, their sizes and modification times
+    as the library read them."""
     library = neutral_library()
     items = []
     for item in library.items:
@@ -79,8 +81,8 @@ def rooted_library(root: Path) -> Library:
         if item.file.path.parent.name == "Season 1" and item.file.path.parent.parent.name == "Show Name (2020)":
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"original")
-        size = path.stat().st_size if path.exists() else 0
-        items.append(replace(item, file=replace(item.file, path=path, size=size)))
+        size, modified = (path.stat().st_size, path.stat().st_mtime_ns) if path.exists() else (0, 0)
+        items.append(replace(item, file=replace(item.file, path=path, size=size, modified_ns=modified)))
     return replace(library, items=tuple(items), alternatives=())
 
 
@@ -182,6 +184,18 @@ def test_a_file_changed_on_disk_refuses_to_start(setup: Setup, qtbot: QtBot) -> 
     assert not setup.bin.exists()
     assert setup.store.unfinished() == []
     assert not setup.controller.jobs.running
+
+
+def test_a_file_written_with_the_same_size_refuses_to_start(setup: Setup, qtbot: QtBot) -> None:
+    # A header edit by another program can keep the size; the later modification time gives it away.
+    path = setup.season[4]
+    read_at = path.stat().st_mtime_ns
+    path.write_bytes(b"ORIGINAL")
+    os.utime(path, ns=(read_at + 1_000_000_000, read_at + 1_000_000_000))
+    setup.controller.apply()
+    qtbot.waitUntil(lambda: not setup.controller.applying)
+    assert setup.controller.apply_message.startswith("1 file changed on disk since it was read")
+    assert setup.store.unfinished() == []
 
 
 def test_the_batch_is_locked_while_its_job_runs_and_others_stay_open(setup: Setup, qtbot: QtBot) -> None:

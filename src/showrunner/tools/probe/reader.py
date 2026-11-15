@@ -77,6 +77,8 @@ def probe(
         raise MissingProgramsError(("mkvtoolnix", "ffmpeg"))
     if not path.is_file():
         raise FileNotFoundError(path)
+    # Taken before the reads, so a write while they run shows as a later time.
+    modified_ns = path.stat().st_mtime_ns
     ctx = _Run(path, programs.ffprobe, timeout, cancel)
     problems: list[str] = []
     base: MediaFile | None = None
@@ -92,10 +94,12 @@ def probe(
         except FfprobeError as error:
             problems.append(f"ffprobe: {error}")
     if base is not None:
-        return base if data is None else _enrich(base, data, ctx)
-    if data is None:
+        media = base if data is None else _enrich(base, data, ctx)
+    elif data is None:
         raise ProbeError(f"{path.name} could not be read ({'; '.join(problems)})")
-    return _from_ffprobe(data, ctx)
+    else:
+        media = _from_ffprobe(data, ctx)
+    return replace(media, modified_ns=modified_ns)
 
 
 def _enrich(media: MediaFile, data: Mapping[str, Any], ctx: _Run) -> MediaFile:
