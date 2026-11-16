@@ -218,17 +218,14 @@ def test_lists_that_shrink_while_they_show_read_no_missing_row(controller: Windo
     engine.deleteLater()
 
 
-def test_tracks_named_per_episode_leave_the_file_list_its_room(controller: WindowController, qtbot: QtBot) -> None:
+def test_many_chips_leave_the_file_list_its_room(controller: WindowController, qtbot: QtBot) -> None:
     from dataclasses import replace
 
-    show = long_show(2, 10)
+    show = long_show(2, 10, named_per_episode=True)
     items = tuple(
-        replace(
-            i,
-            file=replace(i.file, tracks=tuple(replace(t, name=f"{t.name} {i.file.path.stem}") for t in i.file.tracks)),
-        )
+        replace(i, file=replace(i.file, tracks=(*i.file.tracks, *(replace(t, id=t.id + 10) for t in i.file.tracks))))
         for i in show.items
-    )  # every file's tracks have names of their own, so every track is a chip
+    )  # every track twice in its file, so each group is told apart by name and every episode's tracks are chips
     engine = build_engine(controller)
     root = engine.rootObjects()[0]
     qtbot.waitUntil(root.isExposed)

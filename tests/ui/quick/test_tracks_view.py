@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -12,11 +13,13 @@ from showrunner.app.jobs.preview import preview
 from showrunner.app.jobs.stages import pipeline
 from showrunner.app.library.library import Library
 from showrunner.app.profiles.store import ProfileStore
-from showrunner.core.media import MediaItem
+from showrunner.core.media import Episode, MediaItem
 from showrunner.stages.mux.options import Original
 from showrunner.stages.tracks import FlagShape, FlagTest, KindTest, TrackMatch, TrackRule, TracksOptions, Verdict
 from showrunner.tools.probe import Programs
 from showrunner.ui.quick.tracks import BatchView, columns, rule_parts
+
+from .conftest import named_after_episode
 
 # Mux and Metadata plan with a made-up program path; nothing runs it.
 STAGES = pipeline(Programs(mkvmerge=Path("mkvmerge")), Path("mkvpropedit"))
@@ -52,7 +55,8 @@ def chosen(items: list[MediaItem]) -> TracksOptions:
 
 def test_columns_are_audio_then_subtitles_then_paired_files(season: list[MediaItem]) -> None:
     cols = columns(season)
-    assert [(c.signature.kind.value, c.signature.name) for c in cols] == [
+    names = [h["name"] for h in view(season, TracksOptions(), planned=False).headers()]
+    assert [(c.signature.kind.value, name) for c, name in zip(cols, names, strict=True)] == [
         ("audio", "English"),
         ("audio", "Turkish"),
         ("audio", "Commentary"),
@@ -115,9 +119,9 @@ def test_rules_read_as_sentences_with_their_fallbacks(season: list[MediaItem]) -
     rules = view(season, chosen(season)).rules()
     words = [" ".join(str(p["text"]) for p in rule["parts"]) for rule in rules]
     assert words[:3] == [
-        "Drop audio in ENG named Commentary",
-        "Keep audio in TUR named Turkish · default",
-        "Keep audio in ENG named English · default if none above",
+        "Drop audio in ENG Dolby Digital 2.0 flagged commentary",
+        "Keep audio in TUR Dolby Digital Plus 5.1 · default",
+        "Keep audio in ENG Dolby Digital Plus 5.1 · default if none above",
     ]
     assert words[-1] == "Keep subtitles in TUR SubRip · default"
     assert [r["fits"] for r in rules[:3]] == ["fits 10 files", "fits 9 files", "fits 10 files"]
@@ -163,3 +167,46 @@ def test_the_inspector_groups_what_changes(season: list[MediaItem]) -> None:
     assert states[3] == ("ENG", "dropped")
     assert states[-1] == ("TUR", "added")
     assert file["track_count"] == "7 → 6"
+
+
+def test_tracks_named_per_episode_are_one_column_with_each_file_s_name_in_its_list(season: list[MediaItem]) -> None:
+    named = [named_after_episode(i) for i in season]
+    named[1] = replace(named[1], file=replace(named[1].file, tracks=season[1].file.tracks))  # its own names again
+    built = view(named, TracksOptions(), planned=False)
+    headers = built.headers()
+    assert len(headers) == len(columns(season))
+    # A chip names what the track is when the files name it apart, or the name every file gives it.
+    assert [h["name"] for h in headers[:3]] == ["", "", "Commentary"]
+    assert headers[STEREO]["name"] == "Show Name - 1x09 - Episode Nine (Stereo)"  # one file has it
+    assert [h["name"] for h in headers[4:7]] == ["SDH", "", "Forced"]
+    assert all(h["names"] for h in headers[:SRT])
+    assert not headers[SRT]["names"]
+    turkish = built.names(TURKISH)
+    assert turkish[:2] == ["01 · Show Name - 1x01 - Episode One (Turkish)", "02 · Turkish"]
+    assert len(turkish) == 9  # Episode Seven has no Turkish audio
+    assert built.names(SRT) == []
+    unnamed = [
+        replace(i, file=replace(i.file, tracks=tuple(replace(t, name="") for t in i.file.tracks))) for i in named
+    ]
+    assert view(unnamed, TracksOptions(), planned=False).names(ENGLISH)[0] == "01 · no name"
+
+
+def test_a_whole_show_lists_files_by_season_and_episode(library: Library) -> None:
+    show = [i for i in library.items if isinstance(i.identity, Episode) and i.identity.show == "Show Name"]
+    names = view(show, TracksOptions(), planned=False).names(ENGLISH)
+    assert (names[0], names[-1]) == ("S01E01 · English", "S02E08 · English")
+
+
+def test_two_alike_tracks_in_one_file_are_two_columns_named_apart(season: list[MediaItem]) -> None:
+    first = season[0]
+    extra = replace(first.file.tracks[1], id=20, name="Director")
+    items = [replace(first, file=replace(first.file, tracks=(*first.file.tracks, extra))), *season[1:]]
+    built = view(items, TracksOptions())
+    names = [h["name"] for h in built.headers() if h["kind"] == "audio"]
+    assert names == ["English", "Turkish", "Commentary", "Director", "Stereo"]
+    director = names.index("Director")
+    options = choose(TracksOptions(), built.cols[director].signature, TrackChoice(Verdict.DROP))
+    dropped = view(items, options)
+    assert [h["state"] for h in dropped.headers()][: len(names)] == ["kept", "kept", "kept", "dropped", "kept"]
+    words = " ".join(str(p["text"]) for p in dropped.rules()[0]["parts"])
+    assert words == "Drop audio in ENG Dolby Digital Plus 5.1 named Director"

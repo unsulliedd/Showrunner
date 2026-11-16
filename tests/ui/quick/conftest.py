@@ -121,11 +121,23 @@ def neutral_library() -> Library:
     return Library(tuple(items), (doubt,))
 
 
-def long_show(seasons: int = 12, episodes: int = 25) -> Library:
+def long_show(seasons: int = 12, episodes: int = 25, *, named_per_episode: bool = False) -> Library:
     """One show of `seasons` seasons of `episodes` episodes each (300 by default), with the sample's track set, for
-    timing the whole show against one season."""
+    timing the whole show against one season. With `named_per_episode`, every track is named after its episode
+    ("Long Show - 1x01 - Episode One (English)"), as some releases do."""
     items = [_episode("Long Show", 2001, s, n) for s in range(1, seasons + 1) for n in range(1, episodes + 1)]
+    if named_per_episode:
+        items = [named_after_episode(i) for i in items]
     return Library(tuple(items))
+
+
+def named_after_episode(item: MediaItem) -> MediaItem:
+    """The item with each track named after its episode, the track's own name in brackets."""
+    identity = item.identity
+    assert isinstance(identity, Episode)
+    prefix = f"{identity.show} - {identity.season}x{identity.episode:02d} - {identity.episode_title}"
+    tracks = tuple(replace(t, name=f"{prefix} ({t.name})" if t.name else prefix) for t in item.file.tracks)
+    return replace(item, file=replace(item.file, tracks=tracks))
 
 
 def program_statuses() -> dict[str, DependencyStatus]:

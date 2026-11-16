@@ -47,7 +47,7 @@ def test_a_chip_click_becomes_a_rule_and_the_plan_follows(
     open_season(controller, library, qtbot)
     controller.toggle_keep(COMMENTARY)
     # The choice shows at once as a rule; the counts wait for the plan.
-    assert rules(controller) == ["Drop audio in ENG named Commentary"]
+    assert rules(controller) == ["Drop audio in ENG Dolby Digital 2.0 flagged commentary"]
     assert controller.profile_edited
     settle(controller, qtbot)
     assert controller.matrix["headers"][COMMENTARY]["state"] == "dropped"
@@ -71,14 +71,14 @@ def test_stars_write_a_default_and_its_fallback(controller: WindowController, li
     controller.toggle_flag(ENGLISH, "default")
     settle(controller, qtbot)
     assert rules(controller) == [
-        "Keep audio in TUR named Turkish · default",
-        "Keep audio in ENG named English · default if none above",
+        "Keep audio in TUR Dolby Digital Plus 5.1 · default",
+        "Keep audio in ENG Dolby Digital Plus 5.1 · default if none above",
     ]
     seventh = controller.overview["rows"][6]
     assert seventh["warning"] == "No Turkish audio: English audio becomes the default"
     # Turning the star off again leaves no rule behind: the keep only carried the flag.
     controller.toggle_flag(TURKISH, "default")
-    assert rules(controller) == ["Keep audio in ENG named English · default"]
+    assert rules(controller) == ["Keep audio in ENG Dolby Digital Plus 5.1 · default"]
 
 
 def test_a_paired_file_is_added_and_restored(controller: WindowController, library: Library, qtbot: QtBot) -> None:
@@ -98,7 +98,10 @@ def test_rules_move_and_pause(controller: WindowController, library: Library, qt
     controller.toggle_keep(COMMENTARY)
     controller.toggle_keep(SDH)
     controller.move_rule(1, 0)
-    assert rules(controller) == ["Drop subtitles in ENG named SDH", "Drop audio in ENG named Commentary"]
+    assert rules(controller) == [
+        "Drop subtitles in ENG SubRip flagged hearing impaired",
+        "Drop audio in ENG Dolby Digital 2.0 flagged commentary",
+    ]
     controller.pause_rule(0, True)
     settle(controller, qtbot)
     assert controller.rules[0]["enabled"] is False
@@ -202,7 +205,7 @@ def test_a_drop_the_plan_refuses_is_undone_by_a_second_click(
     controller.toggle_keep(STEREO)
     settle(controller, qtbot)
     assert rules(controller) == [
-        "Drop audio in ENG named English",
-        "Drop audio in TUR named Turkish",
-        "Drop audio in ENG named Commentary",
+        "Drop audio in ENG Dolby Digital Plus 5.1",
+        "Drop audio in TUR Dolby Digital Plus 5.1",
+        "Drop audio in ENG Dolby Digital 2.0 flagged commentary",
     ]

@@ -13,6 +13,10 @@ Item {
 
     signal matrixAsked
 
+    TrackNames {
+        id: trackNames
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Theme.space_lg
@@ -105,6 +109,8 @@ Item {
                                 }
 
                                 Flow {
+                                    id: chipRow
+
                                     Layout.fillWidth: true
                                     spacing: Theme.space_md
 
@@ -114,7 +120,10 @@ Item {
                                         delegate: TrackChip {
                                             required property var modelData
 
+                                            // No wider than the row: a long track name is cut short instead.
+                                            width: Math.min(implicitWidth, chipRow.width)
                                             chip: modelData
+                                            names: trackNames
                                         }
                                     }
                                 }

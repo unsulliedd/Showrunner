@@ -4,11 +4,13 @@ import QtQuick.Layouts
 import Showrunner
 
 // One track signature of a batch on Overview: a click keeps or drops it in every file (adds a paired file), the
-// star and F set the flags. `chip` is a header from the controller.
+// star and F set the flags, the ▾ lists each file's name for the track. `chip` is a header from the controller.
 AbstractButton {
     id: control
 
     required property var chip
+    // The place's one `TrackNames`, which the ▾ opens.
+    property TrackNames names: null
     readonly property bool dropped: chip.state === "dropped"
     readonly property bool paired: chip.paired
 
@@ -46,7 +48,7 @@ AbstractButton {
         RowLayout {
             id: row
 
-            anchors.centerIn: parent
+            anchors.fill: parent
             spacing: Theme.space_md
 
             Icon {
@@ -69,11 +71,27 @@ AbstractButton {
             }
 
             UiText {
+                // Takes what the chip has left, up to its own width, so it is what a narrow row cuts short.
+                Layout.fillWidth: true
+                Layout.maximumWidth: Math.min(implicitWidth, Theme.chip_name_width)
                 visible: control.chip.name !== ""
                 text: control.chip.name
                 color: control.dropped ? Theme.drop : Theme.muted
                 font.strikeout: control.dropped
                 font.pixelSize: Theme.text_sm
+            }
+
+            IconButton {
+                id: namesButton
+
+                objectName: "namesButton"
+                visible: control.chip.names && control.names !== null
+                implicitWidth: Theme.row_sm
+                implicitHeight: Theme.row_sm
+                iconName: "down"
+                label: Strings.t("tracks.names.open")
+                active: control.names !== null && control.names.opened && control.names.column === control.chip.id
+                onClicked: control.names.toggle(namesButton, control.chip.id)
             }
 
             FlagButton {

@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from showrunner.app.batches.choices import TrackChoice, TrackSignature, choice_of, signature_of
+from showrunner.app.batches.choices import TrackChoice, TrackGroups, TrackSignature, choice_of, signature_of
 from showrunner.app.jobs.counts import count_changes
 from showrunner.app.jobs.preview import FileOutcome, FilePreview
 from showrunner.core.language import Language
@@ -40,6 +40,8 @@ from showrunner.ui.sheet.format import size_text
 KINDS = (TrackKind.AUDIO, TrackKind.SUBTITLE)
 FLAGS = ("default", "forced")
 _FLAG_TESTS = ("default", "forced", "hearing_impaired", "visual_impaired", "commentary", "original")
+# What a track is, as a signature holds it, in the order a chip names it.
+_WHAT = ("commentary", "hearing_impaired", "visual_impaired", "forced")
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,16 +77,21 @@ def _codec(signature: TrackSignature) -> str:
     )
 
 
-def columns(items: Sequence[MediaItem]) -> list[Column]:
+def _what(signature: TrackSignature) -> list[str]:
+    return [flag for flag in _WHAT if getattr(signature, flag)]
+
+
+def columns(items: Sequence[MediaItem], groups: TrackGroups | None = None) -> list[Column]:
     """Audio signatures, then subtitle signatures, each in the order first seen, then the kinds of paired file."""
+    groups = groups if groups is not None else TrackGroups.of(items, flags_from_names=True)
     found: dict[TrackSignature, None] = {}
     for kind in KINDS:
         for item in items:
-            found.update(dict.fromkeys(TrackSignature.of(t) for t in item.file.tracks if t.kind is kind))
+            found.update(dict.fromkeys(groups.signature(t) for t in item.file.tracks if t.kind is kind))
     paired: dict[PairedFile, TrackSignature] = {}
     for item in items:
         for index, subtitle in enumerate(item.subtitles):
-            paired.setdefault(PairedFile.of(subtitle), TrackSignature.of(stand_in(subtitle, index)))
+            paired.setdefault(PairedFile.of(subtitle), groups.signature(stand_in(subtitle, index)))
     return [Column(s) for s in found] + [Column(s, p) for p, s in paired.items()]
 
 
@@ -99,27 +106,27 @@ def seen(item: MediaItem, file: FilePreview | None) -> list[Seen]:
     return sorted(rows, key=lambda s: (s.external is not None, abs(s.track.id)))
 
 
-def by_signature(tracks: Sequence[Seen]) -> dict[TrackSignature, Seen]:
+def by_signature(tracks: Sequence[Seen], groups: TrackGroups) -> dict[TrackSignature, Seen]:
     """A file's embedded tracks by signature, the first in file order for each."""
     found: dict[TrackSignature, Seen] = {}
     for s in tracks:
         if s.external is None:
-            found.setdefault(TrackSignature.of(s.track), s)
+            found.setdefault(groups.signature(s.track), s)
     return found
 
 
 def cell(
-    column: Column, item: MediaItem, tracks: Sequence[Seen], signatures: dict[TrackSignature, Seen] | None = None
+    column: Column, item: MediaItem, tracks: Sequence[Seen], signatures: dict[TrackSignature, Seen]
 ) -> dict[str, object]:
-    """One file under one column: kept, dropped, added, paired (beside the video, not added) or missing. Pass the
-    file's `by_signature` when asking for many columns: a show whose track names differ per file has thousands."""
+    """One file under one column: kept, dropped, added, paired (beside the video, not added) or missing.
+    `signatures` is the file's `by_signature`, made once for all its columns."""
     if column.paired is not None:
         found = next((s for s in tracks if s.external and PairedFile.of(s.external) == column.paired), None)
         if found is None:
             beside = any(PairedFile.of(sub) == column.paired for sub in item.subtitles)
             return {"state": "paired" if beside else "missing", "default": False, "forced": False}
     else:
-        found = (signatures if signatures is not None else by_signature(tracks)).get(column.signature)
+        found = signatures.get(column.signature)
         if found is None:
             return {"state": "missing", "default": False, "forced": False}
     kept = found.state != "dropped"
@@ -144,14 +151,19 @@ class BatchView:
     options: TracksOptions
     files: dict[str, FilePreview]  # by path
     cols: list[Column]
+    grouping: TrackGroups = field(default_factory=TrackGroups)
     firsts: dict[TrackKind, TrackSignature] = field(default_factory=dict)
     # Each file's cells, built on first use: the headers, the rows and the Inspector all read them.
     _cells: dict[str, list[dict[str, object]]] = field(default_factory=dict, compare=False, repr=False)
+    # Each signature's track names, file by file, built on first use.
+    _names: dict[TrackSignature, list[tuple[MediaItem, str]]] = field(default_factory=dict, compare=False, repr=False)
 
     @classmethod
     def build(cls, items: Sequence[MediaItem], options: TracksOptions, files: Sequence[FilePreview]) -> BatchView:
-        cols = columns(items)
-        return cls(items, options, {str(f.item.file.path): f for f in files}, cols, _first_defaults(options, cols))
+        groups = TrackGroups.of(items, options.flags_from_names)
+        cols = columns(items, groups)
+        by_path = {str(f.item.file.path): f for f in files}
+        return cls(items, options, by_path, cols, groups, _first_defaults(options, cols))
 
     def file(self, item: MediaItem) -> FilePreview | None:
         return self.files.get(str(item.file.path))
@@ -164,7 +176,7 @@ class BatchView:
 
     def _cells_of(self, item: MediaItem) -> list[dict[str, object]]:
         tracks = seen(item, self.file(item))
-        signatures = by_signature(tracks)
+        signatures = by_signature(tracks, self.grouping)
         result = []
         for column in self.cols:
             found = cell(column, item, tracks, signatures)
@@ -176,6 +188,40 @@ class BatchView:
 
     def choice(self, index: int) -> TrackChoice:
         return choice_of(self.options, self.cols[index].signature)
+
+    def _named(self) -> dict[TrackSignature, list[tuple[MediaItem, str]]]:
+        """Per signature, each file that has such a track with the name of its first one."""
+        if not self._names:
+            for item in self.items:
+                firsts: dict[TrackSignature, str] = {}
+                for track in item.file.tracks:
+                    firsts.setdefault(self.grouping.signature(track), track.name)
+                for signature, name in firsts.items():
+                    self._names.setdefault(signature, []).append((item, name))
+        return self._names
+
+    def _label(self, column: Column) -> str:
+        """What a chip says beside its codec: the name every file gives the track, else what the track is."""
+        names = {name for _, name in self._named().get(column.signature, [])} if column.paired is None else set()
+        if len(names) == 1 and "" not in names:
+            return names.pop()
+        separator = f" {tr('status.separator')} "
+        return separator.join(tr(f"tracks.what.{flag}") for flag in _what(column.signature))
+
+    def names(self, index: int) -> list[str]:
+        """The ▾ list of a column: each file that has the track, by its number, with the track's name or that it has
+        none. A file without the track is left out; the column's count already says so."""
+        if not 0 <= index < len(self.cols) or self.cols[index].paired is not None:
+            return []
+        seasons = {(i.identity.show, i.identity.season) for i in self.items if isinstance(i.identity, Episode)}
+        one_season = len(seasons) <= 1
+        rows = []
+        for item, name in self._named().get(self.cols[index].signature, []):
+            number = file_label(item, one_season)
+            rows.append(
+                tr("tracks.names.row", number=number, name=name) if name else tr("tracks.names.none", number=number)
+            )
+        return rows
 
     # Columns: chips, matrix headers
 
@@ -200,7 +246,9 @@ class BatchView:
                     "title": tr("tracks.paired_file", format=column.paired.format)
                     if column.paired
                     else _codec(signature),
-                    "name": signature.name,
+                    "name": self._label(column),
+                    # The ▾ that lists each file's name for the track.
+                    "names": column.paired is None,
                     "paired": column.paired is not None,
                     "state": state,
                     "button": tr(f"tracks.state.{state}"),
@@ -273,7 +321,7 @@ class BatchView:
         tracks = seen(item, file)
         firsts = _first_defaults(self.options, self.cols)
         for kind, first in firsts.items():
-            if any(TrackSignature.of(s.track) == first for s in tracks if s.external is None):
+            if any(self.grouping.signature(s.track) == first for s in tracks if s.external is None):
                 continue
             column = next(c for c in self.cols if c.signature == first)
             if column.paired is not None:
@@ -304,7 +352,11 @@ class BatchView:
                     s.track
                     for s in tracks
                     if (column.paired and s.external and PairedFile.of(s.external) == column.paired)
-                    or (column.paired is None and s.external is None and TrackSignature.of(s.track) == column.signature)
+                    or (
+                        column.paired is None
+                        and s.external is None
+                        and self.grouping.signature(s.track) == column.signature
+                    )
                 ),
                 None,
             )
@@ -427,12 +479,13 @@ def rule_parts(
     match = rule.match
     parts = [_part(tr(f"tracks.rule.verb.{rule.verdict.value}")), _part(tr(f"tracks.rule.kind.{match.kind.value}"))]
     if signature is not None:
-        parts += [_part(tr("tracks.rule.in")), _part(_signature_code(signature), True)]
-        # The name tells most tracks apart; an unnamed track is told by its codec.
+        parts += [_part(tr("tracks.rule.in")), _part(_signature_code(signature), True), _part(_codec(signature))]
+        parts += [_part(tr("tracks.rule.flag_set", flag=tr(f"tracks.flag.{flag}"))) for flag in _what(signature)]
+        # Only a group told apart by name carries one.
         if signature.name:
             parts += [_part(tr("tracks.rule.named")), _part(signature.name, True)]
-        else:
-            parts.append(_part(_codec(signature)))
+        elif signature.name is not None:
+            parts.append(_part(tr("tracks.rule.unnamed")))
     else:
         if match.languages:
             parts += [_part(tr("tracks.rule.in"))] + [_part(lang.upper(), True) for lang in match.languages]
@@ -486,6 +539,16 @@ def _all(item: MediaItem, options: TracksOptions) -> list[Track]:
 
 def item_number(item: MediaItem) -> str:
     return f"{item.identity.episode:02d}" if isinstance(item.identity, Episode) else ""
+
+
+def file_label(item: MediaItem, one_season: bool) -> str:
+    """How a list names a file: its episode number in one season, its season and episode in more, else its title."""
+    identity = item.identity
+    if not isinstance(identity, Episode):
+        return item_title(item)
+    if one_season:
+        return item_number(item)
+    return tr("inspector.episode_code", season=identity.season, episode=identity.episode)
 
 
 def item_title(item: MediaItem) -> str:

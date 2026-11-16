@@ -356,6 +356,9 @@ SIZES: dict[str, int] = {
     "settings_rail_below": 1200,  # a window narrower than this shows the section list as a rail of icons
     "toggle_width": 34,  # an on/off switch
     "palette_width": 560,  # the command palette
+    "names_width": 420,  # the list of each file's name for a track, under a chip's ▾
+    "names_height": 320,
+    "chip_name_width": 200,  # a chip's track name, cut short with an ellipsis beyond it
     "window_min_width": 1024,
     "window_min_height": 640,
 }

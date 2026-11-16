@@ -197,7 +197,10 @@ def test_chips_and_rules_answer_the_pointer(
     _click(load.window, _item(_item(root, "chip1"), "defaultFlag"))
     load()
     words = [" ".join(str(p["text"]) for p in rule["parts"]) for rule in controller.rules]
-    assert words == ["Drop audio in ENG named Commentary", "Keep audio in TUR named Turkish · default"]
+    assert words == [
+        "Drop audio in ENG Dolby Digital 2.0 flagged commentary",
+        "Keep audio in TUR Dolby Digital Plus 5.1 · default",
+    ]
     controller.toggle_keep(4)
     qtbot.waitUntil(lambda: not controller.planning)
     load.window.setProperty("place", "tracks")
@@ -216,7 +219,7 @@ def test_chips_and_rules_answer_the_pointer(
     QTest.mouseRelease(load.window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
     load()
     words = [" ".join(str(p["text"]) for p in rule["parts"]) for rule in controller.rules]
-    assert words[-1] == "Drop audio in ENG named Commentary"
+    assert words[-1] == "Drop audio in ENG Dolby Digital 2.0 flagged commentary"
     # With more rules than the panel holds the list could scroll; a drag on a grip still moves the rule.
     for column in (5, 6, 7, 3):
         controller.toggle_flag(column, "default")
@@ -235,6 +238,57 @@ def test_chips_and_rules_answer_the_pointer(
     QTest.mouseRelease(load.window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
     load()
     assert controller.rules[1]["parts"] == first
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def _names_popup(window: Any) -> QObject:
+    (opened,) = (p for p in window.findChildren(QObject, "trackNames") if p.property("opened"))
+    return opened
+
+
+def test_a_chip_s_arrow_lists_each_file_s_name_and_leaves_the_chip_alone(
+    load: Any, controller: WindowController, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    from .conftest import long_show  # imported here: a test below runs this module's imports in a child process
+
+    show = long_show(1, 10, named_per_episode=True)
+    load()
+    controller.start()
+    controller.model.set_library(show)
+    controller.select(controller.tree.index_of(str(show.items[2].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    load()
+    root = load.window.contentItem()
+    assert len(controller.overview["groups"][0]["chips"]) == 4  # tracks named per episode are one chip each
+    _click(load.window, _item(_item(root, "chip1"), "namesButton"))
+    load()
+    rows = _names_popup(load.window).property("rows")
+    assert len(rows) == 9  # Episode Seven has no Turkish audio
+    assert rows[0] == "01 · Long Show - 1x01 - Episode One (Turkish)"
+    assert controller.rules == []  # only the arrow answered, not the chip
+    _click(load.window, _item(_item(root, "chip1"), "namesButton"))
+    load()
+    assert not any(p.property("opened") for p in load.window.findChildren(QObject, "trackNames"))
+    load.window.setProperty("place", "tracks")
+    load()
+    header = next(b for b in _items(root, "namesButton") if b.isVisible())
+    _click(load.window, header)
+    load()
+    assert len(_names_popup(load.window).property("rows")) == 10
+    assert controller.rules == []
+    # At the narrowest window the list under the rightmost arrow moves left to stay inside it.
+    _click(load.window, header)  # closes the list
+    load.window.setProperty("place", "overview")
+    load.window.setWidth(1024)
+    qtbot.waitUntil(lambda: load.window.width() == 1024)
+    qtbot.wait(300)
+    rightmost = max((b for b in _items(root, "namesButton") if b.isVisible()), key=_right)
+    assert _right(rightmost) <= _right(_item(root, "chipGroups"))  # a long name is cut short, the arrow stays in
+    assert _right(rightmost) + SIZES["names_width"] > load.window.width()  # the list would not fit where it opens
+    _click(load.window, rightmost)
+    load()
+    assert _right(_names_popup(load.window).property("contentItem")) <= load.window.width()
     assert load() == []
     assert qt_warnings() == []
 

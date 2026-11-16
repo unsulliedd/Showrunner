@@ -571,6 +571,11 @@ class WindowController(QObject):
             return None
         return self._view.cols[column], self._headers()[column]
 
+    @Slot(int, result="QVariantList")
+    def track_names(self, column: int) -> list[str]:
+        """The ▾ list of a chip or matrix column: each file's name for its track, built when the list opens."""
+        return self._view.names(column) if self._view is not None else []
+
     @Slot(int)
     def toggle_keep(self, column: int) -> None:
         """A click on a chip or a column's state: drop what stays, keep what is dropped, add a paired file."""

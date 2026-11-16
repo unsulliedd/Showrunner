@@ -13,6 +13,10 @@ Item {
     readonly property var headers: view.headers
     readonly property var rows: view.rows
 
+    TrackNames {
+        id: trackNames
+    }
+
     component Cell: Item {
         id: cell
 
@@ -122,6 +126,7 @@ Item {
         id: head
 
         required property var column
+        property TrackNames names: null
 
         width: Theme.matrix_column
         height: Theme.matrix_header
@@ -155,12 +160,30 @@ Item {
                 maximumLineCount: 2
             }
 
-            UiText {
+            RowLayout {
                 Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
-                text: head.column.name
-                color: Theme.muted
-                font.pixelSize: Theme.text_xs
+                spacing: 0
+
+                UiText {
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    text: head.column.name
+                    color: Theme.muted
+                    font.pixelSize: Theme.text_xs
+                }
+
+                IconButton {
+                    id: headNames
+
+                    objectName: "namesButton"
+                    visible: head.column.names && head.names !== null
+                    implicitWidth: Theme.pill
+                    implicitHeight: Theme.pill
+                    iconName: "down"
+                    label: Strings.t("tracks.names.open")
+                    active: head.names !== null && head.names.opened && head.names.column === head.column.id
+                    onClicked: head.names.toggle(headNames, head.column.id)
+                }
             }
 
             Row {
@@ -334,6 +357,7 @@ Item {
                             required property var modelData
 
                             column: modelData
+                            names: trackNames
                         }
                     }
                 }
