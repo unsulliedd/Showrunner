@@ -1,12 +1,13 @@
 """Track rules: which tracks of a file stay, which go, and which flags change."""
 
 from showrunner.stages.tracks.check import RuleField, RuleProblem, RuleProblemKind, check_rules
-from showrunner.stages.tracks.matching import NO_LANGUAGE, matches
+from showrunner.stages.tracks.matching import NO_LANGUAGE, is_paired, matches
 from showrunner.stages.tracks.options import (
     FlagShape,
     FlagTest,
     KindTest,
     PairedFile,
+    SourceTest,
     TrackMatch,
     TrackRule,
     TracksOptions,
@@ -42,6 +43,7 @@ __all__ = [
     "RuleField",
     "RuleProblem",
     "RuleProblemKind",
+    "SourceTest",
     "TrackMatch",
     "TrackPlan",
     "TrackRule",
@@ -49,6 +51,7 @@ __all__ = [
     "Verdict",
     "check_rules",
     "describe_track",
+    "is_paired",
     "matches",
     "plan_tracks",
     "stand_in",

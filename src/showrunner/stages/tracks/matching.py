@@ -8,17 +8,25 @@ from functools import lru_cache
 from showrunner.core.language import Language
 from showrunner.core.naming.names import codec_display
 from showrunner.core.track import ObjectAudio, Track, flags_with_name
-from showrunner.stages.tracks.options import FlagTest, KindTest, TrackMatch
+from showrunner.stages.tracks.options import FlagTest, KindTest, SourceTest, TrackMatch
 
 _FLAGS = ("default", "forced", "hearing_impaired", "visual_impaired", "commentary", "original")
 
 NO_LANGUAGE = "und"
 
 
+def is_paired(track: Track) -> bool:
+    """Whether the track stands in for a paired subtitle file beside the video (`stand_in` gives it a negative id,
+    as the file has no track number in the video yet)."""
+    return track.id < 0
+
+
 def matches(match: TrackMatch, track: Track, *, flags_from_name: bool = True) -> bool:
     """True when the track passes every test the match sets. With `flags_from_name`, a flag the track's
     name implies (a track named "Commentary" counts as commentary) is tested as set."""
     if match.kind is not KindTest.ANY and match.kind.value != track.kind.value:
+        return False
+    if match.source is not SourceTest.ANY and (match.source is SourceTest.PAIRED) is not is_paired(track):
         return False
     flags = flags_with_name(track) if flags_from_name else track.flags
     for flag in _FLAGS:

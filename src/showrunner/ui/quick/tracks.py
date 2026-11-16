@@ -27,6 +27,7 @@ from showrunner.stages.tracks import (
     KindTest,
     PairedFile,
     PlanRefused,
+    SourceTest,
     TrackPlan,
     TrackRule,
     TracksOptions,
@@ -500,6 +501,9 @@ def rule_parts(
     if signature is not None:
         parts += [_part(tr("tracks.rule.in")), _part(_signature_code(signature), True), _part(_codec(signature))]
         parts += [_part(tr("tracks.rule.flag_set", flag=tr(f"tracks.flag.{flag}"))) for flag in _what(signature)]
+        # Inside the file goes without saying, as with the flags a group does not have.
+        if signature.paired:
+            parts.append(_part(tr("tracks.rule.source.paired")))
         # Only a group told apart by name carries one.
         if signature.name:
             parts += [_part(tr("tracks.rule.named")), _part(signature.name, True)]
@@ -520,6 +524,8 @@ def rule_parts(
             test = getattr(match, flag)
             if test is not FlagTest.ANY:
                 parts.append(_part(tr(f"tracks.rule.flag_{test.value}", flag=tr(f"tracks.flag.{flag}"))))
+        if match.source is not SourceTest.ANY:
+            parts.append(_part(tr(f"tracks.rule.source.{match.source.value}")))
     for flag in FLAGS:
         if getattr(rule, flag) is FlagShape.FIRST:
             fallback = any(

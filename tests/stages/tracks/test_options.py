@@ -6,6 +6,7 @@ from showrunner.stages.tracks import (
     FlagShape,
     FlagTest,
     KindTest,
+    SourceTest,
     TrackMatch,
     TrackRule,
     TracksOptions,
@@ -25,7 +26,9 @@ def test_a_rule_list_round_trips() -> None:
         rules=[
             TrackRule(
                 label="Keep Turkish subtitles",
-                match=TrackMatch(kind=KindTest.SUBTITLE, languages=["tr", "und"], forced=FlagTest.UNSET),
+                match=TrackMatch(
+                    kind=KindTest.SUBTITLE, languages=["tr", "und"], forced=FlagTest.UNSET, source=SourceTest.PAIRED
+                ),
                 verdict=Verdict.KEEP,
                 default=FlagShape.FIRST,
             ),
@@ -40,3 +43,12 @@ def test_a_rule_list_round_trips() -> None:
     warnings: list[LoadWarning] = []
     assert from_sparse(TracksOptions, to_sparse(options), "tracks", warnings) == options
     assert warnings == []
+
+
+def test_a_rule_stored_before_the_source_test_loads_as_any_source() -> None:
+    stored = {"rules": [{"match": {"kind": "subtitle", "languages": ["tr"]}, "verdict": "drop"}]}
+    warnings: list[LoadWarning] = []
+    options = from_sparse(TracksOptions, stored, "tracks", warnings)
+    assert warnings == []
+    assert options.rules[0].match.source is SourceTest.ANY
+    assert from_sparse(TracksOptions, to_sparse(options), "tracks", warnings) == options

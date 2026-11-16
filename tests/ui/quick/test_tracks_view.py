@@ -13,9 +13,20 @@ from showrunner.app.jobs.preview import preview
 from showrunner.app.jobs.stages import pipeline
 from showrunner.app.library.library import Library
 from showrunner.app.profiles.store import ProfileStore
+from showrunner.core.language import Language
 from showrunner.core.media import Episode, MediaItem
+from showrunner.core.track import SubtitleProperties, Track, TrackKind
 from showrunner.stages.mux.options import Original
-from showrunner.stages.tracks import FlagShape, FlagTest, KindTest, TrackMatch, TrackRule, TracksOptions, Verdict
+from showrunner.stages.tracks import (
+    FlagShape,
+    FlagTest,
+    KindTest,
+    SourceTest,
+    TrackMatch,
+    TrackRule,
+    TracksOptions,
+    Verdict,
+)
 from showrunner.tools.probe import Programs
 from showrunner.ui.quick.tracks import BatchView, columns, rule_parts
 
@@ -123,7 +134,7 @@ def test_rules_read_as_sentences_with_their_fallbacks(season: list[MediaItem]) -
         "Keep audio in TUR Dolby Digital Plus 5.1 · default",
         "Keep audio in ENG Dolby Digital Plus 5.1 · default if none above",
     ]
-    assert words[-1] == "Keep subtitles in TUR SubRip · default"
+    assert words[-1] == "Keep subtitles in TUR SubRip from a file beside the video · default"
     assert [r["fits"] for r in rules[:3]] == ["fits 10 files", "fits 9 files", "fits 10 files"]
     assert all(r["from_choice"] and r["source"] == "from the matrix" for r in rules)
 
@@ -137,6 +148,15 @@ def test_a_hand_written_rule_reads_from_its_match() -> None:
     parts = rule_parts(rule, None, [])
     assert " ".join(str(p["text"]) for p in parts) == "Keep subtitles in TR not forced · default"
     assert [p["text"] for p in parts if p["code"]] == ["TR"]
+    words = {
+        source: " ".join(str(p["text"]) for p in rule_parts(TrackRule(match=TrackMatch(source=source)), None, []))
+        for source in SourceTest
+    }
+    assert words == {
+        SourceTest.ANY: "Set tracks",
+        SourceTest.EMBEDDED: "Set tracks inside the file",
+        SourceTest.PAIRED: "Set tracks from a file beside the video",
+    }
 
 
 def test_movie_cards_hold_the_choice_and_the_name(library: Library) -> None:
@@ -195,6 +215,21 @@ def test_a_whole_show_lists_files_by_season_and_episode(library: Library) -> Non
     show = [i for i in library.items if isinstance(i.identity, Episode) and i.identity.show == "Show Name"]
     names = view(show, TracksOptions(), planned=False).names(ENGLISH)
     assert (names[0], names[-1]) == ("S01E01 · English", "S02E08 · English")
+
+
+def test_an_embedded_twin_of_the_paired_file_named_per_episode_is_one_more_column(season: list[MediaItem]) -> None:
+    paired = columns(season)[SRT].signature
+    twin = Track(
+        30, TrackKind.SUBTITLE, paired.codec, Language.parse(paired.language), "Turkish", subtitle=SubtitleProperties()
+    )
+    items = [named_after_episode(replace(i, file=replace(i.file, tracks=(*i.file.tracks, twin)))) for i in season]
+    cols = columns(items)
+    assert len(cols) == len(columns(season)) + 1
+    inside = next(c for c in cols if c.signature == replace(paired, paired=False))
+    assert inside.paired is None
+    assert inside.signature.name is None
+    assert cols[-1].signature == paired  # the paired file's column, as without the twin
+    assert len(view(items, TracksOptions(), planned=False).names(cols.index(inside))) == len(season)
 
 
 def test_two_alike_tracks_in_one_file_are_two_columns_named_apart(season: list[MediaItem]) -> None:

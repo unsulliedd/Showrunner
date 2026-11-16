@@ -32,6 +32,14 @@ class FlagTest(StrEnum):
     UNSET = "unset"
 
 
+class SourceTest(StrEnum):
+    """Where a track comes from: from inside the video file, or from a paired subtitle file beside it."""
+
+    ANY = "any"
+    EMBEDDED = "embedded"
+    PAIRED = "paired"
+
+
 class Verdict(StrEnum):
     PASS = "pass"  # no opinion on keeping: only the flag actions of the rule apply
     KEEP = "keep"
@@ -77,6 +85,8 @@ class TrackMatch:
     # invalid expression fits nothing.
     name: str = ""
     name_is_regex: bool = False
+    # Only a subtitle can come from a paired file, so `paired` fits no audio or video track.
+    source: SourceTest = SourceTest.ANY
 
 
 @dataclass(frozen=True, slots=True)

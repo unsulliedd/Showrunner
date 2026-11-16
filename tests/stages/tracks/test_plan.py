@@ -17,6 +17,7 @@ from showrunner.stages.tracks import (
     PairedFile,
     PlanProblemKind,
     PlanRefused,
+    SourceTest,
     TrackMatch,
     TrackPlan,
     TrackRule,
@@ -316,3 +317,13 @@ def test_describe_track_uses_the_naming_names(b: SimpleNamespace) -> None:
     assert describe_track(track) == "audio Dolby Digital Plus with Dolby Atmos 5.1 English"
     assert describe_track(b.subtitle(2)) == "subtitle SubRip"
     assert describe_track(b.audio(3, "A_UNKNOWN", channels=None)) == "audio A_UNKNOWN"
+
+
+@pytest.mark.parametrize(("source", "left"), [(SourceTest.EMBEDDED, [0, -1]), (SourceTest.PAIRED, [0, 2])])
+def test_a_rule_drops_a_subtitle_by_where_it_comes_from(
+    b: SimpleNamespace, source: SourceTest, left: list[int]
+) -> None:
+    media = b.item(b.video(), b.subtitle(2, b.tr), subtitles=(b.srt(b.tr),))
+    drop = TrackRule(match=TrackMatch(kind=KindTest.SUBTITLE, languages=["tr"], source=source), verdict=Verdict.DROP)
+    plan = planned(plan_tracks(media, adding(media, options(drop))))
+    assert kept_ids(plan) == left

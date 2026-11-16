@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from showrunner.core.track import ObjectAudio
-from showrunner.stages.tracks import FlagTest, KindTest, TrackMatch, matches
+from showrunner.stages.tracks import FlagTest, KindTest, SourceTest, TrackMatch, matches, stand_in
 
 
 def test_an_empty_match_fits_every_track(b: SimpleNamespace) -> None:
@@ -121,3 +121,16 @@ def test_name_regular_expression(b: SimpleNamespace) -> None:
 
 def test_an_invalid_regular_expression_fits_nothing(b: SimpleNamespace) -> None:
     assert not matches(TrackMatch(name="(", name_is_regex=True), b.audio(1, name="("))
+
+
+def test_where_a_track_comes_from_a_paired_file_or_inside_the_video(b: SimpleNamespace) -> None:
+    embedded = b.subtitle(2, b.tr)
+    paired = stand_in(b.srt(b.tr), 0)
+    assert matches(TrackMatch(source=SourceTest.PAIRED), paired)
+    assert not matches(TrackMatch(source=SourceTest.PAIRED), embedded)
+    assert matches(TrackMatch(source=SourceTest.EMBEDDED), embedded)
+    assert not matches(TrackMatch(source=SourceTest.EMBEDDED), paired)
+    assert matches(TrackMatch(), paired)
+    assert matches(TrackMatch(), embedded)
+    assert not matches(TrackMatch(source=SourceTest.PAIRED), b.audio(1))  # only subtitles come from paired files
+    assert matches(TrackMatch(source=SourceTest.EMBEDDED), b.audio(1))

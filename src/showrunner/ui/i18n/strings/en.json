@@ -692,6 +692,8 @@
   "tracks.rule.unnamed": "without a name",
   "tracks.rule.flag_set": "flagged {flag}",
   "tracks.rule.flag_unset": "not {flag}",
+  "tracks.rule.source.embedded": "inside the file",
+  "tracks.rule.source.paired": "from a file beside the video",
   "tracks.rule.channels_exact": "{count}",
   "tracks.rule.channels_between": "{low} to {high}",
   "tracks.rule.channels_min": "{count} or more",

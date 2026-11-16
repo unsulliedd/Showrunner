@@ -23,20 +23,23 @@ from showrunner.stages.tracks import (
     FlagTest,
     KindTest,
     PairedFile,
+    SourceTest,
     TrackMatch,
     TrackRule,
     TracksOptions,
     Verdict,
+    is_paired,
     stand_in,
 )
 
 
 @dataclass(frozen=True, slots=True)
 class TrackSignature:
-    """What makes tracks alike across a batch: kind, language, codec, channels and what the track is (commentary,
-    hearing impaired, forced, audio description), read as the rules read them. Default is not part of it, since a
-    choice changes it. The name is not either, so tracks named after each episode are one group; only a group that
-    `TrackGroups` tells apart by name carries it."""
+    """What makes tracks alike across a batch: kind, language, codec, channels, what the track is (commentary,
+    hearing impaired, forced, audio description) and where it comes from (inside the file or a paired file beside
+    it), read as the rules read them. Default is not part of it, since a choice changes it. The name is not either,
+    so tracks named after each episode are one group; only a group that `TrackGroups` tells apart by name carries
+    it."""
 
     kind: TrackKind
     language: str  # IETF tag, `und` for a track without one
@@ -46,6 +49,7 @@ class TrackSignature:
     hearing_impaired: bool = False
     forced: bool = False
     visual_impaired: bool = False
+    paired: bool = False  # a paired subtitle file beside the video, not a track inside it
     name: str | None = None  # None: the name does not matter; "" for an unnamed track of a group told apart by name
 
     @classmethod
@@ -67,6 +71,7 @@ class TrackSignature:
             flags.hearing_impaired,
             flags.forced,
             flags.visual_impaired,
+            is_paired(track),
         )
 
     def match(self) -> TrackMatch:
@@ -83,6 +88,10 @@ class TrackSignature:
             hearing_impaired=_test(self.hearing_impaired),
             visual_impaired=_test(self.visual_impaired),
             commentary=_test(self.commentary),
+            # Only subtitles come from paired files; audio and video rules stay as they were without the test.
+            source=(SourceTest.PAIRED if self.paired else SourceTest.EMBEDDED)
+            if self.kind is TrackKind.SUBTITLE
+            else SourceTest.ANY,
             # The whole name, so an unnamed track's signature does not reach the named tracks beside it.
             name="" if self.name is None else f"^{re.escape(self.name)}$",
             name_is_regex=self.name is not None,
@@ -104,8 +113,8 @@ class TrackGroups:
     """How a batch's tracks fall into signatures. A group is told apart by name in every file of the batch when one
     file holds two of its tracks (two unflagged English AC-3 5.1 tracks): a rule without the name would fit both, and
     a name only in that one file would leave the group's rule fitting that file's named tracks too. Paired subtitle
-    files beside the video count as that file's tracks whether added or not, so adding one changes no group, and a
-    group a paired file shares with an embedded track of another file is told apart by name too."""
+    files beside the video count as that file's tracks whether added or not, so adding one changes no group. A paired
+    file and an embedded track are never one group, since where a track comes from is part of the signature."""
 
     flags_from_names: bool = True
     by_name: frozenset[TrackSignature] = field(default_factory=frozenset)
@@ -113,8 +122,6 @@ class TrackGroups:
     @classmethod
     def of(cls, items: Iterable[MediaItem], flags_from_names: bool) -> TrackGroups:
         by_name: set[TrackSignature] = set()
-        embedded: set[TrackSignature] = set()
-        paired: set[TrackSignature] = set()
         for item in items:
             seen: set[TrackSignature] = set()
             files = [stand_in(subtitle, index) for index, subtitle in enumerate(item.subtitles)]
@@ -123,10 +130,7 @@ class TrackGroups:
                 if signature in seen:
                     by_name.add(signature)
                 seen.add(signature)
-                (paired if track in files else embedded).add(signature)
-        # An embedded track and a paired file alike in different files are one chip each, so their rules need the
-        # name (a paired file has none) to stay apart.
-        return cls(flags_from_names, frozenset(by_name | (embedded & paired)))
+        return cls(flags_from_names, frozenset(by_name))
 
     def signature(self, track: Track) -> TrackSignature:
         signature = TrackSignature.of(track, self.flags_from_names)
@@ -205,9 +209,16 @@ def pause_rule(options: TracksOptions, index: int, paused: bool) -> TracksOption
 
 def signature_of(rule: TrackRule, signatures: Iterable[TrackSignature]) -> TrackSignature | None:
     """The signature among `signatures` whose choice `rule` is, if it is one."""
-    return next((s for s in signatures if rule.from_choice and rule.match == s.match()), None)
+    return next((s for s in signatures if rule.from_choice and rule.match in _forms(s)), None)
 
 
 def _index(rules: list[TrackRule], signature: TrackSignature) -> int | None:
+    forms = _forms(signature)
+    return next((n for n, rule in enumerate(rules) if rule.from_choice and rule.match in forms), None)
+
+
+def _forms(signature: TrackSignature) -> tuple[TrackMatch, TrackMatch]:
+    """The match a choice on `signature` writes, and the same without the source test, as subtitle choices were
+    stored before it: the chip owns such a rule, so a click rewrites it in its place instead of losing to it."""
     match = signature.match()
-    return next((n for n, rule in enumerate(rules) if rule.from_choice and rule.match == match), None)
+    return match, replace(match, source=SourceTest.ANY)

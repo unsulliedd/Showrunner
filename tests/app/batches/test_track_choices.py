@@ -22,6 +22,7 @@ from showrunner.stages.tracks import (
     FlagTest,
     KindTest,
     PairedFile,
+    SourceTest,
     TrackMatch,
     TrackPlan,
     TrackRule,
@@ -263,18 +264,60 @@ def test_two_alike_tracks_in_one_file_split_their_group_by_name_in_every_file() 
     assert one.signature(items[0].file.tracks[1]).name is None  # a batch without the pair keeps the group whole
 
 
-def test_a_paired_file_beside_the_video_splits_the_group_of_its_embedded_twin() -> None:
-    embedded = replace(SUBTITLE, name="Turkish")
-    item = replace(PAIRED, file=replace(PAIRED.file, tracks=(VIDEO, ENGLISH, embedded)))
-    groups = TrackGroups.of([item], flags_from_names=True)
-    twin = plan_tracks(item, add_paired(TracksOptions(), PairedFile.of(item.subtitles[0]), True))
-    assert isinstance(twin, TrackPlan)
-    assert groups.signature(embedded) != groups.signature(twin.kept[-1].track)  # added or not, the groups stay
+def test_a_paired_file_and_its_embedded_twin_are_two_groups_by_where_they_come_from() -> None:
+    for name in ("Turkish", ""):  # an unnamed twin too, which a split by name could not tell apart
+        embedded = replace(SUBTITLE, name=name)
+        item = replace(PAIRED, file=replace(PAIRED.file, tracks=(VIDEO, ENGLISH, embedded)))
+        groups = TrackGroups.of([item], flags_from_names=True)
+        twin = plan_tracks(item, add_paired(TracksOptions(), PairedFile.of(item.subtitles[0]), True))
+        assert isinstance(twin, TrackPlan)
+        inside, beside = groups.signature(embedded), groups.signature(twin.kept[-1].track)
+        assert (inside.paired, beside.paired) == (False, True)
+        assert inside.name is None
+        assert beside.name is None  # added or not, no group needs the name
+        assert inside.match().source is SourceTest.EMBEDDED
+        assert beside.match().source is SourceTest.PAIRED
+
+
+def test_a_season_with_a_paired_file_and_an_embedded_track_named_per_episode_has_one_group_each() -> None:
+    turkish = replace(SUBTITLE, name="Turkish")
+    season = [replace(named_episode(n, VIDEO, ENGLISH, turkish), subtitles=PAIRED.subtitles) for n in (1, 2, 3)]
+    groups = TrackGroups.of(season, flags_from_names=True)
+    found = members(groups, season)
+    subtitles = [s for s in found if s.kind is TrackKind.SUBTITLE]
+    assert len(subtitles) == 2
+    assert all(s.name is None and len(found[s]) == 3 for s in subtitles)
+    inside = next(s for s in subtitles if not s.paired)
+    options = add_paired(
+        choose(TracksOptions(), inside, TrackChoice(Verdict.DROP)), PairedFile.of(PAIRED.subtitles[0]), True
+    )
+    for item in season:  # dropping the embedded group keeps the paired file
+        result = plan(options, item)
+        assert [d.track.id for d in result.dropped] == [SUBTITLE.id]
+        assert result.kept[-1].track.id == -1
+
+
+def test_an_audio_choice_has_no_source_test() -> None:
+    (audio,) = choose(TracksOptions(), sig(ENGLISH), TrackChoice(Verdict.DROP)).rules
+    assert audio.match.source is SourceTest.ANY  # audio comes only from inside the file
+
+
+def test_a_subtitle_choice_stored_before_the_source_test_is_still_its_chip_s() -> None:
+    turkish = sig(SUBTITLE)
+    old = TrackRule(match=replace(turkish.match(), source=SourceTest.ANY), verdict=Verdict.KEEP, from_choice=True)
+    options = TracksOptions(rules=[old, TrackRule(label="hand")])
+    assert choice_of(options, turkish) == TrackChoice(Verdict.KEEP)
+    assert signature_of(old, [turkish]) == turkish
+    dropping = choose(options, turkish, TrackChoice(Verdict.DROP))
+    assert [r.label for r in dropping.rules] == ["", "hand"]  # rewritten in its place, not added below it
+    assert dropping.rules[0].match == turkish.match()
+    assert dropped(dropping) == [SUBTITLE.id]
 
 
 def test_each_group_s_rule_fits_exactly_its_own_tracks() -> None:
     split = episode(VIDEO, ENGLISH, COMMENTARY, UNNAMED, STEREO, TURKISH, SUBTITLE, OTHER_SUBTITLE, SDH, FORCED)
-    # A Turkish SubRip track in one file, a Turkish .srt file beside another: two columns, apart only by name.
+    # A Turkish SubRip track in one file, a Turkish .srt file beside another: two columns, apart by where they come
+    # from.
     embedded_here = replace(PAIRED, file=replace(PAIRED.file, tracks=(VIDEO, ENGLISH, SUBTITLE)), subtitles=())
     for items in (SEASON, [*SEASON, split], [split], [embedded_here, PAIRED], [PAIRED, *SEASON]):
         for from_names in (True, False):
