@@ -94,6 +94,8 @@ AbstractButton {
             ActionButton {
                 objectName: "startTemplate"
                 visible: control.entry.empty
+                Layout.fillWidth: true
+                Layout.maximumWidth: implicitWidth
                 Layout.preferredHeight: Theme.row_sm
                 Layout.leftMargin: -Theme.space_md
                 kind: "ghost"

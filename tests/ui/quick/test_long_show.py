@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from PySide6.QtCore import Q_ARG, QMetaObject
 from PySide6.QtQuick import QQuickItem
 from pytestqt.qtbot import QtBot
 
@@ -30,6 +31,7 @@ def open_show(controller: WindowController, qtbot: QtBot) -> None:
     controller.select(controller.tree.index(0, 0))
     settle(controller, qtbot)
     assert (controller.batch_kind, len(controller._items)) == ("show", 300)
+    assert Path(controller.focus_path).name == controller.inspector["file"]  # the row the Inspector shows is marked
 
 
 @pytest.fixture
@@ -110,5 +112,134 @@ def test_the_window_builds_only_the_place_it_shows(
     qtbot.wait(50)
     assert rows.property("contentY") == 3000.0
     assert (built["names"], built["review"]) == (0, 0)
+    root.close()
+    engine.deleteLater()
+
+
+def _bars(view: QQuickItem) -> list[QQuickItem]:
+    return [item for item in view.childItems() if item.metaObject().className().startswith("Scroller")]
+
+
+def test_long_lists_show_a_scrollbar_and_keep_their_place(controller: WindowController, qtbot: QtBot) -> None:
+    engine = build_engine(controller)
+    root = engine.rootObjects()[0]
+    qtbot.waitUntil(root.isExposed)
+    open_show(controller, qtbot)
+    tree = root.findChild(QQuickItem, "libraryTree")
+    QMetaObject.invokeMethod(tree, "expandRecursively", Q_ARG(int, -1), Q_ARG(int, -1))
+    rows = root.findChild(QQuickItem, "overviewRows")
+    qtbot.wait(50)
+    for view in (tree, rows):
+        assert [bar.isVisible() for bar in _bars(view)] == [True], view.objectName()
+    rows.setProperty("contentY", 3000.0)
+    controller.toggle_keep(COMMENTARY)  # a choice gives Overview new rows of the same batch
+    settle(controller, qtbot)
+    qtbot.wait(50)
+    assert rows.property("contentY") == 3000.0
+    root.setProperty("place", "review")
+    qtbot.wait(50)
+    files = root.findChild(QQuickItem, "reviewFiles")
+    files.setProperty("contentY", 3000.0)
+    controller.leave_out_file(str(controller._items[100].file.path), True)
+    settle(controller, qtbot)
+    qtbot.wait(50)
+    assert files.property("contentY") == 3000.0
+    root.setProperty("place", "names")
+    controller.start_template("title_template")
+    settle(controller, qtbot)
+    qtbot.wait(50)
+    named = root.findChild(QQuickItem, "nameRows")
+    named.setProperty("contentY", 3000.0)
+    controller.focus_file(str(controller._items[70].file.path))  # a click on a row moves the focus
+    qtbot.wait(50)
+    assert named.property("contentY") == 3000.0
+    root.setProperty("place", "tracks")
+    qtbot.wait(50)
+    matrix = root.findChild(QQuickItem, "matrixRows")
+    assert [bar.isVisible() for bar in _bars(matrix)][:1] == [True]
+    root.close()
+    engine.deleteLater()
+
+
+def test_another_batch_with_as_many_rows_starts_at_the_top(controller: WindowController, qtbot: QtBot) -> None:
+    engine = build_engine(controller)
+    root = engine.rootObjects()[0]
+    qtbot.waitUntil(root.isExposed)
+    open_show(controller, qtbot)
+    show = controller.tree.index(0, 0)
+    seasons = [controller.tree.index(row, 0, show) for row in (0, 1)]  # 25 episodes each
+    for season in seasons:  # Names lists rows only under a template
+        controller.select(season)
+        controller.start_template("title_template")
+    for place, name in (("overview", "overviewRows"), ("tracks", "matrixRows"), ("review", "reviewFiles"),
+                        ("names", "nameRows")):  # fmt: skip
+        root.setProperty("place", place)
+        controller.select(seasons[0])
+        settle(controller, qtbot)
+        qtbot.wait(50)
+        view = root.findChild(QQuickItem, name)
+        top = view.property("contentY")
+        view.setProperty("contentY", top + 600.0)
+        controller.select(seasons[1])
+        settle(controller, qtbot)
+        qtbot.wait(50)
+        assert view.property("contentY") == top, place
+    root.close()
+    engine.deleteLater()
+
+
+def test_lists_that_shrink_while_they_show_read_no_missing_row(controller: WindowController, qtbot: QtBot) -> None:
+    warnings: list[str] = []
+    engine = build_engine(controller, on_warnings=lambda errors: warnings.extend(e.toString() for e in errors))
+    root = engine.rootObjects()[0]
+    qtbot.waitUntil(root.isExposed)
+    open_show(controller, qtbot)
+    root.setProperty("place", "review")
+    controller.leave_out_file(str(controller._items[3].file.path), True)
+    settle(controller, qtbot)
+    controller.review_filter = "out"  # 300 cards become 1
+    qtbot.wait(50)
+    controller.review_filter = "all"
+    qtbot.wait(50)
+    root.setProperty("place", "names")
+    controller.start_template("title_template")
+    settle(controller, qtbot)
+    qtbot.wait(50)
+    controller.clear_template()  # 300 rows become none
+    settle(controller, qtbot)
+    qtbot.wait(50)
+    controller.model.set_library(long_show(1, 5))  # the overview of another batch with fewer rows
+    root.setProperty("place", "overview")
+    controller.select(controller.tree.index(0, 0))
+    settle(controller, qtbot)
+    qtbot.wait(50)
+    assert warnings == []
+    root.close()
+    engine.deleteLater()
+
+
+def test_tracks_named_per_episode_leave_the_file_list_its_room(controller: WindowController, qtbot: QtBot) -> None:
+    from dataclasses import replace
+
+    show = long_show(2, 10)
+    items = tuple(
+        replace(
+            i,
+            file=replace(i.file, tracks=tuple(replace(t, name=f"{t.name} {i.file.path.stem}") for t in i.file.tracks)),
+        )
+        for i in show.items
+    )  # every file's tracks have names of their own, so every track is a chip
+    engine = build_engine(controller)
+    root = engine.rootObjects()[0]
+    qtbot.waitUntil(root.isExposed)
+    controller.start()
+    controller.model.set_library(replace(show, items=items))
+    controller.select(controller.tree.index(0, 0))
+    settle(controller, qtbot)
+    qtbot.wait(50)
+    groups = root.findChild(QQuickItem, "chipGroups")
+    rows = root.findChild(QQuickItem, "overviewRows")
+    assert groups.property("contentHeight") > groups.height()  # the chips scroll inside their box
+    assert rows.height() > 0
     root.close()
     engine.deleteLater()

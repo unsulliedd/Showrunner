@@ -4,7 +4,10 @@ literal colors or user-facing text and ask only for string keys that exist."""
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -290,6 +293,16 @@ def test_review_apply_and_the_job_offer_draw_without_warnings(
     qtbot.wait(50)
     _click(window, _items(root, "expand")[0])
     qtbot.wait(50)
+    # With every card open, a card's own toggle still folds it.
+    _click(window, _item(root, "expandAll"))
+    qtbot.wait(50)
+    card = _items(root, "expand")[1].parentItem()
+    while "ReviewFile" not in card.metaObject().className():
+        card = card.parentItem()
+    assert card.property("expanded") is True
+    _click(window, _items(root, "expand")[1])
+    qtbot.wait(50)
+    assert card.property("expanded") is False
     assert warnings == []
     made.hold.clear()
     _click(window, _item(root, "applyButton"))
@@ -588,3 +601,126 @@ def test_a_narrow_compact_window_and_the_palette_by_pointer(
     controller.look.set_density("comfortable")
     assert load() == []
     assert qt_warnings() == []
+
+
+def _all(item: QQuickItem) -> Iterator[QQuickItem]:
+    yield item
+    for child in item.childItems():
+        yield from _all(child)
+
+
+def _right(item: QQuickItem) -> float:
+    return item.mapToScene(QPointF(item.width(), 0)).x()
+
+
+@pytest.mark.parametrize("width", [SIZES["window_min_width"], SIZES["settings_rail_below"]])
+def test_a_narrow_window_keeps_file_names_and_scrollbars_in_place(
+    load: Any, controller: WindowController, library: Library, qtbot: QtBot, width: int
+) -> None:
+    load()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    window = load.window
+    window.setWidth(width)
+    assert load() == []
+    root = window.contentItem()
+    rows = _item(root, "overviewRows")
+    # The rows fit their panel and keep room for the file names; the track columns give way first.
+    assert _right(rows) <= _right(rows.parentItem().parentItem()) + 1
+    names = [i for i in _all(rows) if i.property("text") == library.items[2].identity.episode_title]
+    assert names
+    assert all(i.width() >= SIZES["matrix_column"] - 1 for i in names)
+    # Every scrollbar shown sits on the right edge of its view, never over its top left corner.
+    bars = [i for i in _all(root) if i.metaObject().className().startswith("Scroller") and i.isVisible()]
+    assert bars
+    for bar in bars:
+        assert abs(_right(bar) - _right(bar.parentItem())) <= 1, bar.parentItem()
+
+
+def _left(item: QQuickItem) -> float:
+    return item.mapToScene(QPointF(0, 0)).x()
+
+
+def test_a_narrow_window_elides_text_in_place_and_shows_it_whole_under_the_pointer(
+    load: Any, controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    load()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    window = load.window
+    window.setWidth(SIZES["window_min_width"])
+    window.setProperty("place", "names")
+    assert load() == []
+    root = window.contentItem()
+    # The header's facts end before Leave out.
+    facts = next(i for i in _all(root) if i.property("text") == controller.batch["facts"])
+    assert _right(facts) <= _left(_item(root, "leaveOutBatch")) + 1
+    # A tab of a place that does not exist yet shows whole or not at all.
+    tabs = [i for i in _all(root) if i.metaObject().className().startswith("Tabs")]
+    for row in tabs:
+        for entry in _all(row):
+            if entry.property("modelData") is not None and entry.opacity() == 1 and entry.isVisible():
+                assert _right(entry) <= _right(row) + 1
+    # The template cards keep their text inside; cut text shows whole in a tooltip under the pointer.
+    card = _item(root, "templateCard_audio_track_template")
+    texts = [i for i in _all(card) if i.metaObject().className().startswith("UiText") and i.isVisible()]
+    assert all(_right(i) <= _right(card) + 1 for i in texts)
+    cut = next(i for i in texts if i.property("truncated"))
+    QTest.mouseMove(window, cut.mapToScene(QPointF(cut.width() / 2, cut.height() / 2)).toPoint())
+    qtbot.waitUntil(lambda: _tip(cut).property("visible") is True)
+    assert _tip(cut).property("text") == cut.property("text")
+
+
+def _tip(item: QQuickItem) -> Any:
+    expression = QQmlExpression(QQmlEngine.contextForObject(item), item, "ToolTip.toolTip")
+    value = expression.evaluate()
+    return value[0] if isinstance(value, tuple) else value
+
+
+# Run in a child process: the layout loop this guards against never returns from Qt's event processing, so in this
+# process it would hang the test run instead of failing it.
+_SETTLES = """
+import os, time
+from dataclasses import replace
+from pathlib import Path
+from PySide6.QtWidgets import QApplication
+app = QApplication([])
+from conftest import neutral_library, program_statuses
+from showrunner.app.profiles import registered
+from showrunner.ui.quick.engine import build_engine
+from showrunner.ui.quick.window import WindowController
+from showrunner.ui.theme.tokens import SIZES
+library = neutral_library()
+home = Path(os.environ["SHOWRUNNER_HOME"])
+items = tuple(replace(i, file=replace(i.file, path=home / i.file.path)) for i in library.items)
+library = replace(library, items=items, alternatives=())
+controller = WindowController(statuses=program_statuses)
+engine = build_engine(controller)
+window = engine.rootObjects()[0]
+window.setWidth(SIZES["settings_rail_below"])
+window.setHeight(800)  # the narrow size of the bug hunt
+controller.start()
+controller.model.set_library(library)
+controller.select(controller.tree.index_of(str(library.items[0].file.path)))
+end = time.monotonic() + 2
+while time.monotonic() < end:
+    app.processEvents()
+print("settled", flush=True)
+os._exit(0)
+"""
+
+
+def test_a_narrow_window_settles_with_a_scrolling_inspector(tmp_path: Path) -> None:
+    env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "SHOWRUNNER_HOME": str(tmp_path)}
+    done = subprocess.run(
+        [sys.executable, "-c", _SETTLES],
+        cwd=Path(__file__).parent,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert "settled" in done.stdout, done.stderr[-2000:]

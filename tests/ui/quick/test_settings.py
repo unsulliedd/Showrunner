@@ -161,6 +161,17 @@ def test_the_palette_ranks_a_label_that_starts_with_the_query_first() -> None:
     assert len(search("", [Entry("action", str(i), f"A{i}") for i in range(30)])) == 12
 
 
+def test_the_palette_ranks_a_word_start_above_a_match_inside_a_word() -> None:
+    entries = [
+        Entry("file", "inside", "Close Encounters"),
+        Entry("file", "word", "Episode Seven"),
+        Entry("token", "prefix", "Season", "{season}"),
+        Entry("file", "detail", "Pilot", "Show.Base"),
+    ]
+    assert [e.key for e in search("se", entries)] == ["prefix", "word", "inside", "detail"]
+    assert [e.key for e in search("ep se", entries)] == ["word"]
+
+
 def test_the_palette_finds_files_tracks_tokens_and_actions(
     controller: WindowController, library: Library, qtbot: QtBot
 ) -> None:

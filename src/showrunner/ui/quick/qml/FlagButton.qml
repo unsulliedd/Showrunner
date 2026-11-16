@@ -42,14 +42,14 @@ AbstractButton {
             width: Theme.icon_md
             height: Theme.icon_md
             radius: Theme.radius_sm
-            color: control.on ? Theme.ink : control.held ? Theme.line_strong : "transparent"
+            color: control.on ? Theme.ink : control.held ? Theme.muted : "transparent"
             border.width: control.on ? 0 : Theme.stroke
             border.color: Theme.faint
 
             UiText {
                 anchors.centerIn: parent
                 text: Strings.t("tracks.forced_mark")
-                color: control.on ? Theme.ground : Theme.faint
+                color: control.on || control.held ? Theme.ground : Theme.faint
                 font.pixelSize: Theme.text_xs
                 font.weight: Font.Bold
             }

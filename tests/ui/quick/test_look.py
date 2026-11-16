@@ -24,13 +24,12 @@ def test_the_dark_theme_is_the_default_and_passes_the_contrast_check(qapp: QAppl
     assert look.contrast == []
 
 
-def test_the_light_theme_shows_its_low_contrast_pair(qapp: QApplication) -> None:
+def test_the_light_theme_passes_its_own_contrast_check(qapp: QApplication) -> None:
     look = Look()
     look.set_mode("light")
     assert load_settings().value.theme_mode is ThemeMode.LIGHT
     assert look.color_set is ColorSet.LIGHT
-    assert [(p["role"], p["on"]) for p in look.contrast] == [("control_ink", "control")]
-    assert "3.8:1" in look.contrast[0]["text"]
+    assert look.contrast == []
 
 
 def test_a_theme_follows_the_look_and_stops_with_its_engine(qapp: QApplication) -> None:

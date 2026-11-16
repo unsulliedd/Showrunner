@@ -188,3 +188,21 @@ def test_the_implied_flags_switch_writes_into_the_working_copy(
     assert (tabs["names"], tabs["review"]) == (10, 10)
     controller.set_write_implied_flags(False)
     assert not controller.profile_edited
+
+
+def test_a_drop_the_plan_refuses_is_undone_by_a_second_click(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    for column in (ENGLISH, TURKISH, COMMENTARY, STEREO):
+        controller.toggle_keep(column)
+    settle(controller, qtbot)
+    # Every audio track dropped: the plan is refused and the files keep their tracks, so the column shows kept.
+    assert controller.matrix["headers"][STEREO]["state"] == "kept"
+    controller.toggle_keep(STEREO)
+    settle(controller, qtbot)
+    assert rules(controller) == [
+        "Drop audio in ENG named English",
+        "Drop audio in TUR named Turkish",
+        "Drop audio in ENG named Commentary",
+    ]

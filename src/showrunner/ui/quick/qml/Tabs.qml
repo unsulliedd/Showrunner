@@ -43,6 +43,9 @@ Item {
 
                 height: row.height
                 spacing: Theme.space_md
+                // A place that does not exist yet and does not fit whole is left out rather than cut mid-word;
+                // opacity rather than visible keeps its place in the row, so it comes back when the row widens.
+                opacity: entry.modelData.later !== true || entry.x + entry.width <= tabs.width ? 1 : 0
 
                 Rectangle {
                     visible: entry.firstLater

@@ -586,9 +586,11 @@ class WindowController(QObject):
             self._set_tracks(add_paired(options, col.paired, not added))
             return
         choice = choice_of(options, col.signature)
-        if header["state"] == "dropped":
-            # Undoing a drop of this choice gives the track back; a hand-written rule that drops it takes a keep.
-            verdict = Verdict.PASS if choice.verdict is Verdict.DROP else Verdict.KEEP
+        if choice.verdict is Verdict.DROP:
+            # Undoing this choice's drop gives the track back, also when a refused plan shows the track kept.
+            verdict = Verdict.PASS
+        elif header["state"] == "dropped":
+            verdict = Verdict.KEEP  # a hand-written rule drops it
         else:
             verdict = Verdict.DROP
         self._set_tracks(choose(options, col.signature, TrackChoice(verdict, choice.default, choice.forced)))
@@ -697,7 +699,9 @@ class WindowController(QObject):
 
     @Property(str, notify=plans_changed)
     def focus_path(self) -> str:
-        return str(self._focus.file.path) if self._focus is not None else ""
+        """The file the Inspector and Names show: the focused one, else the batch's first."""
+        focus = self._focus or (self._items[0] if self._items else None)
+        return str(focus.file.path) if focus is not None else ""
 
     @Property(bool, notify=planning_changed)
     def planning(self) -> bool:

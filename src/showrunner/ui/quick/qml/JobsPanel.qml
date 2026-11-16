@@ -230,7 +230,7 @@ Item {
                 }
             }
 
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: Scroller {}
         }
 
         RowLayout {

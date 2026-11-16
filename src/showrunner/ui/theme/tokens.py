@@ -174,7 +174,8 @@ ROLES: tuple[Role, ...] = (
         follow(Base.PRIMARY, "#1d2540"),
     ),
     # The primary action, focus, checkboxes, sliders, the border of a field being typed in.
-    Role("control", lambda v: at_most(v["primary"], 0.58), lambda v: v["primary"]),
+    # Moved until its ink reads on it, so a button's text passes the contrast check for any base.
+    Role("control", lambda v: fill_behind_ink(at_most(v["primary"], 0.58)), lambda v: fill_behind_ink(v["primary"])),
     Role(
         "control_fill",
         lambda v: fill_behind_ink(v["primary"]),
@@ -183,8 +184,8 @@ ROLES: tuple[Role, ...] = (
     # Text on the control color; in the dark set the ground's own dark, which is darker than the usual dark ink.
     Role(
         "control_ink",
-        lambda v: ink_on(v["control_fill"]),
-        lambda v: WHITE if ink_on(v["control_fill"]) == WHITE else min(v["ground"], DARK_INK, key=luminance),
+        lambda v: ink_on(v["control"]),
+        lambda v: WHITE if ink_on(v["control"]) == WHITE else min(v["ground"], DARK_INK, key=luminance),
     ),
     # Selected rows and pressed buttons.
     Role(
@@ -318,6 +319,7 @@ SIZES: dict[str, int] = {
     "icon_lg": 20,
     "dot": 6,  # a program's or a row's status dot
     "stroke": 1,  # hairlines and borders
+    "scroll_thumb": 6,  # the thumb of a scrollbar, across
     "underline": 2,  # the mark under the current tab, the grip of a split handle
     "dash": 4,  # the dashes of a drop area's outline, in strokes
     "handle_length": 40,  # the grip shown on a split handle under the pointer

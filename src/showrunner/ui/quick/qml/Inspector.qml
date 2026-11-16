@@ -4,7 +4,7 @@ import QtQuick.Layouts
 import Showrunner
 
 // The selected file: its name, what its plans change (and what stays), its title, and its tracks before and after.
-ScrollView {
+ScrollPane {
     id: inspector
 
     readonly property var file: app.inspector

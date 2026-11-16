@@ -57,6 +57,7 @@ Popup {
             model: finder.results
             clip: true
             boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: Scroller {}
             Accessible.role: Accessible.List
             Accessible.name: Strings.t("palette.results")
 

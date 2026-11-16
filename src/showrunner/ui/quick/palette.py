@@ -3,6 +3,7 @@ entries and runs the one picked."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -22,7 +23,8 @@ class Entry:
 
 def _rank(query: str, entry: Entry) -> int | None:
     """Lower ranks first; None when the entry does not match. Every word of the query must appear in the label or
-    the detail; a label that starts with the query ranks above one that only contains it."""
+    the detail. A label that starts with the query ranks first, then one where every word starts a word of the label,
+    then one that holds the query inside a word."""
     label, detail = entry.label.casefold(), entry.detail.casefold()
     words = query.casefold().split()
     if not all(word in label or word in detail for word in words):
@@ -30,9 +32,12 @@ def _rank(query: str, entry: Entry) -> int | None:
     whole = " ".join(words)
     if label.startswith(whole):
         return 0
-    if whole in label:
+    starts = re.split(r"[\W_]+", label)
+    if all(any(start.startswith(word) for start in starts) for word in words):
         return 1
-    return 2 if all(word in label for word in words) else 3
+    if whole in label:
+        return 2
+    return 3 if all(word in label for word in words) else 4
 
 
 def search(query: str, entries: Iterable[Entry], limit: int = LIMIT) -> list[Entry]:

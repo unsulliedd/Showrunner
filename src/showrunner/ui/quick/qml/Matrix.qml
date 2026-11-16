@@ -242,8 +242,11 @@ Item {
             // A count, not the rows: new rows of the same batch then update the delegates in place, so the view
             // keeps its scroll position after a choice.
             model: matrix.rows.length
-            ScrollBar.vertical: ScrollBar {}
-            ScrollBar.horizontal: ScrollBar {}
+            // Another batch starts at the top, even with as many rows as the last one.
+            readonly property string firstPath: matrix.rows.length > 0 ? matrix.rows[0].path : ""
+            onFirstPathChanged: positionViewAtBeginning()
+            ScrollBar.vertical: Scroller {}
+            ScrollBar.horizontal: Scroller {}
 
             header: Column {
                 Row {

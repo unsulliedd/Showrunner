@@ -31,7 +31,7 @@ TEXT_ON_BACKGROUND = [
     ("accent_ink", "surface"),
     ("accent_ink", "chrome"),
     ("danger", "surface"),
-    ("control_ink", "control_fill"),
+    ("control_ink", "control"),
     ("control_soft_ink", "control_soft"),
     ("tip_ink", "tip"),
 ]
@@ -58,6 +58,12 @@ def test_every_text_role_is_readable_for_any_base_color(color_set: ColorSet) -> 
             if ratio < TEXT_CONTRAST:
                 failures.append(f"{hex_color}: {fg} on {bg} is {ratio:.2f}")
     assert failures == []
+
+
+@pytest.mark.parametrize("color_set", list(ColorSet))
+def test_the_forced_mark_a_file_already_has_is_readable(color_set: ColorSet) -> None:
+    roles = resolve(ThemeColors(), color_set)
+    assert contrast(roles["ground"], roles["muted"]) >= TEXT_CONTRAST
 
 
 @pytest.mark.parametrize("color_set", list(ColorSet))

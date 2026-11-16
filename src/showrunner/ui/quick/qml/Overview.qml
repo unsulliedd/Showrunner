@@ -58,46 +58,65 @@ Item {
                     wrapMode: Text.WordWrap
                 }
 
-                Repeater {
-                    model: overview.view.groups
+                // A show whose tracks differ from file to file can have hundreds of chips: past half the place they
+                // scroll, so the file list below keeps its room.
+                ScrollPane {
+                    id: groupScroll
 
-                    delegate: RowLayout {
-                        required property var modelData
+                    objectName: "chipGroups"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(groups.implicitHeight, overview.height * 0.5)  // a proportion
+                    contentWidth: availableWidth
+                    clip: true
 
-                        Layout.fillWidth: true
-                        Layout.topMargin: Theme.space_sm
+                    ColumnLayout {
+                        id: groups
+
+                        width: groupScroll.availableWidth
                         spacing: Theme.space_md
 
-                        Row {
-                            Layout.preferredWidth: Theme.matrix_label - Theme.space_2xl
-                            Layout.alignment: Qt.AlignTop
-                            Layout.topMargin: (Theme.row_lg - Theme.text_md) / 2
-                            spacing: Theme.space_md
+                        Repeater {
+                            model: overview.view.groups
 
-                            Icon {
-                                anchors.verticalCenter: parent.verticalCenter
-                                name: modelData.icon
-                                size: Theme.icon_sm
-                            }
+                            delegate: RowLayout {
+                                required property var modelData
 
-                            UiText {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: modelData.label
-                                color: Theme.muted
-                            }
-                        }
+                                Layout.fillWidth: true
+                                Layout.topMargin: Theme.space_sm
+                                spacing: Theme.space_md
 
-                        Flow {
-                            Layout.fillWidth: true
-                            spacing: Theme.space_md
+                                Row {
+                                    Layout.preferredWidth: Theme.matrix_label - Theme.space_2xl
+                                    Layout.alignment: Qt.AlignTop
+                                    Layout.topMargin: (Theme.row_lg - Theme.text_md) / 2
+                                    spacing: Theme.space_md
 
-                            Repeater {
-                                model: modelData.chips
+                                    Icon {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        name: modelData.icon
+                                        size: Theme.icon_sm
+                                    }
 
-                                delegate: TrackChip {
-                                    required property var modelData
+                                    UiText {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: modelData.label
+                                        color: Theme.muted
+                                    }
+                                }
 
-                                    chip: modelData
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: Theme.space_md
+
+                                    Repeater {
+                                        model: modelData.chips
+
+                                        delegate: TrackChip {
+                                            required property var modelData
+
+                                            chip: modelData
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -126,16 +145,23 @@ Item {
 
             Heading {
                 Layout.fillWidth: true
+                Layout.minimumWidth: Theme.matrix_column
                 text: Strings.t("overview.column.file")
             }
 
             Heading {
+                Layout.fillWidth: true
                 Layout.preferredWidth: Theme.matrix_header + Theme.space_2xl
+                Layout.maximumWidth: Theme.matrix_header + Theme.space_2xl
+                Layout.minimumWidth: Theme.matrix_column
                 text: Strings.t("overview.column.audio")
             }
 
             Heading {
+                Layout.fillWidth: true
                 Layout.preferredWidth: Theme.matrix_header + Theme.space_2xl
+                Layout.maximumWidth: Theme.matrix_header + Theme.space_2xl
+                Layout.minimumWidth: Theme.matrix_column
                 text: Strings.t("overview.column.subtitles")
             }
 
@@ -148,17 +174,24 @@ Item {
         ListView {
             id: rows
 
+            objectName: "overviewRows"
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            model: overview.view.rows
+            // A count, not the rows: new rows of the same batch then update the delegates in place, so the view
+            // keeps its scroll position after a choice.
+            model: overview.view.rows.length
+            // Another batch starts at the top, even with as many rows as the last one.
+            readonly property string firstPath: overview.view.rows.length > 0 ? overview.view.rows[0].path : ""
+            onFirstPathChanged: positionViewAtBeginning()
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: Scroller {}
 
             delegate: AbstractButton {
                 id: row
 
-                required property var modelData
+                required property int index
+                readonly property var modelData: overview.view.rows[index]
                 readonly property bool focused: modelData.path === app.focus_path
 
                 width: rows.width
@@ -195,8 +228,10 @@ Item {
                         color: Theme.faint
                     }
 
+                    // A narrow window shrinks the track columns, which clip their pills, and the file names, which elide.
                     ColumnLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: Theme.matrix_column
                         spacing: Theme.space_xs
 
                         UiText {
@@ -227,7 +262,10 @@ Item {
                     }
 
                     Row {
+                        Layout.fillWidth: true
                         Layout.preferredWidth: Theme.matrix_header + Theme.space_2xl
+                        Layout.maximumWidth: Theme.matrix_header + Theme.space_2xl
+                        Layout.minimumWidth: Theme.matrix_column
                         spacing: Theme.space_sm
                         clip: true
 
@@ -243,7 +281,10 @@ Item {
                     }
 
                     Row {
+                        Layout.fillWidth: true
                         Layout.preferredWidth: Theme.matrix_header + Theme.space_2xl
+                        Layout.maximumWidth: Theme.matrix_header + Theme.space_2xl
+                        Layout.minimumWidth: Theme.matrix_column
                         spacing: Theme.space_sm
                         clip: true
 

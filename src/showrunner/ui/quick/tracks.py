@@ -99,15 +99,27 @@ def seen(item: MediaItem, file: FilePreview | None) -> list[Seen]:
     return sorted(rows, key=lambda s: (s.external is not None, abs(s.track.id)))
 
 
-def cell(column: Column, item: MediaItem, tracks: Sequence[Seen]) -> dict[str, object]:
-    """One file under one column: kept, dropped, added, paired (beside the video, not added) or missing."""
+def by_signature(tracks: Sequence[Seen]) -> dict[TrackSignature, Seen]:
+    """A file's embedded tracks by signature, the first in file order for each."""
+    found: dict[TrackSignature, Seen] = {}
+    for s in tracks:
+        if s.external is None:
+            found.setdefault(TrackSignature.of(s.track), s)
+    return found
+
+
+def cell(
+    column: Column, item: MediaItem, tracks: Sequence[Seen], signatures: dict[TrackSignature, Seen] | None = None
+) -> dict[str, object]:
+    """One file under one column: kept, dropped, added, paired (beside the video, not added) or missing. Pass the
+    file's `by_signature` when asking for many columns: a show whose track names differ per file has thousands."""
     if column.paired is not None:
         found = next((s for s in tracks if s.external and PairedFile.of(s.external) == column.paired), None)
         if found is None:
             beside = any(PairedFile.of(sub) == column.paired for sub in item.subtitles)
             return {"state": "paired" if beside else "missing", "default": False, "forced": False}
     else:
-        found = next((s for s in tracks if s.external is None and TrackSignature.of(s.track) == column.signature), None)
+        found = (signatures if signatures is not None else by_signature(tracks)).get(column.signature)
         if found is None:
             return {"state": "missing", "default": False, "forced": False}
     kept = found.state != "dropped"
@@ -152,9 +164,10 @@ class BatchView:
 
     def _cells_of(self, item: MediaItem) -> list[dict[str, object]]:
         tracks = seen(item, self.file(item))
+        signatures = by_signature(tracks)
         result = []
         for column in self.cols:
-            found = cell(column, item, tracks)
+            found = cell(column, item, tracks, signatures)
             first = self.firsts.get(column.signature.kind)
             # A default that lands on another track than the first choice of its kind: the choice has no track here.
             found["fallback"] = bool(found["default"]) and first is not None and first != column.signature

@@ -367,15 +367,21 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             visible: !place.empty
+            objectName: "nameRows"
             clip: true
-            model: place.names.rows || []
+            // A count, not the rows: a click that moves the focus rebuilds the rows, and the list keeps its place.
+            model: (place.names.rows || []).length
+            // Another batch starts at the top, even with as many rows as the last one.
+            readonly property string firstPath: (place.names.rows || []).length > 0 ? (place.names.rows || [])[0].path : ""
+            onFirstPathChanged: positionViewAtBeginning()
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: Scroller {}
 
             delegate: AbstractButton {
                 id: row
 
-                required property var modelData
+                required property int index
+                readonly property var modelData: place.names.rows[index]
 
                 width: rows.width
                 height: Theme.list_row

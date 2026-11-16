@@ -34,7 +34,7 @@ Item {
             }
         }
 
-        ScrollView {
+        ScrollPane {
             id: scroll
 
             Layout.fillWidth: true

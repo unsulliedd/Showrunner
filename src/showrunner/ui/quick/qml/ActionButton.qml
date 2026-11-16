@@ -13,7 +13,8 @@ AbstractButton {
     readonly property color ink: !enabled ? Theme.faint : kind === "primary" ? Theme.control_ink : Theme.ink
 
     implicitHeight: size
-    implicitWidth: content.implicitWidth + 2 * Theme.space_lg
+    // From the label's own width, so a button given less room elides its label without a binding loop.
+    implicitWidth: label.implicitWidth + (glyph.visible ? glyph.width + content.spacing : 0) + 2 * Theme.space_lg
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
     Accessible.role: checkable ? Accessible.CheckBox : Accessible.Button
@@ -30,7 +31,6 @@ AbstractButton {
     }
 
     contentItem: Item {
-        implicitWidth: content.implicitWidth
         implicitHeight: content.implicitHeight
 
         Row {
@@ -40,6 +40,8 @@ AbstractButton {
             spacing: Theme.space_md
 
             Icon {
+                id: glyph
+
                 anchors.verticalCenter: parent.verticalCenter
                 visible: control.iconName !== ""
                 name: control.iconName
@@ -47,7 +49,11 @@ AbstractButton {
             }
 
             UiText {
+                id: label
+
                 anchors.verticalCenter: parent.verticalCenter
+                // The label gives up what the button lacks of its natural width.
+                width: Math.min(implicitWidth, implicitWidth + control.width - control.implicitWidth)
                 text: control.text
                 color: control.ink
                 font.weight: control.kind === "primary" ? Font.Medium : Font.Normal

@@ -50,20 +50,27 @@ Panel {
             }
 
             Column {
+                id: heading
+
                 Layout.fillWidth: true
                 spacing: Theme.space_xs
 
                 UiText {
+                    width: Math.min(implicitWidth, heading.width)
                     text: app.batch.over
                     color: Theme.muted
                 }
 
+                // The title, then the facts in what room is left; each elides rather than run under Leave out.
                 Row {
+                    id: titleRow
+
                     spacing: Theme.space_md + Theme.space_xs
 
                     UiText {
                         id: title
 
+                        width: Math.min(implicitWidth, heading.width)
                         text: app.batch.title
                         font.pixelSize: Theme.text_2xl
                         font.weight: Font.Bold
@@ -71,6 +78,7 @@ Panel {
 
                     UiText {
                         anchors.baseline: title.baseline
+                        width: Math.max(0, Math.min(implicitWidth, heading.width - title.width - titleRow.spacing))
                         text: app.batch.facts
                         color: Theme.muted
                     }

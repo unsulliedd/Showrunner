@@ -77,9 +77,7 @@ Panel {
             boundsBehavior: Flickable.StopAtBounds
             delegate: LibraryRow {}
 
-            ScrollBar.vertical: ScrollBar {
-                policy: ScrollBar.AsNeeded
-            }
+            ScrollBar.vertical: Scroller {}
 
             function reveal() {
                 const index = app.selected_index

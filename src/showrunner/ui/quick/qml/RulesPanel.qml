@@ -54,7 +54,7 @@ Item {
                     return below
                 return y < 0 ? 0 : count - 1
             }
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: Scroller {}
 
             delegate: Item {
                 id: entry

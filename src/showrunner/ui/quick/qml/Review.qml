@@ -18,7 +18,7 @@ Item {
         anchors.fill: parent
         spacing: 0
 
-        ScrollView {
+        ScrollPane {
             Layout.preferredWidth: Theme.inspector_width + Theme.space_xl
             Layout.fillHeight: true
             contentWidth: availableWidth
@@ -172,10 +172,16 @@ Item {
 
                     property bool open: false
 
+                    objectName: "expandAll"
+
                     kind: "ghost"
                     size: Theme.row_sm
                     text: open ? Strings.t("review.fold_all") : Strings.t("review.expand_all")
-                    onClicked: open = !open
+                    // Every card follows again; a card opened or folded by hand after this keeps its own state.
+                    onClicked: {
+                        open = !open
+                        place.opened = ({})
+                    }
                 }
             }
 
@@ -190,14 +196,20 @@ Item {
                 clip: true
                 spacing: Theme.space_sm
                 boundsBehavior: Flickable.StopAtBounds
-                model: place.review.rows || []
+                // A count, not the rows: new rows of the same batch then update the cards in place, so the list
+                // keeps its scroll position after a choice.
+                model: (place.review.rows || []).length
+                // Another batch starts at the top, even with as many rows as the last one.
+                readonly property string firstPath: (place.review.rows || []).length > 0 ? (place.review.rows || [])[0].path : ""
+                onFirstPathChanged: positionViewAtBeginning()
 
                 delegate: ReviewFile {
-                    required property var modelData
+                    required property int index
+                    readonly property var modelData: place.review.rows[index]
 
                     width: files.width
                     file: modelData
-                    expanded: expandAll.open || place.opened[modelData.path] === true
+                    expanded: place.opened[modelData.path] ?? expandAll.open
                     locked: app.locked
                     onToggled: {
                         const next = Object.assign({}, place.opened)
@@ -206,7 +218,7 @@ Item {
                     }
                 }
 
-                ScrollBar.vertical: ScrollBar {}
+                ScrollBar.vertical: Scroller {}
             }
 
             Placeholder {
