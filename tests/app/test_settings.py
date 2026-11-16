@@ -111,3 +111,17 @@ def test_panel_sizes_and_recent_folders_are_saved(tmp_path: Path) -> None:
     loaded = load_settings(path).value
     assert loaded.panel_sizes == {"columns": "AAEC"}
     assert loaded.recent_folders == {"x": "2026-01-01T00:00:00"}
+
+
+def test_the_height_of_the_tracks_box_is_saved_and_an_old_file_without_it_still_loads(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"format": 1, "active_profile": "Show Name"}), encoding="utf-8")
+    old = load_settings(path)
+    assert (old.value.overview_tracks_height, old.warnings) == (0, [])
+    save_settings(replace(old.value, overview_tracks_height=312), path)
+    assert load_settings(path).value.overview_tracks_height == 312
+    assert json.loads(path.read_text(encoding="utf-8"))["overview_tracks_height"] == 312
+    path.write_text(json.dumps({"format": 1, "overview_tracks_height": "tall"}), encoding="utf-8")
+    wrong = load_settings(path)
+    assert wrong.value.overview_tracks_height == 0
+    assert wrong.warnings

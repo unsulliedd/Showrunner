@@ -10,7 +10,9 @@ from typing import Any
 
 import pytest
 from PySide6.QtCore import QtMsgType
+from PySide6.QtQml import QQmlEngine, QQmlExpression
 from PySide6.QtWidgets import QApplication
+from pytestqt.qtbot import QtBot
 
 from showrunner.app.library.library import Library
 from showrunner.core.language import Language
@@ -26,6 +28,7 @@ from showrunner.core.track import (
 )
 from showrunner.stages.scan import Alternatives
 from showrunner.tools.dependencies.detect import DependencyStatus, State
+from showrunner.ui.quick.engine import build_engine
 from showrunner.ui.quick.window import WindowController
 
 NUMBERS = ("One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten")
@@ -178,3 +181,30 @@ def qt_warnings(qtlog: Any) -> Callable[[], list[str]]:
         and "font directory" not in record.message
         and "no longer ships fonts" not in record.message
     ]
+
+
+@pytest.fixture
+def load(controller: WindowController, qtbot: QtBot) -> Iterator[Any]:
+    """Load the window; calling the result settles it and gives the QML warnings so far. `window` and `run` (a QML
+    expression evaluated in the window's own scope) hang off it. The window closes after the test."""
+    warnings: list[str] = []
+    engine = build_engine(controller, on_warnings=lambda errors: warnings.extend(e.toString() for e in errors))
+    assert engine.rootObjects(), warnings
+    window = engine.rootObjects()[0]
+    qtbot.waitUntil(window.isExposed)
+
+    def settle() -> list[str]:
+        qtbot.wait(50)
+        return warnings
+
+    def run(source: str) -> object:
+        expression = QQmlExpression(QQmlEngine.contextForObject(window), window, source)
+        value = expression.evaluate()
+        assert not expression.hasError(), expression.error().toString()
+        return value[0] if isinstance(value, tuple) else value
+
+    settle.window = window  # type: ignore[attr-defined]
+    settle.run = run  # type: ignore[attr-defined]
+    yield settle
+    window.close()
+    engine.deleteLater()

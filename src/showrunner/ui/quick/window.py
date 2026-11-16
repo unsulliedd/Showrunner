@@ -576,6 +576,17 @@ class WindowController(QObject):
         """The ▾ list of a chip or matrix column: each file's name for its track, built when the list opens."""
         return self._view.names(column) if self._view is not None else []
 
+    @Slot(int, result=str)
+    def track_missing(self, column: int) -> str:
+        """The line naming the files that lack a chip's or matrix column's track; empty when every file has it."""
+        return self._view.missing(column) if self._view is not None else ""
+
+    @Slot(int, result=str)
+    def track_held(self, column: int) -> str:
+        """The line naming the files that keep a dropped chip's track and why; empty when the plan drops it where it
+        can."""
+        return self._view.held_note(column) if self._view is not None else ""
+
     @Slot(int)
     def toggle_keep(self, column: int) -> None:
         """A click on a chip or a column's state: drop what stays, keep what is dropped, add a paired file."""
@@ -1492,6 +1503,21 @@ class WindowController(QObject):
         ]
 
     # Panel sizes
+
+    @Slot(result=int)
+    def overview_tracks_height(self) -> int:
+        """The height the user gave Overview's tracks box, 0 when none."""
+        return load_settings().value.overview_tracks_height
+
+    @Slot(int)
+    def save_overview_tracks_height(self, height: int) -> None:
+        settings = load_settings().value
+        if height == settings.overview_tracks_height:
+            return
+        try:
+            save_settings(replace(settings, overview_tracks_height=height))
+        except OSError:
+            _log.exception("Could not save the height of the tracks box")
 
     @Slot(str, result=QByteArray)
     def panel_state(self, name: str) -> QByteArray:

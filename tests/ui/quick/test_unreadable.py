@@ -41,6 +41,16 @@ def test_overview_names_the_read_problem_in_the_row(controller: WindowController
     assert (other["warning"], other["changes_text"]) == ("", "No changes")
 
 
+def test_overview_counts_the_unread_file_neither_as_having_nor_as_lacking_a_track(
+    controller: WindowController, season: Library
+) -> None:
+    chips = [c for group in controller.overview["groups"] for c in group["chips"]]
+    # Episode Three has no tracks to show, which says nothing about them: only Episode Seven lacks Turkish audio.
+    assert [c["count"] for c in chips][:2] == ["", "missing in 1 file"]
+    assert controller.track_missing(1) == "Missing in 07"
+    assert all("03" not in controller.track_missing(i) for i in range(len(chips)))
+
+
 def test_the_inspector_gives_the_read_problem(controller: WindowController, season: Library) -> None:
     controller.focus_file(str(season.items[2].file.path))
     assert controller.inspector["unread"] == TEXT

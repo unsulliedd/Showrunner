@@ -2,8 +2,8 @@ import QtQuick
 import QtQuick.Controls.Basic
 import Showrunner
 
-// The name each file gives the tracks of one chip or matrix column, one line per file, read from the controller
-// when it opens. One per place: a chip's or a header's ▾ opens it under itself with `toggle`.
+// The name each file gives the tracks of one matrix column, one line per file and a last line for the files that lack
+// the track, read from the controller when it opens. One per place: a header's ▾ opens it under itself with `toggle`.
 Popup {
     id: popup
 
@@ -17,7 +17,7 @@ Popup {
         }
         parent = anchor
         column = id
-        rows = app.track_names(id)
+        rows = [app.track_held(id), ...app.track_names(id), app.track_missing(id)].filter(line => line !== "")
         open()
     }
 

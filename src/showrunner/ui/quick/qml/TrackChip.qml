@@ -3,52 +3,83 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
-// One track signature of a batch on Overview: a click keeps or drops it in every file (adds a paired file), the
-// star and F set the flags, the ▾ lists each file's name for the track. `chip` is a header from the controller.
-AbstractButton {
+// One track signature of a batch on Overview: a click on its header keeps or drops the track in every file (adds a
+// paired file), the star and F set the flags, and the ▾ (the header's last control) folds the chip open to list each
+// file's name for the track, then the files that lack it. `chip` is a header from the controller; `namesOpen`, `rows`
+// and `missing` say whether the place has it open and what it lists. An open chip grows inside its own frame: wider,
+// when its names need it, up to the width its parent gives it, and taller up to `names_height`, where the list scrolls.
+Item {
     id: control
 
     required property var chip
-    // The place's one `TrackNames`, which the ▾ opens.
-    property TrackNames names: null
+    property bool namesOpen: false
+    property var rows: []
+    property string missing: ""
+    // Why the plan keeps the track in some files though it is dropped; shown above the names, where it is seen first.
+    property string held: ""
     readonly property bool dropped: chip.state === "dropped"
     readonly property bool paired: chip.paired
+    // Room the list's text needs, from the longest line (the names are set in a fixed-width face).
+    readonly property real listWidth: metrics.advanceWidth + 2 * Theme.space_md + Theme.scroll_thumb + 2 * Theme.space_sm
+
+    signal namesToggled
 
     objectName: "chip" + chip.id
-    implicitHeight: Theme.row_lg
-    implicitWidth: row.implicitWidth + 2 * Theme.space_md
-    hoverEnabled: true
-    focusPolicy: Qt.StrongFocus
-    Accessible.role: Accessible.Button
-    Accessible.name: chip.code + " " + chip.title + " " + chip.name + " " + chip.button
-    onClicked: app.toggle_keep(chip.id)
+    implicitWidth: namesOpen ? Math.max(header.implicitWidth, listWidth) : header.implicitWidth
+    implicitHeight: header.height + (namesOpen ? foldout.height + Theme.space_md : 0)
 
-    background: Item {
-        Rectangle {
-            anchors.fill: parent
-            visible: !control.paired
-            radius: Theme.radius_md
-            color: control.dropped ? Theme.drop_soft : control.hovered ? Theme.panel_3 : Theme.panel
-            border.width: Theme.stroke
-            border.color: control.visualFocus ? Theme.control : control.dropped ? Theme.drop : Theme.line_strong
-        }
+    TextMetrics {
+        id: metrics
 
-        DashedFrame {
-            anchors.fill: parent
-            visible: control.paired
-            radius: Theme.radius_md
-            stroke: control.visualFocus ? Theme.control : control.chip.state === "added" ? Theme.add : Theme.line_strong
-        }
+        font.family: Theme.mono
+        font.pixelSize: Theme.text_sm
+        text: control.namesOpen ? control.rows.reduce((a, b) => b.length > a.length ? b : a, "") : ""
     }
 
-    contentItem: Item {
-        implicitWidth: row.implicitWidth
-        implicitHeight: row.implicitHeight
+    Rectangle {
+        anchors.fill: parent
+        visible: !control.paired
+        radius: Theme.radius_md
+        color: control.dropped ? Theme.drop_soft : Theme.panel
+        border.width: Theme.stroke
+        border.color: header.visualFocus ? Theme.control : control.dropped ? Theme.drop : Theme.line_strong
+    }
 
-        RowLayout {
-            id: row
+    DashedFrame {
+        anchors.fill: parent
+        visible: control.paired
+        radius: Theme.radius_md
+        stroke: header.visualFocus ? Theme.control : control.chip.state === "added" ? Theme.add : Theme.line_strong
+    }
 
-            anchors.fill: parent
+    // The chip's frame takes a click that lands on it outside the header, so none reaches what lies behind.
+    MouseArea {
+        anchors.fill: parent
+    }
+
+    AbstractButton {
+        id: header
+
+        objectName: "chipHeader"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        implicitHeight: Theme.row_lg
+        // The same room on both sides, so no badge, flag or arrow touches the chip's edge.
+        leftPadding: Theme.space_md
+        rightPadding: Theme.space_md
+        hoverEnabled: true
+        focusPolicy: Qt.StrongFocus
+        Accessible.role: Accessible.Button
+        Accessible.name: control.chip.code + " " + control.chip.title + " " + control.chip.name + " " + control.chip.button
+        onClicked: app.toggle_keep(control.chip.id)
+
+        background: Rectangle {
+            radius: Theme.radius_md
+            color: header.hovered && !control.dropped ? Theme.panel_3 : "transparent"
+        }
+
+        contentItem: RowLayout {
             spacing: Theme.space_md
 
             Icon {
@@ -64,6 +95,12 @@ AbstractButton {
             }
 
             UiText {
+                // The title, the name and the count give way together (each cut short in proportion to its length)
+                // when the chip is wider than its row, so the flags and the arrow keep their place. The name has no
+                // least width, the count and the title have one, so the name goes first.
+                Layout.fillWidth: true
+                Layout.maximumWidth: implicitWidth
+                Layout.minimumWidth: Math.min(implicitWidth, Theme.chip_title_min_width)
                 text: control.chip.title
                 color: control.dropped ? Theme.drop : Theme.ink
                 font.strikeout: control.dropped
@@ -71,7 +108,6 @@ AbstractButton {
             }
 
             UiText {
-                // Takes what the chip has left, up to its own width, so it is what a narrow row cuts short.
                 Layout.fillWidth: true
                 Layout.maximumWidth: Math.min(implicitWidth, Theme.chip_name_width)
                 visible: control.chip.name !== ""
@@ -81,17 +117,14 @@ AbstractButton {
                 font.pixelSize: Theme.text_sm
             }
 
-            IconButton {
-                id: namesButton
-
-                objectName: "namesButton"
-                visible: control.chip.names && control.names !== null
-                implicitWidth: Theme.row_sm
-                implicitHeight: Theme.row_sm
-                iconName: "down"
-                label: Strings.t("tracks.names.open")
-                active: control.names !== null && control.names.opened && control.names.column === control.chip.id
-                onClicked: control.names.toggle(namesButton, control.chip.id)
+            UiText {
+                Layout.fillWidth: true
+                Layout.maximumWidth: implicitWidth
+                Layout.minimumWidth: Math.min(implicitWidth, Theme.chip_count_min_width)
+                visible: control.chip.count !== ""
+                text: control.chip.count
+                color: Theme.change
+                font.pixelSize: Theme.text_sm
             }
 
             FlagButton {
@@ -109,11 +142,105 @@ AbstractButton {
                 onClicked: app.toggle_flag(control.chip.id, "forced")
             }
 
-            UiText {
-                visible: control.chip.count !== ""
-                text: control.chip.count
-                color: Theme.change
-                font.pixelSize: Theme.text_sm
+            // Where a chip widened for its names keeps its arrow at the end, as a chip at its own width has it.
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredWidth: 0
+                visible: control.namesOpen
+            }
+
+            IconButton {
+                objectName: "namesButton"
+                visible: control.chip.names
+                implicitWidth: Theme.row_sm
+                implicitHeight: Theme.row_sm
+                iconName: "down"
+                // The arrow turns up while its list is open.
+                rotation: control.namesOpen ? 180 : 0
+                label: Strings.t(control.namesOpen ? "tracks.names.close" : "tracks.names.open")
+                active: control.namesOpen
+                onClicked: control.namesToggled()
+            }
+        }
+    }
+
+    Item {
+        id: foldout
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: header.bottom
+        anchors.leftMargin: Theme.space_md
+        anchors.rightMargin: Theme.space_md
+        visible: control.namesOpen
+        height: Math.min(list.contentHeight, Theme.names_height)
+
+        ListView {
+            id: list
+
+            objectName: "chipNameRows"
+            anchors.fill: parent
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            // A count, not the lines: a new plan of the same batch then updates the delegates in place.
+            model: control.namesOpen ? control.rows.length : 0
+            ScrollBar.vertical: Scroller {}
+            Accessible.role: Accessible.List
+
+            // The wheel over a list that scrolls moves only the list, also at its ends; the tracks box behind it
+            // scrolls with the wheel anywhere else, and over a list that fits.
+            WheelHandler {
+                enabled: list.contentHeight > list.height
+                onWheel: event => {
+                    const step = event.pixelDelta.y !== 0 ? event.pixelDelta.y : event.angleDelta.y / 2
+                    list.contentY = Math.max(0, Math.min(list.contentHeight - list.height, list.contentY - step))
+                }
+            }
+            Accessible.name: Strings.t("tracks.names.open")
+
+            delegate: UiText {
+                required property int index
+
+                width: list.width - Theme.scroll_thumb - Theme.space_sm
+                height: Theme.row_sm
+                text: control.rows[index]
+                mono: true
+            }
+
+            header: Item {
+                width: list.width - Theme.scroll_thumb - Theme.space_sm
+                height: control.held !== "" ? reason.implicitHeight + Theme.space_sm : 0
+
+                UiText {
+                    id: reason
+
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    visible: control.held !== ""
+                    text: control.held
+                    color: Theme.change
+                    font.pixelSize: Theme.text_sm
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            footer: Item {
+                width: list.width - Theme.scroll_thumb - Theme.space_sm
+                height: control.missing !== "" ? note.implicitHeight + Theme.space_sm : 0
+
+                UiText {
+                    id: note
+
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    visible: control.missing !== ""
+                    text: control.missing
+                    color: Theme.change
+                    font.pixelSize: Theme.text_sm
+                    wrapMode: Text.WordWrap
+                }
             }
         }
     }

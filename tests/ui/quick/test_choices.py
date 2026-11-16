@@ -200,8 +200,12 @@ def test_a_drop_the_plan_refuses_is_undone_by_a_second_click(
     for column in (ENGLISH, TURKISH, COMMENTARY, STEREO):
         controller.toggle_keep(column)
     settle(controller, qtbot)
-    # Every audio track dropped: the plan is refused and the files keep their tracks, so the column shows kept.
-    assert controller.matrix["headers"][STEREO]["state"] == "kept"
+    # Every audio track dropped: the plan is refused and the files keep their tracks. The column shows the choice,
+    # dropped, and says in how many files the plan keeps the track; the cells show the tracks as the plan leaves them.
+    header = controller.matrix["headers"][STEREO]
+    assert header["state"] == "dropped"
+    assert header["count"].endswith("not dropped in 1 file")
+    assert all(row["cells"][STEREO]["state"] != "dropped" for row in controller.matrix["rows"])
     controller.toggle_keep(STEREO)
     settle(controller, qtbot)
     assert rules(controller) == [

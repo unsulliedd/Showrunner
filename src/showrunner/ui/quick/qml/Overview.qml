@@ -11,19 +11,54 @@ Item {
     // Read once: each read of the property converts the whole batch view for QML.
     readonly property var view: app.overview
 
+    // The height the user gave the tracks box with the separator, 0 until then: the box then fits its chips.
+    property int chosenHeight: app.overview_tracks_height()
+    // The chip whose names are open (one at a time), -1 for none. Another batch closes it.
+    property int openColumn: -1
+    readonly property string batchKey: app.selected
+    // Read again with each new view: the controller builds them when asked.
+    readonly property var openNames: {
+        overview.view
+        return openColumn < 0 ? [] : app.track_names(openColumn)
+    }
+    readonly property string openMissing: {
+        overview.view
+        return openColumn < 0 ? "" : app.track_missing(openColumn)
+    }
+    readonly property string openHeld: {
+        overview.view
+        return openColumn < 0 ? "" : app.track_held(openColumn)
+    }
+    // The most the box may take: what the rest of the place needs stays, so the file list never shrinks to nothing.
+    readonly property int maxBox: Math.max(
+        Theme.tracks_min_height,
+        column.height - headings.height - split.height - 3 * column.spacing - Theme.rows_min_height)
+    readonly property int boxHeight: clampBox(chosenHeight > 0 ? chosenHeight : fitHeight)
+    // Half the place is a proportion of the window, not a size: a show with hundreds of chips scrolls inside the box.
+    readonly property int fitHeight: Math.min(box.implicitHeight, overview.height * 0.5)
+
     signal matrixAsked
 
-    TrackNames {
-        id: trackNames
+    function clampBox(height) {
+        return Math.max(Theme.tracks_min_height, Math.min(height, maxBox))
     }
 
+    onBatchKeyChanged: openColumn = -1
+
     ColumnLayout {
+        id: column
+
         anchors.fill: parent
         anchors.margins: Theme.space_lg
         spacing: Theme.space_lg
 
         Rectangle {
+            id: box
+
+            objectName: "tracksBox"
             Layout.fillWidth: true
+            Layout.preferredHeight: overview.boxHeight
+            Layout.minimumHeight: Theme.tracks_min_height
             implicitHeight: chips.implicitHeight + 2 * Theme.space_lg
             radius: Theme.radius_lg
             color: Theme.panel
@@ -62,14 +97,16 @@ Item {
                     wrapMode: Text.WordWrap
                 }
 
-                // A show whose tracks differ from file to file can have hundreds of chips: past half the place they
-                // scroll, so the file list below keeps its room.
+                // A show whose tracks differ from file to file can have hundreds of chips: past the box's height
+                // they scroll, so the file list below keeps its room.
                 ScrollPane {
                     id: groupScroll
 
                     objectName: "chipGroups"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Math.min(groups.implicitHeight, overview.height * 0.5)  // a proportion
+                    Layout.fillHeight: true
+                    Layout.preferredHeight: groups.implicitHeight
+                    Layout.minimumHeight: 0
                     contentWidth: availableWidth
                     clip: true
 
@@ -79,11 +116,15 @@ Item {
                         width: groupScroll.availableWidth
                         spacing: Theme.space_md
 
+                        // Counts, not the groups and chips: a new plan then updates the delegates in place. Made
+                        // again, the chips (and the box's scroll with them) would move under the pointer between a
+                        // press and the next click, which then lands on another chip.
                         Repeater {
-                            model: overview.view.groups
+                            model: overview.view.groups.length
 
                             delegate: RowLayout {
-                                required property var modelData
+                                required property int index
+                                readonly property var modelData: overview.view.groups[index]
 
                                 Layout.fillWidth: true
                                 Layout.topMargin: Theme.space_sm
@@ -115,15 +156,22 @@ Item {
                                     spacing: Theme.space_md
 
                                     Repeater {
-                                        model: modelData.chips
+                                        model: modelData.chips.length
 
                                         delegate: TrackChip {
-                                            required property var modelData
+                                            required property int index
+                                            readonly property var entry: modelData.chips[index]
 
-                                            // No wider than the row: a long track name is cut short instead.
+                                            // No wider than the row: a long track name is cut short instead. A chip
+                                            // that is open may widen up to the row for its names; the Flow places the
+                                            // chips after it again.
                                             width: Math.min(implicitWidth, chipRow.width)
-                                            chip: modelData
-                                            names: trackNames
+                                            chip: entry
+                                            namesOpen: overview.openColumn === entry.id
+                                            rows: namesOpen ? overview.openNames : []
+                                            missing: namesOpen ? overview.openMissing : ""
+                                            held: namesOpen ? overview.openHeld : ""
+                                            onNamesToggled: overview.openColumn = namesOpen ? -1 : entry.id
                                         }
                                     }
                                 }
@@ -134,7 +182,19 @@ Item {
             }
         }
 
+        HeightSplit {
+            id: split
+
+            objectName: "tracksSeparator"
+            Layout.fillWidth: true
+            value: overview.boxHeight
+            onAdjusted: height => overview.chosenHeight = overview.clampBox(height)
+            onCommitted: app.save_overview_tracks_height(overview.chosenHeight)
+        }
+
         RowLayout {
+            id: headings
+
             Layout.fillWidth: true
             Layout.leftMargin: Theme.space_lg
             Layout.rightMargin: Theme.space_lg
@@ -186,6 +246,7 @@ Item {
             objectName: "overviewRows"
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.minimumHeight: Theme.rows_min_height
             clip: true
             // A count, not the rows: new rows of the same batch then update the delegates in place, so the view
             // keeps its scroll position after a choice.

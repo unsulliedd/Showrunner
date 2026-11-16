@@ -51,6 +51,8 @@ class AppSettings:
     sheet_splitter: list[int] = field(default_factory=list)
     # Panel sizes of the Qt Quick window: split name to the split's own saved state, as base64.
     panel_sizes: dict[str, str] = field(default_factory=dict)
+    # Height of the tracks box on Overview, set by the separator under it; 0 until the user has moved it.
+    overview_tracks_height: int = 0
     # Folders opened before, newest first: path to when it was last opened, as an ISO date and time.
     recent_folders: dict[str, str] = field(default_factory=dict)
     ui_language: str = "en"

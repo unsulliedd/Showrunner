@@ -31,6 +31,7 @@ from showrunner.stages.tracks import (
     TrackPlan,
     TrackRule,
     TracksOptions,
+    Verdict,
     matches,
     stand_in,
 )
@@ -219,11 +220,10 @@ class BatchView:
 
     def names(self, index: int) -> list[str]:
         """The ▾ list of a column: each file that has the track, by its number, with the track's name or that it has
-        none. A file without the track is left out; the column's count already says so."""
+        none. A file without the track is left out here; `missing` names those."""
         if not 0 <= index < len(self.cols) or self.cols[index].paired is not None:
             return []
-        seasons = {(i.identity.show, i.identity.season) for i in self.items if isinstance(i.identity, Episode)}
-        one_season = len(seasons) <= 1
+        one_season = self._one_season()
         rows = []
         for item, name in self._named().get(self.cols[index].signature, []):
             number = file_label(item, one_season)
@@ -232,11 +232,68 @@ class BatchView:
             )
         return rows
 
+    def _one_season(self) -> bool:
+        return len({(i.identity.show, i.identity.season) for i in self.items if isinstance(i.identity, Episode)}) <= 1
+
+    def lacking(self, index: int) -> list[MediaItem]:
+        """The files that were read and have no such track. A file whose tracks could not be read has none to show,
+        which says nothing about whether it has this one, so it is in neither list."""
+        if not 0 <= index < len(self.cols):
+            return []
+        return [
+            item
+            for item in self.items
+            if str(item.file.path) not in self.failures and self.cells(item)[index]["state"] == "missing"
+        ]
+
+    def held(self, index: int) -> list[MediaItem]:
+        """The files whose plan is known and keeps a track that the column's choice drops: a plan that was refused
+        (it would leave no audio) leaves the file as it is. Empty while the plan has not arrived, since every file
+        would then look held."""
+        if not 0 <= index < len(self.cols) or self.cols[index].paired is not None:
+            return []
+        if self.choice(index).verdict is not Verdict.DROP:
+            return []
+        return [
+            item
+            for item in self.items
+            if str(item.file.path) not in self.failures
+            and self.file(item) is not None
+            and self.cells(item)[index]["state"] == "kept"
+        ]
+
+    def missing(self, index: int) -> str:
+        """The line under a column's names that says which files lack the track; empty when none does."""
+        lacking = self.lacking(index)
+        if not lacking:
+            return ""
+        one_season = self._one_season()
+        files = tr("common.list_separator").join(file_label(i, one_season) for i in lacking)
+        return tr("tracks.names.missing", files=files)
+
+    def held_note(self, index: int) -> str:
+        """The line above a column's names that says which files keep the track though the choice drops it, and why
+        (the plan of such a file was refused); empty when none does."""
+        held = self.held(index)
+        if not held:
+            return ""
+        one_season = self._one_season()
+        files = tr("common.list_separator").join(file_label(i, one_season) for i in held)
+        why = "; ".join(dict.fromkeys(w for i in held if (w := self.warning(i))))
+        return tr("tracks.names.held", files=files, why=why)
+
     # Columns: chips, matrix headers
 
     def headers(self) -> list[dict[str, object]]:
         grid = [self.cells(item) for item in self.items]
-        total = len(self.items)
+        # Rows of files that were read: an unreadable file counts neither as having a track nor as lacking it.
+        read = [row for item, row in zip(self.items, grid, strict=True) if str(item.file.path) not in self.failures]
+        # Of those, the rows whose plan has arrived; the same files `held` looks at.
+        planned = [
+            row
+            for item, row in zip(self.items, grid, strict=True)
+            if str(item.file.path) not in self.failures and self.file(item) is not None
+        ]
         headers = []
         for index, column in enumerate(self.cols):
             states = [row[index]["state"] for row in grid if row[index]["state"] != "missing"]
@@ -244,8 +301,15 @@ class BatchView:
             if column.paired is not None:
                 state = "added" if "added" in states else "dropped" if "dropped" in states else "paired"
             else:
-                state = "dropped" if states and all(s == "dropped" for s in states) else "kept"
-            present = len(states)
+                # What the choice says shows at once, before the plan arrives and also where the plan keeps the track.
+                dropped = choice.verdict is Verdict.DROP or (bool(states) and all(s == "dropped" for s in states))
+                state = "dropped" if dropped else "kept"
+            lacking = sum(1 for row in read if row[index]["state"] == "missing")
+            held = (
+                sum(1 for row in planned if row[index]["state"] == "kept")
+                if column.paired is None and choice.verdict is Verdict.DROP
+                else 0
+            )
             signature = column.signature
             headers.append(
                 {
@@ -256,8 +320,8 @@ class BatchView:
                     if column.paired
                     else _codec(signature),
                     "name": self._label(column),
-                    # The ▾ that lists each file's name for the track.
-                    "names": column.paired is None,
+                    # The ▾ that lists each file's name for the track, and the files that lack it.
+                    "names": column.paired is None or lacking > 0,
                     "paired": column.paired is not None,
                     "state": state,
                     "button": tr(f"tracks.state.{state}"),
@@ -265,7 +329,10 @@ class BatchView:
                     "forced": choice.forced,
                     # Flags apply to a paired file only once it is added.
                     "flags": column.paired is None or state == "added",
-                    "count": tr("tracks.present", present=present, total=total) if present < total else "",
+                    "count": f" {tr('status.separator')} ".join(
+                        [tr_plural("tracks.missing", lacking)] * bool(lacking)
+                        + [tr_plural("tracks.held", held)] * bool(held)
+                    ),
                 }
             )
         return headers

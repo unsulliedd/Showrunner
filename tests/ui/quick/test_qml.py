@@ -32,33 +32,6 @@ from showrunner.ui.theme.tokens import SIZES
 QML_FILES = sorted(QML_DIR.glob("*.qml"))
 
 
-@pytest.fixture
-def load(controller: WindowController, qtbot: QtBot) -> Iterator[Any]:
-    """Load the window; calling the result settles it and gives the QML warnings so far. `window` and `run` (a QML
-    expression evaluated in the window's own scope) hang off it. The window closes after the test."""
-    warnings: list[str] = []
-    engine = build_engine(controller, on_warnings=lambda errors: warnings.extend(e.toString() for e in errors))
-    assert engine.rootObjects(), warnings
-    window = engine.rootObjects()[0]
-    qtbot.waitUntil(window.isExposed)
-
-    def settle() -> list[str]:
-        qtbot.wait(50)
-        return warnings
-
-    def run(source: str) -> object:
-        expression = QQmlExpression(QQmlEngine.contextForObject(window), window, source)
-        value = expression.evaluate()
-        assert not expression.hasError(), expression.error().toString()
-        return value[0] if isinstance(value, tuple) else value
-
-    settle.window = window  # type: ignore[attr-defined]
-    settle.run = run  # type: ignore[attr-defined]
-    yield settle
-    window.close()
-    engine.deleteLater()
-
-
 @pytest.mark.parametrize("path", QML_FILES, ids=lambda p: p.name)
 def test_every_qml_file_compiles(qapp: QApplication, path: Path) -> None:
     prepare()
@@ -247,48 +220,400 @@ def _names_popup(window: Any) -> QObject:
     return opened
 
 
-def test_a_chip_s_arrow_lists_each_file_s_name_and_leaves_the_chip_alone(
-    load: Any, controller: WindowController, qt_warnings: Any, qtbot: QtBot
-) -> None:
+def _open_lists(root: QQuickItem) -> list[QQuickItem]:
+    """The name lists of the chips that are folded open."""
+    return [i for i in _items(root, "chipNameRows") if i.isVisible()]
+
+
+def _top(item: QQuickItem) -> float:
+    return item.mapToScene(QPointF(0, 0)).y()
+
+
+def _bottom(item: QQuickItem) -> float:
+    return item.mapToScene(QPointF(0, item.height())).y()
+
+
+def _left(item: QQuickItem) -> float:
+    return item.mapToScene(QPointF(0, 0)).x()
+
+
+def _contains(outer: QQuickItem, inner: QQuickItem) -> bool:
+    return (
+        _top(outer) <= _top(inner)
+        and _bottom(inner) <= _bottom(outer)
+        and _left(outer) <= _left(inner)
+        and _right(inner) <= _right(outer)
+    )
+
+
+def _overlap(one: QQuickItem, other: QQuickItem) -> bool:
+    return (
+        _left(one) < _right(other)
+        and _left(other) < _right(one)
+        and _top(one) < _bottom(other)
+        and _top(other) < _bottom(one)
+    )
+
+
+def _named_show(load: Any, controller: WindowController, qtbot: QtBot, episodes: int = 10) -> QQuickItem:
+    """Episodes with every track named after its episode, one of them selected; the window's root item."""
     from .conftest import long_show  # imported here: a test below runs this module's imports in a child process
 
-    show = long_show(1, 10, named_per_episode=True)
+    show = long_show(1, episodes, named_per_episode=True)
     load()
     controller.start()
     controller.model.set_library(show)
     controller.select(controller.tree.index_of(str(show.items[2].file.path)))
     qtbot.waitUntil(lambda: not controller.planning)
     load()
-    root = load.window.contentItem()
+    return load.window.contentItem()
+
+
+def test_a_chip_s_arrow_folds_the_chip_open_and_leaves_the_chip_alone(
+    load: Any, controller: WindowController, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    root = _named_show(load, controller, qtbot)
     assert len(controller.overview["groups"][0]["chips"]) == 4  # tracks named per episode are one chip each
-    _click(load.window, _item(_item(root, "chip1"), "namesButton"))
+    assert _open_lists(root) == []
+    chip = _item(root, "chip1")
+    closed = (chip.width(), chip.height())
+    _click(load.window, _item(chip, "namesButton"))
     load()
-    rows = _names_popup(load.window).property("rows")
-    assert len(rows) == 9  # Episode Seven has no Turkish audio
-    assert rows[0] == "01 · Long Show - 1x01 - Episode One (Turkish)"
+    (rows,) = _open_lists(root)
+    assert chip.property("namesOpen") is True
+    assert rows.property("count") == 9  # Episode Seven has no Turkish audio
+    assert chip.property("rows")[0] == "01 · Long Show - 1x01 - Episode One (Turkish)"
+    assert chip.property("missing") == "Missing in 07"
     assert controller.rules == []  # only the arrow answered, not the chip
-    _click(load.window, _item(_item(root, "chip1"), "namesButton"))
+    # The list is inside the chip's own frame, under its header, and the frame has grown for it.
+    assert _top(rows) >= _bottom(_item(chip, "chipHeader"))
+    assert _contains(chip, rows)
+    assert chip.height() > closed[1]
+    assert closed[0] <= chip.width() <= _item(root, "chipGroups").width()
+    # The chips around it are as they were, and no chip lies over another where the Flow placed them again.
+    assert _item(root, "chip0").height() == closed[1]
+    chips = [_item(root, f"chip{i}") for i in range(8)]
+    assert not any(_overlap(a, b) for i, a in enumerate(chips) for b in chips[i + 1 :])
+    # One at a time: another chip's arrow switches, a second click closes, also from the other kind of track.
+    _click(load.window, _item(_item(root, "chip0"), "namesButton"))
     load()
-    assert not any(p.property("opened") for p in load.window.findChildren(QObject, "trackNames"))
+    (rows,) = _open_lists(root)
+    assert (rows.property("count"), _item(root, "chip0").property("missing")) == (10, "")
+    assert chip.height() == closed[1]
+    _click(load.window, _item(_item(root, "chip0"), "namesButton"))
+    load()
+    assert _open_lists(root) == []
+    _click(load.window, _item(_item(root, "chip4"), "namesButton"))
+    load()
+    (rows,) = _open_lists(root)
+    assert _contains(_item(root, "chip4"), rows)
+    _click(load.window, _item(_item(root, "chip0"), "namesButton"))
+    load()
+    (rows,) = _open_lists(root)
+    assert _contains(_item(root, "chip0"), rows)
+    assert _item(root, "chip4").height() == closed[1]
+    _click(load.window, _item(_item(root, "chip0"), "namesButton"))
+    load()
+    assert _open_lists(root) == []
+    assert controller.rules == []
+    # A click on the rest of the header still drops the track, with the list open.
+    _click(load.window, _item(chip, "namesButton"))
+    load()
+    header = _item(chip, "chipHeader")
+    QTest.mouseClick(
+        load.window,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        header.mapToScene(QPointF(header.width() / 3, header.height() / 2)).toPoint(),
+    )
+    load()
+    assert len(controller.rules) == 1
+    assert len(_open_lists(root)) == 1
+    # Another batch closes the list.
+    controller.select(controller.tree.index_of(str(controller.model.library.items[0].file.path)).parent().parent())
+    qtbot.waitUntil(lambda: not controller.planning)
+    load()
+    assert _open_lists(root) == []
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def test_a_long_list_is_capped_inside_the_chip_and_scrolls(
+    load: Any, controller: WindowController, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    root = _named_show(load, controller, qtbot, episodes=40)
+    chip = _item(root, "chip1")
+    closed = chip.height()
+    _click(load.window, _item(chip, "namesButton"))
+    load()
+    (rows,) = _open_lists(root)
+    assert rows.property("count") == 39
+    assert rows.height() == SIZES["names_height"]
+    assert rows.property("contentHeight") > SIZES["names_height"]
+    assert chip.height() == closed + SIZES["names_height"] + SIZES["space_md"]
+    assert _contains(chip, rows)
+    # Scrolled to its end the list shows the line for the files without the track.
+    assert rows.property("atYEnd") is False
+    rows.setProperty("contentY", rows.property("contentHeight") - rows.height())
+    load()
+    assert rows.property("atYEnd") is True
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def test_a_matrix_header_s_arrow_still_opens_the_popup(
+    load: Any, controller: WindowController, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    root = _named_show(load, controller, qtbot)
     load.window.setProperty("place", "tracks")
     load()
-    header = next(b for b in _items(root, "namesButton") if b.isVisible())
-    _click(load.window, header)
+    arrows = sorted((b for b in _items(root, "namesButton") if b.isVisible()), key=_right)
+    _click(load.window, arrows[0])
     load()
-    assert len(_names_popup(load.window).property("rows")) == 10
+    assert len(_names_popup(load.window).property("rows").toVariant()) == 10
     assert controller.rules == []
-    # At the narrowest window the list under the rightmost arrow moves left to stay inside it.
-    _click(load.window, header)  # closes the list
-    load.window.setProperty("place", "overview")
+    _click(load.window, arrows[0])  # closes the list
+    # The header of a track some files lack ends its list with the files that do.
+    _click(load.window, arrows[1])
+    load()
+    rows = _names_popup(load.window).property("rows").toVariant()  # a list the popup built itself
+    assert (len(rows), rows[-1]) == (10, "Missing in 07")
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def test_a_chip_keeps_even_room_on_both_sides_in_every_state_and_ends_with_its_arrow(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    load()
+    root = load.window.contentItem()
+    room = SIZES["space_md"]
+
+    def check() -> int:
+        found = 0
+        for index in range(sum(len(group["chips"]) for group in controller.overview["groups"])):
+            chip = next((c for c in _items(root, f"chip{index}") if c.isVisible()), None)
+            if chip is None:
+                continue
+            found += 1
+            header = _item(chip, "chipHeader")
+            content = header.property("contentItem")
+            assert content.x() == room, index
+            assert header.width() - content.x() - content.width() == room, index
+            assert header.width() == chip.width(), index
+            for part in content.childItems():
+                if part.isVisible() and part.height() > 0:  # not the spacer before the arrow
+                    assert part.x() >= 0, (index, part)
+                    assert part.x() + part.width() <= content.width() + 0.5, (index, part)
+            arrows = [b for b in _items(chip, "namesButton") if b.isVisible()]
+            if arrows:
+                # Both are children of the header's row; the arrow turns up when open, so measure by position.
+                flags = [f for f in _items(chip, "defaultFlag") if f.isVisible()]
+                assert all(f.x() < arrows[0].x() for f in flags)
+                assert header.width() - (content.x() + arrows[0].x() + arrows[0].width()) == room, index
+        return found
+
+    assert check() == 8
+    # Dropped, and a paired file added.
+    controller.toggle_keep(2)
+    controller.toggle_keep(7)
+    qtbot.waitUntil(lambda: not controller.planning)
+    load()
+    assert check() == 8
+    # At the narrowest window the long names are cut short, the arrow and the room stay.
+    load.window.setWidth(1024)
+    qtbot.waitUntil(lambda: load.window.width() == 1024)
+    qtbot.wait(300)
+    assert check() == 8
+    # An open chip has widened for its names; its arrow still ends it, with the same room.
+    _click(load.window, _item(_item(root, "chip1"), "namesButton"))
+    load()
+    assert check() == 8
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def test_an_open_chip_stays_inside_the_tracks_box_at_the_narrowest_window(
+    load: Any, controller: WindowController, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    root = _named_show(load, controller, qtbot)
     load.window.setWidth(1024)
     qtbot.waitUntil(lambda: load.window.width() == 1024)
     qtbot.wait(300)
     rightmost = max((b for b in _items(root, "namesButton") if b.isVisible()), key=_right)
     assert _right(rightmost) <= _right(_item(root, "chipGroups"))  # a long name is cut short, the arrow stays in
-    assert _right(rightmost) + SIZES["names_width"] > load.window.width()  # the list would not fit where it opens
     _click(load.window, rightmost)
     load()
-    assert _right(_names_popup(load.window).property("contentItem")) <= load.window.width()
+    (rows,) = _open_lists(root)
+    chip = rows.parentItem().parentItem()  # the foldout, then the chip that holds it
+    assert _contains(chip, rows)
+    assert _right(chip) <= _right(_item(root, "chipGroups"))
+    assert _right(chip) <= load.window.width()
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def test_a_chip_folds_open_inside_its_row_at_a_narrow_a_laptop_and_a_wide_window(
+    load: Any, controller: WindowController, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    root = _named_show(load, controller, qtbot)
+    for width in (1024, 1280, 1920):
+        load.window.setWidth(width)
+        qtbot.waitUntil(lambda width=width: load.window.width() == width)
+        qtbot.wait(300)
+        groups = _item(root, "chipGroups")
+        room = _right(groups) - SIZES["scroll_thumb"] - 2 * SIZES["space_xs"]  # what the scroll view leaves the row
+        chips = [_item(root, f"chip{i}") for i in range(8)]
+        # The first, a middle and the last chip of every row of the flow, closed and open.
+        rows: dict[int, list[QQuickItem]] = {}
+        for chip in chips:
+            rows.setdefault(round(_top(chip)), []).append(chip)
+        picks = {c.objectName(): c for row in rows.values() for c in (min(row, key=_left), max(row, key=_left))}
+        picks.update({row[len(row) // 2].objectName(): row[len(row) // 2] for row in rows.values()})
+        for name in sorted(picks):
+            chip = _item(root, name)
+            arrows = [a for a in _items(chip, "namesButton") if a.isVisible()]
+            if not arrows or _bottom(arrows[0]) > _bottom(groups):
+                continue  # the paired file every episode has gives no list; or scrolled out of the box
+            arrow = arrows[0]
+            _click(load.window, arrow)
+            load()
+            (rows_list,) = _open_lists(root)
+            assert _contains(chip, rows_list), (width, name)
+            assert _right(chip) <= room + 0.5, (width, name)
+            assert _left(chip) >= _left(groups), (width, name)
+            assert _right(_item(chip, "namesButton")) <= _right(chip), (width, name)
+            now = [_item(root, f"chip{i}") for i in range(8)]
+            assert not any(_overlap(a, b) for i, a in enumerate(now) for b in now[i + 1 :]), (width, name)
+            _click(load.window, _item(chip, "namesButton"))
+            load()
+            assert _open_lists(root) == []
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def test_a_chip_stays_open_through_a_resize_and_the_separator_with_a_height_already_saved(
+    saved_height: int,
+    load: Any,
+    controller: WindowController,
+    library: Library,
+    qt_warnings: Any,
+    qtbot: QtBot,
+) -> None:
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    load()
+    root = load.window.contentItem()
+    _click(load.window, _item(_item(root, "chip1"), "namesButton"))
+    load()
+    box, bar, rows = (_item(root, name) for name in ("tracksBox", "tracksSeparator", "overviewRows"))
+    for width, height in ((1024, 640), (1920, 1080), (1280, 800), (1024, 640)):
+        load.window.setWidth(width)
+        load.window.setHeight(height)
+        qtbot.waitUntil(
+            lambda width=width, height=height: (load.window.width(), load.window.height()) == (width, height)
+        )
+        qtbot.wait(300)
+        assert len(_open_lists(root)) == 1, (width, height)  # the open chip keeps its contents
+        assert _contains(_item(root, "chip1"), _open_lists(root)[0])
+        assert box.height() >= SIZES["tracks_min_height"]  # the saved height is clamped, never zero
+        assert rows.height() >= SIZES["rows_min_height"]
+        assert _bottom(rows) <= load.window.height()
+    # The separator to its two ends with the chip open.
+    _drag_by(load.window, qtbot, bar, 100)
+    load()
+    assert rows.height() == SIZES["rows_min_height"]
+    _drag_by(load.window, qtbot, bar, -300)
+    load()
+    assert box.height() == SIZES["tracks_min_height"]
+    assert len(_open_lists(root)) == 1
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def _drag_by(window: Any, qtbot: QtBot, item: QQuickItem, dy: int) -> None:
+    start = item.mapToScene(QPointF(item.width() / 2, item.height() / 2)).toPoint()
+    QTest.mousePress(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+    steps = 8
+    for step in range(1, steps + 1):
+        QTest.mouseMove(window, QPoint(start.x(), start.y() + dy * step // steps))
+        qtbot.wait(10)
+    QTest.mouseRelease(
+        window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(start.x(), start.y() + dy)
+    )
+
+
+def test_the_separator_sets_the_height_of_the_tracks_box_and_keeps_it(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    from showrunner.app.settings.app_settings import load_settings
+
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    load()
+    root = load.window.contentItem()
+    box, bar, rows = (_item(root, name) for name in ("tracksBox", "tracksSeparator", "overviewRows"))
+    fitted = box.height()
+    assert load_settings().value.overview_tracks_height == 0  # nothing chosen: the box fits its chips
+    # Drag it down: the box grows by as much as the pointer moved, the file list gives way, the choice is saved.
+    _drag_by(load.window, qtbot, bar, 40)
+    load()
+    assert box.height() == fitted + 40
+    assert load_settings().value.overview_tracks_height == box.height()
+    # As far as it goes either way, neither side vanishes.
+    _drag_by(load.window, qtbot, bar, 300)
+    load()
+    assert rows.height() == SIZES["rows_min_height"]  # the file list keeps its room
+    assert box.height() > fitted + 40
+    _drag_by(load.window, qtbot, bar, -400)
+    load()
+    assert box.height() == SIZES["tracks_min_height"]
+    assert rows.height() > SIZES["rows_min_height"]
+    # The keyboard moves it by a step and keeps the result when the key is let go.
+    bar.forceActiveFocus()
+    QTest.keyClick(load.window, Qt.Key.Key_Down)
+    load()
+    assert box.height() == SIZES["tracks_min_height"] + SIZES["separator_step"]
+    assert load_settings().value.overview_tracks_height == box.height()
+    QTest.keyClick(load.window, Qt.Key.Key_Up)
+    QTest.keyClick(load.window, Qt.Key.Key_Up)
+    load()
+    assert box.height() == SIZES["tracks_min_height"]
+    assert load() == []
+    assert qt_warnings() == []
+
+
+@pytest.fixture
+def saved_height(controller: WindowController) -> int:
+    """A height saved before the window loads, since the window reads it once, when its Overview is made."""
+    controller.save_overview_tracks_height(300)
+    return 300
+
+
+def test_a_saved_height_of_the_tracks_box_is_used_when_the_window_opens(
+    saved_height: int,
+    load: Any,
+    controller: WindowController,
+    library: Library,
+    qt_warnings: Any,
+    qtbot: QtBot,
+) -> None:
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    load()
+    assert _item(load.window.contentItem(), "tracksBox").height() == saved_height
     assert load() == []
     assert qt_warnings() == []
 

@@ -130,6 +130,14 @@ def test_panel_sizes_are_kept_in_the_settings(controller: WindowController) -> N
     assert "columns" in load_settings().value.panel_sizes
 
 
+def test_the_height_of_the_tracks_box_is_kept_in_the_settings(controller: WindowController) -> None:
+    assert controller.overview_tracks_height() == 0
+    controller.save_overview_tracks_height(280)
+    assert controller.overview_tracks_height() == 280
+    assert load_settings().value.overview_tracks_height == 280
+    assert load_settings().value.panel_sizes == {}  # a setting of its own, not a panel's saved state
+
+
 def test_only_local_urls_are_read(tmp_path: Path) -> None:
     file = tmp_path / "x.mkv"
     urls = [

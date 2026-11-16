@@ -84,9 +84,54 @@ def test_columns_are_audio_then_subtitles_then_paired_files(season: list[MediaIt
 def test_headers_show_the_choices_and_the_files_that_lack_a_track(season: list[MediaItem]) -> None:
     headers = view(season, chosen(season)).headers()
     assert [h["state"] for h in headers] == ["kept", "kept", "dropped", "kept", "dropped", "kept", "kept", "added"]
-    assert [h["count"] for h in headers] == ["", "9/10", "", "1/10", "", "", "9/10", ""]
+    assert [h["count"] for h in headers] == [
+        "",
+        "missing in 1 file",
+        "",
+        "missing in 9 files",
+        "",
+        "",
+        "missing in 1 file",
+        "",
+    ]
     assert (headers[TURKISH]["default"], headers[FORCED]["forced"], headers[SRT]["default"]) == (True, True, True)
     assert (headers[SRT]["title"], headers[TURKISH]["code"]) == (".srt file", "TUR")
+
+
+def test_a_chip_names_the_files_that_lack_its_track(season: list[MediaItem]) -> None:
+    built = view(season, TracksOptions(), planned=False)
+    assert built.missing(ENGLISH) == ""  # every file has it: no count, nothing to name
+    assert built.headers()[ENGLISH]["count"] == ""
+    assert built.missing(TURKISH) == "Missing in 07"  # Episode Seven has no Turkish audio
+    assert built.missing(99) == ""
+    assert [i.identity.episode for i in built.lacking(STEREO)] == [1, 2, 3, 4, 5, 6, 7, 8, 10]  # type: ignore[union-attr]
+
+
+def test_a_paired_file_beside_some_files_has_a_list_of_the_files_without_it(season: list[MediaItem]) -> None:
+    built = view(season, TracksOptions(), planned=False)
+    assert (built.headers()[SRT]["count"], built.headers()[SRT]["names"]) == ("", False)
+    bare = [replace(season[3], subtitles=()), *season[:3], *season[4:]]
+    header = view(bare, TracksOptions(), planned=False).headers()[SRT]
+    assert (header["count"], header["names"]) == ("missing in 1 file", True)
+
+
+def test_a_file_that_could_not_be_read_is_neither_counted_as_having_nor_as_lacking_a_track(
+    season: list[MediaItem],
+) -> None:
+    third = season[2]
+    items = [*season[:2], replace(third, file=replace(third.file, tracks=())), *season[3:]]
+    unmarked = BatchView.build(items, TracksOptions(), ())
+    marked = BatchView.build(items, TracksOptions(), (), failures={str(third.file.path): "Not a Matroska file"})
+    assert len(marked.cols) == len(unmarked.cols)
+    for index in range(len(marked.cols)):
+        # Without the mark an empty file lacks every embedded track (the paired file beside it is still there).
+        assert (items[2] in unmarked.lacking(index)) is (index < SRT)
+        assert items[2] not in marked.lacking(index)
+    # Only Episode Seven lacks the Turkish audio; the unread Episode Three says nothing about it.
+    assert marked.headers()[TURKISH]["count"] == "missing in 1 file"
+    assert marked.missing(TURKISH) == "Missing in 07"
+    assert unmarked.headers()[TURKISH]["count"] == "missing in 2 files"
+    assert all(h["count"] == "" for h in marked.headers()[:1])  # a track every readable file has shows no count
 
 
 def test_a_paired_file_not_added_is_offered_and_takes_no_flag(season: list[MediaItem]) -> None:
@@ -96,7 +141,9 @@ def test_a_paired_file_not_added_is_offered_and_takes_no_flag(season: list[Media
 
 def test_before_the_plan_arrives_the_files_show_their_tracks_as_they_are(season: list[MediaItem]) -> None:
     unplanned = view(season, chosen(season), planned=False)
-    assert unplanned.headers()[COMMENTARY]["state"] == "kept"
+    # The chip shows the choice at once; the files, and the count of files that keep the track, wait for the plan.
+    assert unplanned.headers()[COMMENTARY]["state"] == "dropped"
+    assert all(row["cells"][COMMENTARY]["state"] == "kept" for row in unplanned.rows())
     assert unplanned.headers()[COMMENTARY]["count"] == ""
     assert unplanned.rows()[0]["changes"] == 0
 

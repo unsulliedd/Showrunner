@@ -358,6 +358,11 @@ SIZES: dict[str, int] = {
     "palette_width": 560,  # the command palette
     "names_width": 420,  # the list of each file's name for a track, under a chip's ▾
     "names_height": 320,
+    "tracks_min_height": 160,  # the least Overview's tracks box keeps when its separator is dragged up
+    "rows_min_height": 120,  # the least Overview's file list keeps when the separator is dragged down
+    "separator_step": 24,  # what an arrow key moves Overview's separator
+    "chip_title_min_width": 56,  # a chip's codec, the last of its texts to be cut short in a narrow row
+    "chip_count_min_width": 48,  # a chip's "missing in N files", cut short after the track name and before the codec
     "chip_name_width": 200,  # a chip's track name, cut short with an ellipsis beyond it
     "window_min_width": 1024,
     "window_min_height": 640,
