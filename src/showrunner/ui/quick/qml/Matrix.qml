@@ -252,174 +252,227 @@ Item {
         spacing: Theme.space_md
 
         // A ListView creates a row only as it scrolls into view, so a whole show does not build every row and cell.
-        ListView {
-            id: scroll
-
-            objectName: "matrixRows"
+        // The rows are one Tab stop, `rowKeys` (drawn over the list, after the header's buttons in the focus order),
+        // since Tab can only reach rows that exist. Up, Down, Home and End move `currentIndex`; Enter focuses the file.
+        Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
-            contentWidth: Theme.matrix_label + matrix.headers.length * Theme.matrix_column
-            flickableDirection: Flickable.AutoFlickIfNeeded
-            boundsBehavior: Flickable.StopAtBounds
-            // A count, not the rows: new rows of the same batch then update the delegates in place, so the view
-            // keeps its scroll position after a choice.
-            model: matrix.rows.length
-            // Another batch starts at the top, even with as many rows as the last one.
-            readonly property string firstPath: matrix.rows.length > 0 ? matrix.rows[0].path : ""
-            onFirstPathChanged: positionViewAtBeginning()
-            ScrollBar.vertical: Scroller {}
-            ScrollBar.horizontal: Scroller {}
 
-            header: Column {
-                Row {
-                    Item {
-                        width: Theme.matrix_label
-                        height: Theme.row_sm
+            ListView {
+                id: scroll
+
+                anchors.fill: parent
+                objectName: "matrixRows"
+                clip: true
+                contentWidth: Theme.matrix_label + matrix.headers.length * Theme.matrix_column
+                flickableDirection: Flickable.AutoFlickIfNeeded
+                boundsBehavior: Flickable.StopAtBounds
+                // A count, not the rows: new rows of the same batch then update the delegates in place, so the view
+                // keeps its scroll position after a choice.
+                model: matrix.rows.length
+                // Another batch starts at the top, even with as many rows as the last one.
+                readonly property string firstPath: matrix.rows.length > 0 ? matrix.rows[0].path : ""
+                onFirstPathChanged: {
+                    positionViewAtBeginning()
+                    currentIndex = 0
+                }
+                ScrollBar.vertical: Scroller {}
+                ScrollBar.horizontal: Scroller {}
+
+                header: Column {
+                    Row {
+                        Item {
+                            width: Theme.matrix_label
+                            height: Theme.row_sm
+                        }
+
+                        Repeater {
+                            model: [
+                                {"kind": "audio", "icon": "audio"},
+                                {"kind": "subtitle", "icon": "subs"}
+                            ]
+
+                            delegate: Item {
+                                id: group
+
+                                required property var modelData
+                                readonly property int span: matrix.headers.filter(h => h.kind === modelData.kind).length
+
+                                visible: span > 0
+                                width: span * Theme.matrix_column
+                                height: Theme.row_sm
+
+                                Row {
+                                    x: Theme.space_md
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: Theme.space_sm
+
+                                    Icon {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        name: group.modelData.icon
+                                        size: Theme.icon_sm
+                                    }
+
+                                    UiText {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: Strings.t("matrix.group." + group.modelData.kind)
+                                        color: Theme.faint
+                                        font.pixelSize: Theme.text_xs
+                                        font.weight: Font.DemiBold
+                                        font.letterSpacing: Theme.stroke
+                                    }
+                                }
+
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.leftMargin: Theme.space_md
+                                    anchors.bottom: parent.bottom
+                                    height: Theme.stroke
+                                    color: Theme.line
+                                }
+                            }
+                        }
                     }
 
-                    Repeater {
-                        model: [
-                            {"kind": "audio", "icon": "audio"},
-                            {"kind": "subtitle", "icon": "subs"}
-                        ]
+                    Row {
+                        Item {
+                            width: Theme.matrix_label
+                            height: Theme.matrix_header
 
-                        delegate: Item {
-                            id: group
+                            Column {
+                                anchors.bottom: parent.bottom
+                                anchors.bottomMargin: Theme.space_md
+                                spacing: Theme.space_xs
 
-                            required property var modelData
-                            readonly property int span: matrix.headers.filter(h => h.kind === modelData.kind).length
-
-                            visible: span > 0
-                            width: span * Theme.matrix_column
-                            height: Theme.row_sm
-
-                            Row {
-                                x: Theme.space_md
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: Theme.space_sm
-
-                                Icon {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    name: group.modelData.icon
-                                    size: Theme.icon_sm
+                                UiText {
+                                    text: Strings.n("matrix.files", matrix.rows.length)
+                                    font.weight: Font.Medium
                                 }
 
                                 UiText {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    text: Strings.t("matrix.group." + group.modelData.kind)
+                                    text: Strings.t("matrix.video_kept")
                                     color: Theme.faint
                                     font.pixelSize: Theme.text_xs
-                                    font.weight: Font.DemiBold
-                                    font.letterSpacing: Theme.stroke
                                 }
                             }
+                        }
 
-                            Rectangle {
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.leftMargin: Theme.space_md
-                                anchors.bottom: parent.bottom
-                                height: Theme.stroke
-                                color: Theme.line
+                        Repeater {
+                            model: matrix.headers
+
+                            delegate: Header {
+                                required property var modelData
+
+                                column: modelData
+                                names: trackNames
                             }
                         }
                     }
                 }
 
-                Row {
-                    Item {
-                        width: Theme.matrix_label
-                        height: Theme.matrix_header
+                delegate: AbstractButton {
+                    id: line
 
-                        Column {
+                    objectName: "matrixRow"
+                    required property int index
+                    readonly property var modelData: matrix.rows[index]
+                    readonly property bool focused: modelData.path === app.focus_path
+                    // The row the arrow keys are on, marked like the focus of the other lists while the rows have it.
+                    readonly property bool marked: rowKeys.activeFocus && ListView.isCurrentItem
+
+                    width: Theme.matrix_label + matrix.headers.length * Theme.matrix_column
+                    height: Theme.list_row
+                    hoverEnabled: true
+                    focusPolicy: Qt.NoFocus
+                    Accessible.role: Accessible.Button
+                    Accessible.name: modelData.title
+                    onClicked: {
+                        rowKeys.forceActiveFocus()  // first: gaining the focus moves the current row to the focused file
+                        scroll.currentIndex = index
+                        app.focus_file(modelData.path)
+                    }
+
+                    background: Rectangle {
+                        color: line.focused ? Theme.select : line.hovered ? Theme.panel_2 : "transparent"
+                        border.width: line.marked ? Theme.stroke : 0
+                        border.color: Theme.control
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
                             anchors.bottom: parent.bottom
-                            anchors.bottomMargin: Theme.space_md
-                            spacing: Theme.space_xs
-
-                            UiText {
-                                text: Strings.n("matrix.files", matrix.rows.length)
-                                font.weight: Font.Medium
-                            }
-
-                            UiText {
-                                text: Strings.t("matrix.video_kept")
-                                color: Theme.faint
-                                font.pixelSize: Theme.text_xs
-                            }
+                            height: Theme.stroke
+                            color: Theme.line
                         }
                     }
 
-                    Repeater {
-                        model: matrix.headers
+                    contentItem: Row {
+                        Row {
+                            width: Theme.matrix_label
+                            height: Theme.list_row
+                            spacing: Theme.space_md
 
-                        delegate: Header {
-                            required property var modelData
+                            UiText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                mono: true
+                                text: line.modelData.number
+                                color: Theme.faint
+                            }
 
-                            column: modelData
-                            names: trackNames
+                            UiText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Theme.matrix_label - Theme.row_md
+                                text: line.modelData.title
+                            }
+                        }
+
+                        Repeater {
+                            model: line.modelData.cells
+
+                            delegate: Cell {
+                                required property var modelData
+
+                                value: modelData
+                            }
                         }
                     }
                 }
             }
 
-            delegate: AbstractButton {
-                id: line
+            Item {
+                id: rowKeys
 
-                required property int index
-                readonly property var modelData: matrix.rows[index]
-                readonly property bool focused: modelData.path === app.focus_path
-
-                width: Theme.matrix_label + matrix.headers.length * Theme.matrix_column
-                height: Theme.list_row
-                hoverEnabled: true
-                focusPolicy: Qt.StrongFocus
-                Accessible.role: Accessible.Button
-                Accessible.name: modelData.title
-                onClicked: app.focus_file(modelData.path)
-
-                background: Rectangle {
-                    color: line.focused ? Theme.select : line.hovered ? Theme.panel_2 : "transparent"
-                    border.width: line.visualFocus ? Theme.stroke : 0
-                    border.color: Theme.control
-
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        height: Theme.stroke
-                        color: Theme.line
+                objectName: "matrixRowKeys"
+                anchors.fill: parent
+                activeFocusOnTab: true
+                Accessible.role: Accessible.List
+                Accessible.name: Strings.n("matrix.files", matrix.rows.length)
+                onActiveFocusChanged: {
+                    if (activeFocus) {
+                        const at = matrix.rows.findIndex(r => r.path === app.focus_path)
+                        scroll.currentIndex = at >= 0 ? at : Math.min(scroll.currentIndex, matrix.rows.length - 1)
                     }
                 }
-
-                contentItem: Row {
-                    Row {
-                        width: Theme.matrix_label
-                        height: Theme.list_row
-                        spacing: Theme.space_md
-
-                        UiText {
-                            anchors.verticalCenter: parent.verticalCenter
-                            mono: true
-                            text: line.modelData.number
-                            color: Theme.faint
+                Keys.onPressed: event => {
+                    const last = matrix.rows.length - 1
+                    const to = {
+                        [Qt.Key_Up]: scroll.currentIndex - 1,
+                        [Qt.Key_Down]: scroll.currentIndex + 1,
+                        [Qt.Key_Home]: 0,
+                        [Qt.Key_End]: last
+                    }[event.key]
+                    if (to !== undefined) {
+                        scroll.currentIndex = Math.max(0, Math.min(last, to))
+                        if (scroll.currentIndex === 0) {
+                            scroll.positionViewAtBeginning()  // keeps the header in view
+                        } else {
+                            scroll.positionViewAtIndex(scroll.currentIndex, ListView.Contain)
                         }
-
-                        UiText {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: Theme.matrix_label - Theme.row_md
-                            text: line.modelData.title
-                        }
-                    }
-
-                    Repeater {
-                        model: line.modelData.cells
-
-                        delegate: Cell {
-                            required property var modelData
-
-                            value: modelData
-                        }
+                        event.accepted = true
+                    } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && last >= 0) {
+                        app.focus_file(matrix.rows[scroll.currentIndex].path)
+                        event.accepted = true
                     }
                 }
             }

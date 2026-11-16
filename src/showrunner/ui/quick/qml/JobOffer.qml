@@ -4,7 +4,8 @@ import QtQuick.Layouts
 import Showrunner
 
 // The offer of a job an earlier run left unfinished: resume it, discard it, or ask again next time. One that this
-// version cannot read back can only be discarded or kept for later. Nothing resumes without a click here.
+// version cannot read back can only be discarded or kept for later. Nothing resumes without a click here; Escape
+// is "Ask next time".
 Popup {
     id: offer
 
@@ -33,6 +34,9 @@ Popup {
 
     contentItem: ColumnLayout {
         spacing: Theme.space_lg
+        focus: true
+        // Not a close policy: closing the popup would break the binding on `visible`. Escape answers the offer.
+        Keys.onEscapePressed: app.jobs.later_offer()
 
         RowLayout {
             spacing: Theme.space_md

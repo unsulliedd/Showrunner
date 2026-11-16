@@ -650,6 +650,7 @@
   "tracks.changes.one": "1 change",
   "tracks.changes.other": "{count} changes",
   "tracks.no_changes": "No changes",
+  "tracks.not_read": "Not read",
   "tracks.no_language": "untagged",
   "tracks.language_kind.video": "{language} video",
   "tracks.language_kind.audio": "{language} audio",

@@ -8,7 +8,7 @@ or whose track plan was refused or blocked, is shown with its tracks as they are
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from showrunner.app.batches.choices import TrackChoice, TrackGroups, TrackSignature, choice_of, signature_of
@@ -153,17 +153,25 @@ class BatchView:
     cols: list[Column]
     grouping: TrackGroups = field(default_factory=TrackGroups)
     firsts: dict[TrackKind, TrackSignature] = field(default_factory=dict)
+    # Why a file's tracks could not be read, by path; those files show it instead of a plan.
+    failures: Mapping[str, str] = field(default_factory=dict, compare=False)
     # Each file's cells, built on first use: the headers, the rows and the Inspector all read them.
     _cells: dict[str, list[dict[str, object]]] = field(default_factory=dict, compare=False, repr=False)
     # Each signature's track names, file by file, built on first use.
     _names: dict[TrackSignature, list[tuple[MediaItem, str]]] = field(default_factory=dict, compare=False, repr=False)
 
     @classmethod
-    def build(cls, items: Sequence[MediaItem], options: TracksOptions, files: Sequence[FilePreview]) -> BatchView:
+    def build(
+        cls,
+        items: Sequence[MediaItem],
+        options: TracksOptions,
+        files: Sequence[FilePreview],
+        failures: Mapping[str, str] | None = None,
+    ) -> BatchView:
         groups = TrackGroups.of(items, options.flags_from_names)
         cols = columns(items, groups)
         by_path = {str(f.item.file.path): f for f in files}
-        return cls(items, options, by_path, cols, groups, _first_defaults(options, cols))
+        return cls(items, options, by_path, cols, groups, _first_defaults(options, cols), failures=failures or {})
 
     def file(self, item: MediaItem) -> FilePreview | None:
         return self.files.get(str(item.file.path))
@@ -298,7 +306,9 @@ class BatchView:
                         p for p, k in zip(pills, _pill_kinds(cells, kinds), strict=True) if k is TrackKind.SUBTITLE
                     ],
                     "changes": changes,
-                    "changes_text": tr_plural("tracks.changes", changes) if changes else tr("tracks.no_changes"),
+                    "changes_text": tr_plural("tracks.changes", changes)
+                    if changes
+                    else tr("tracks.not_read" if self.failure(item) else "tracks.no_changes"),
                     "warning": self.warning(item),
                 }
             )
@@ -308,8 +318,16 @@ class BatchView:
         file = self.file(item)
         return sum(count_changes(file).values()) if file is not None else 0
 
+    def failure(self, item: MediaItem) -> str:
+        """Why the file's tracks could not be read, worded as the library's mark words it; empty when they could."""
+        reason = self.failures.get(str(item.file.path))
+        return tr("library.tip.failed", reason=reason) if reason is not None else ""
+
     def warning(self, item: MediaItem) -> str:
-        """Why this file does not follow the batch: a refused or unwritable plan, or a choice with no track here."""
+        """Why this file does not follow the batch: unreadable, a refused or unwritable plan, or a choice with no
+        track here."""
+        if failed := self.failure(item):
+            return failed
         file = self.file(item)
         stage = file.plan_for("tracks") if file is not None else None
         if stage is not None and isinstance(stage.plan, PlanRefused):
@@ -437,6 +455,7 @@ class BatchView:
             "file": item.file.path.name,
             "count": sum(count_changes(file).values()) if file is not None else 0,
             "changes": changes,
+            "unread": self.failure(item),
             "stays": tr("inspector.stays"),
             "title_now": item.file.title,
             "title_new": title,

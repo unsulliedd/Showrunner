@@ -8,7 +8,7 @@ counts here and of the job (`create_job(left_out_files=...)`).
 
 from __future__ import annotations
 
-from collections.abc import Sequence, Set
+from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -63,6 +63,7 @@ class ReviewInput:
     blocks: dict[str, StageBlock] = field(default_factory=dict)
     mkvtoolnix_missing: bool = False
     filter: str = "all"
+    failures: Mapping[str, str] = field(default_factory=dict)  # why a file's tracks could not be read, by path
 
 
 def parts(file: FilePreview | None) -> dict[str, int]:
@@ -112,8 +113,8 @@ def review(given: ReviewInput) -> dict[str, object]:
     run_parts = {i.file.path: parts(run.get(i.file.path)) for i in given.items}
     full_parts = {i.file.path: parts(full.get(i.file.path)) for i in given.items}
     changes, files = totals(given)
-    run_view = BatchView.build(given.items, given.tracks, given.run)
-    full_view = BatchView.build(given.items, given.tracks, given.full)
+    run_view = BatchView.build(given.items, given.tracks, given.run, given.failures)
+    full_view = BatchView.build(given.items, given.tracks, given.full, given.failures)
     rows = [_row(given, item, run_view, full_view, run_parts[item.file.path]) for item in given.items]
     counts = {
         "all": len(rows),
@@ -210,7 +211,7 @@ def _row(
 ) -> dict[str, object]:
     path = item.file.path
     run_file, full_file = run_view.file(item), full_view.file(item)
-    warning = run_view.warning(item) if run_file is not None else ""
+    warning = run_view.failure(item) or (run_view.warning(item) if run_file is not None else "")
     if path in given.files_out:
         state = "out"
     elif warning or (run_file is not None and run_file.outcome in _LOOK):
@@ -225,7 +226,9 @@ def _row(
         "title": item_title(item),
         "state": state,
         "count": count,
-        "summary": _summary(found) if count else tr("review.file.nothing"),
+        "summary": _summary(found)
+        if count
+        else tr("tracks.not_read" if run_view.failure(item) else "review.file.nothing"),
         "warning": warning,
         # One mark per group: amber where the group changes this file in the run, faint where it would but is out.
         "marks": [

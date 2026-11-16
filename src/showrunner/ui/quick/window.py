@@ -1018,7 +1018,7 @@ class WindowController(QObject):
         else:
             files = self._current_files()
             profile = self.batches.profile(self._key)
-            self._view = BatchView.build(self._items, profile.for_stage("tracks"), files)
+            self._view = BatchView.build(self._items, profile.for_stage("tracks"), files, self._failures())
             counts = dict.fromkeys(ChangeGroup, 0)
             for file in files:
                 for group, count in count_changes(file).items():
@@ -1033,6 +1033,11 @@ class WindowController(QObject):
         self.apply_changed.emit()
         self._signal_shown()
         self._refresh_names()
+
+    def _failures(self) -> dict[str, str]:
+        """Why each file of the batch whose tracks could not be read was not read."""
+        library = self.model.library
+        return {str(i.file.path): reason for i in self._items if (reason := library.failure(i.file.path)) is not None}
 
     def _inspector(self) -> dict[str, Any]:
         focus = self._focus or (self._items[0] if self._items else None)
@@ -1072,6 +1077,7 @@ class WindowController(QObject):
             blocks=blocked_stages(profile),
             mkvtoolnix_missing=self._statuses is not None and (status is None or status.state is not State.FOUND),
             filter=self._review_filter,
+            failures=self._failures(),
         )
 
     @Property("QVariantMap", notify=review_changed)

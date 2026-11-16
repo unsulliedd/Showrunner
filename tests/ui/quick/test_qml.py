@@ -403,6 +403,89 @@ def test_review_apply_and_the_job_offer_draw_without_warnings(
     engine.deleteLater()
 
 
+def test_escape_on_the_job_offer_asks_next_time(
+    load: Any, controller: WindowController, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    from showrunner.app.jobs.store import JobSummary
+
+    load()
+    controller.jobs._offers = [(JobSummary(1, 0.0, "First", 3, 1), True), (JobSummary(2, 0.0, "Second", 3, 0), False)]
+    controller.jobs.offer_changed.emit()
+    popup = load.window.findChild(QObject, "jobOffer")
+    qtbot.waitUntil(lambda: popup.property("visible") is True)
+    assert controller.jobs.offer["id"] == 1
+    QTest.keyClick(load.window, Qt.Key.Key_Escape)
+    # Nothing was resumed or discarded: the next offer shows, and after the last one the popup is gone.
+    assert (controller.jobs.offer["id"], controller.jobs.running) == (2, False)
+    assert popup.property("visible") is True
+    QTest.keyClick(load.window, Qt.Key.Key_Escape)
+    assert controller.jobs.offer == {}
+    qtbot.waitUntil(lambda: popup.property("visible") is False)
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def test_the_matrix_rows_are_one_tab_stop_with_arrow_keys(
+    load: Any, controller: WindowController, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    from .conftest import long_show
+
+    show = long_show(1, 40)
+    load()
+    controller.start()
+    controller.model.set_library(show)
+    controller.select(controller.tree.index(0, 0))
+    qtbot.waitUntil(lambda: not controller.planning)
+    load.window.setProperty("place", "tracks")
+    load()
+    root = load.window.contentItem()
+    stop = _item(root, "matrixRowKeys")
+    rows = _item(root, "matrixRows")
+    # Tab alone reaches the rows, as one stop, though only some of the 40 rows exist.
+    for _ in range(80):
+        if stop.property("activeFocus"):
+            break
+        QTest.keyClick(load.window, Qt.Key.Key_Tab)
+    assert stop.property("activeFocus") is True
+    assert rows.property("currentIndex") == 0
+
+    def marked() -> list[int]:
+        return [r.property("index") for r in _items(root, "matrixRow") if r.property("marked")]
+
+    assert marked() == [0]
+    # Down and Up move row by row and scroll to keep the row in view.
+    for _ in range(25):
+        QTest.keyClick(load.window, Qt.Key.Key_Down)
+    assert rows.property("currentIndex") == 25
+    assert rows.property("contentY") > 0
+    assert marked() == [25]  # the marked row exists, scrolled into view
+    QTest.keyClick(load.window, Qt.Key.Key_Up)
+    assert rows.property("currentIndex") == 24
+    QTest.keyClick(load.window, Qt.Key.Key_End)
+    assert rows.property("currentIndex") == 39
+    QTest.keyClick(load.window, Qt.Key.Key_Down)
+    assert rows.property("currentIndex") == 39  # stops at the last row
+    QTest.keyClick(load.window, Qt.Key.Key_Home)
+    assert (rows.property("currentIndex"), rows.property("contentY")) == (0, rows.property("originY"))
+    # The current row is marked, and Enter focuses its file in the Inspector as a click does.
+    QTest.keyClick(load.window, Qt.Key.Key_Down)
+    QTest.keyClick(load.window, Qt.Key.Key_Down)
+    QTest.keyClick(load.window, Qt.Key.Key_Return)
+    assert controller.focus_path == str(show.items[2].file.path)
+    assert controller.inspector["file"] == show.items[2].file.path.name
+    # A click on a row takes the keyboard there, and the arrows go on from it.
+    _click(load.window, next(r for r in _items(root, "matrixRow") if r.property("index") == 5))
+    assert (rows.property("currentIndex"), controller.focus_path) == (5, str(show.items[5].file.path))
+    QTest.keyClick(load.window, Qt.Key.Key_Down)
+    assert marked() == [6]
+    # Tab leaves the matrix after the one stop; no row takes the focus on its own.
+    QTest.keyClick(load.window, Qt.Key.Key_Tab)
+    assert stop.property("activeFocus") is False
+    assert not any(r.property("activeFocus") for r in _items(root, "matrixRow"))
+    assert load() == []
+    assert qt_warnings() == []
+
+
 def _qml_text() -> str:
     return "\n".join(path.read_text(encoding="utf-8") for path in QML_FILES)
 

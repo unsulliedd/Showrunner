@@ -84,9 +84,12 @@ ScrollPane {
 
                 UiText {
                     Layout.fillWidth: true
-                    visible: (inspector.file.changes ?? []).length === 0
-                    text: Strings.t("inspector.nothing")
-                    color: Theme.muted
+                    // The read problem stands before whatever the choices would still plan for the file.
+                    visible: (inspector.file.changes ?? []).length === 0 || !!inspector.file.unread
+                    text: inspector.file.unread || Strings.t("inspector.nothing")
+                    color: inspector.file.unread ? Theme.change : Theme.muted
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
                 }
 
                 Repeater {
