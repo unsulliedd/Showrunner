@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from PySide6.QtCore import QCoreApplication, QEvent, QThreadPool
 from PySide6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
 
@@ -157,3 +158,23 @@ def test_closing_during_the_first_check_keeps_it_and_a_question_is_a_no(
     qtbot.waitUntil(lambda: bool(programs.question))
     programs.stop()
     assert not programs.question
+
+
+def test_a_check_that_ends_after_its_window_is_gone_reaches_nothing(qapp: QApplication, qtbot: QtBot) -> None:
+    release = threading.Event()
+    checked = threading.Event()
+
+    def slow_check() -> dict[str, DependencyStatus]:
+        checked.set()
+        release.wait(10)
+        return {}
+
+    controller = WindowController(statuses=slow_check)
+    controller.start()
+    assert checked.wait(10)
+    controller.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    release.set()
+    assert QThreadPool.globalInstance().waitForDone(10_000)
+    # The result would call into the deleted window; pytest-qt fails the test on an exception in a slot.
+    qtbot.wait(50)

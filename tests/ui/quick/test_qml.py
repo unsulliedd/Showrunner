@@ -403,6 +403,38 @@ def test_review_apply_and_the_job_offer_draw_without_warnings(
     engine.deleteLater()
 
 
+def test_the_job_list_shrinks_and_clears_without_warnings(
+    qapp: QApplication, qtbot: QtBot, tmp_path: Path, qt_warnings: Any
+) -> None:
+    """A second job with fewer files while the first one's rows show, then Clear: each row reads its own file."""
+    from .test_apply import make_setup
+
+    made = make_setup(qtbot, tmp_path, fail="Show.Name.S01E")  # every check fails, so the files stay as read
+    controller = made.controller
+    warnings: list[str] = []
+    engine = build_engine(controller, on_warnings=lambda errors: warnings.extend(e.toString() for e in errors))
+    window = engine.rootObjects()[0]
+    qtbot.waitUntil(window.isExposed)
+    root = window.contentItem()
+    with qtbot.waitSignal(controller.jobs.ended, timeout=10_000):
+        controller.apply()
+    qtbot.waitUntil(lambda: _item(root, "jobRows").property("count") == 10)
+    for path in made.season[3:]:
+        controller.leave_out_file(str(path), True)
+    qtbot.waitUntil(lambda: not controller.planning and controller.can_apply)
+    with qtbot.waitSignal(controller.jobs.ended, timeout=10_000):
+        controller.apply()
+    qtbot.waitUntil(lambda: _item(root, "jobRows").property("count") == 3)
+    controller.jobs.clear()
+    qtbot.waitUntil(lambda: not _items(root, "jobRows")[0].isVisible())
+    qtbot.wait(50)
+    assert warnings == []
+    assert qt_warnings() == []
+    window.close()
+    engine.deleteLater()
+    controller.deleteLater()
+
+
 def test_escape_on_the_job_offer_asks_next_time(
     load: Any, controller: WindowController, qt_warnings: Any, qtbot: QtBot
 ) -> None:

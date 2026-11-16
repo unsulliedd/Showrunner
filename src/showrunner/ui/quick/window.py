@@ -1338,16 +1338,23 @@ class WindowController(QObject):
 
     @Slot()
     def refresh_programs(self) -> None:
-        job = BackgroundJob(self._check)
-        job.finished.connect(lambda statuses: self._on_statuses(job, statuses))
-        job.failed.connect(lambda error: self._on_statuses(job, {}, error))
+        # A child with bound slots: a check that ends after the window is gone is deleted with it and reaches nothing.
+        job = BackgroundJob(self._check, self)
+        job.finished.connect(self._on_statuses)
+        job.failed.connect(self._on_check_failed)
         self._jobs.add(job)
         job.start()
 
-    def _on_statuses(self, job: BackgroundJob, statuses: Statuses, error: Exception | None = None) -> None:
-        self._jobs.discard(job)
-        if error is not None:
-            _log.error("Checking the programs failed: %s", error)
+    def _on_check_failed(self, error: Exception) -> None:
+        _log.error("Checking the programs failed: %s", error)
+        self._forget_job(self.sender())
+        self._set_statuses({})
+
+    def _on_statuses(self, statuses: Statuses) -> None:
+        self._forget_job(self.sender())
+        self._set_statuses(statuses)
+
+    def _set_statuses(self, statuses: Statuses) -> None:
         self._statuses = statuses
         self.programs_changed.emit()
         self._replan()  # which stages plan depends on the programs found

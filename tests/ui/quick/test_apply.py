@@ -49,7 +49,7 @@ class StandInMux(MuxStage):
             progress(0.5)
         while self.hold is not None and not self.hold.is_set():
             if cancel is not None and cancel.wait(0.01):
-                raise ProcessCancelledError("cancelled")
+                raise ProcessCancelledError("cancelled", ())
         if self.fail and self.fail in mux.source.name:
             problem = VerifyProblem("language", 1, "tur", "eng")
             return StepResult(False, "verify", MuxResult(failure=Failure.VERIFY, problems=(problem,)))
@@ -227,7 +227,9 @@ def test_cancel_stops_mid_step_and_the_job_is_offered_at_the_next_start(
     controller = setup.controller
     setup.hold.clear()
     controller.apply()
-    qtbot.waitUntil(lambda: controller.jobs.running)
+    # Cancel only once the first step holds half written: right after the start the cancel can still come before
+    # the step, which then never runs.
+    qtbot.waitUntil(lambda: controller.jobs.running and controller.jobs.view["rows"][0]["phases"][0]["percent"] == 50)
     with qtbot.waitSignal(controller.jobs.ended, timeout=10_000):
         controller.jobs.cancel()
     view = controller.jobs.view

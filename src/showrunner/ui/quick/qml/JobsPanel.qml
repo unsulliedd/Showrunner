@@ -93,14 +93,18 @@ Item {
             clip: true
             spacing: Theme.space_xs
             boundsBehavior: Flickable.StopAtBounds
-            model: panel.job.rows || []
-            // The list is rebuilt on every step; it follows the running file, or the first that failed.
-            onModelChanged: if ((panel.job.active ?? -1) >= 0) positionViewAtIndex(panel.job.active, ListView.Contain)
+            // A count, not the rows: the rows are rebuilt on every step and every clock tick, and a new array would
+            // reset the view and make every delegate again each time.
+            model: (panel.job.rows || []).length
+            // It follows the running file, or the first that failed.
+            readonly property int active: panel.job.active ?? -1
+            onActiveChanged: if (active >= 0) positionViewAtIndex(active, ListView.Contain)
 
             delegate: Rectangle {
                 id: row
 
-                required property var modelData
+                required property int index
+                readonly property var modelData: panel.job.rows[index]
 
                 width: rows.width
                 implicitHeight: content.implicitHeight + 2 * Theme.space_md
