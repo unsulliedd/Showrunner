@@ -32,13 +32,24 @@ Item {
         anchors.margins: Theme.space_lg
         spacing: Theme.space_lg
 
-        UiText {
+        RowLayout {
             Layout.fillWidth: true
             visible: !panel.editing
-            text: Strings.t("rules.intro")
-            color: Theme.muted
-            font.pixelSize: Theme.text_sm
-            wrapMode: Text.WordWrap
+            spacing: Theme.space_md
+
+            UiText {
+                Layout.fillWidth: true
+                text: Strings.t("rules.intro")
+                color: Theme.muted
+                font.pixelSize: Theme.text_sm
+                wrapMode: Text.WordWrap
+            }
+
+            HelpTip {
+                objectName: "rulesTip"
+                Layout.alignment: Qt.AlignTop
+                topic: "rules"
+            }
         }
 
         ActionButton {

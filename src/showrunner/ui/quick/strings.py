@@ -7,6 +7,7 @@ from typing import Any
 from PySide6.QtCore import QObject, Slot
 
 from showrunner.ui.i18n.catalog import tr, tr_plural
+from showrunner.ui.quick.help import help_topic
 
 
 class Strings(QObject):
@@ -24,3 +25,8 @@ class Strings(QObject):
     @Slot(str, int, result=str)
     def n(self, key: str, count: int) -> str:
         return tr_plural(key, count)
+
+    @Slot(str, result="QVariantMap")
+    def topic(self, name: str) -> dict[str, str]:
+        """The text of a help tip: `title`, `explanation`, `example_label`, `example` and the button's `name`."""
+        return help_topic(name)

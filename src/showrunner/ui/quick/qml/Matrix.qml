@@ -608,6 +608,12 @@ Item {
                 }
             }
 
+            HelpTip {
+                objectName: "firstKeptTip"
+                Layout.alignment: Qt.AlignTop
+                topic: "first_kept"
+            }
+
             UiText {
                 Layout.alignment: Qt.AlignTop
                 Layout.preferredHeight: Theme.row_sm

@@ -423,10 +423,21 @@ FocusScope {
                     }
                 }
 
-                Hint {
+                RowLayout {
+                    Layout.fillWidth: true
                     visible: editor.form.flags_shown
-                    text: Strings.t("rules.editor.action_help")
-                    font.pixelSize: Theme.text_xs
+                    spacing: Theme.space_md
+
+                    Hint {
+                        text: Strings.t("rules.editor.action_help")
+                        font.pixelSize: Theme.text_xs
+                    }
+
+                    HelpTip {
+                        objectName: "firstKeptEditorTip"
+                        Layout.alignment: Qt.AlignTop
+                        topic: "first_kept"
+                    }
                 }
             }
         }

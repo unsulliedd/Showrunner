@@ -97,6 +97,14 @@ Panel {
                 onClicked: app.ask_discard()
             }
 
+            HelpTip {
+                objectName: "discardTip"
+                Layout.alignment: Qt.AlignTop
+                Layout.topMargin: (Theme.row_md - Theme.help_chip) / 2
+                visible: workspace.place === "review"
+                topic: "discard"
+            }
+
             ActionButton {
                 objectName: "excludeBatch"
                 Layout.alignment: Qt.AlignTop
@@ -106,6 +114,13 @@ Panel {
                 Accessible.description: app.place_excluded ? Strings.t("workspace.include_help") : Strings.t("workspace.exclude_help")
                 enabled: !app.locked
                 onClicked: app.exclude_place(!app.place_excluded)
+            }
+
+            HelpTip {
+                objectName: "excludeTip"
+                Layout.alignment: Qt.AlignTop
+                Layout.topMargin: (Theme.row_md - Theme.help_chip) / 2
+                topic: "exclude"
             }
         }
 

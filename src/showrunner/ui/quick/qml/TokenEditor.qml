@@ -184,9 +184,19 @@ Rectangle {
             }
         }
 
-        Label {
+        RowLayout {
+            Layout.fillWidth: true
             Layout.topMargin: Theme.space_sm
-            text: Strings.t("tokens.maps.title")
+            spacing: Theme.space_md
+
+            Label {
+                text: Strings.t("tokens.maps.title")
+            }
+
+            HelpTip {
+                objectName: "replaceValuesTip"
+                topic: "replace_values"
+            }
         }
 
         UiText {
