@@ -54,6 +54,15 @@ def own_rules(layer: Layer) -> list[Any]:
     return list(layer.get("tracks", {}).get("rules", []))
 
 
+def choice_count(layer: Layer) -> int:
+    """How many choices a layer holds: each own rule is one, every other field set is one."""
+    return sum(
+        len(value) if (stage_id, name) == RULES else 1
+        for stage_id, values in layer.items()
+        for name, value in values.items()
+    )
+
+
 def difference(edited: Profile, base: Profile, received: Profile) -> Layer:
     """The own choices of a place stored whole before places passed choices down: `edited`, what it planned with,
     against `base`, what it started from. A field left as `base` has it, or equal to what the place now receives, is

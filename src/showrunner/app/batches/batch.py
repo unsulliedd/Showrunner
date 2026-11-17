@@ -6,8 +6,8 @@ its episodes, and the Movies group's every movie. A place's own choice overrides
 only. The show and the Movies group follow a profile: they hold a working copy of it, which Save writes back and
 Revert returns to. A season, an episode and a movie hold only what they set themselves (`places.Layer`), laid over
 what they receive, so a later change on the show still reaches them wherever they did not choose otherwise; removing
-a place's own choices (`forget`) makes it follow its parent again. Preview plans each file with its own combined
-options.
+a place's own choices (`forget`) makes it follow its parent again, and `discard` does so for a place and everything
+inside it. Preview plans each file with its own combined options.
 """
 
 from __future__ import annotations
@@ -19,7 +19,15 @@ from pathlib import Path
 from typing import Any
 
 from showrunner.app.batches.choices import NO_CHOICE, TrackChoice, TrackSignature, choice_of, choose
-from showrunner.app.batches.places import Layer, combine, difference, layer_from_json, layer_to_json, own_rules
+from showrunner.app.batches.places import (
+    Layer,
+    choice_count,
+    combine,
+    difference,
+    layer_from_json,
+    layer_to_json,
+    own_rules,
+)
 from showrunner.app.batches.places import with_options as layer_with_options
 from showrunner.app.profiles.errors import ProfileError
 from showrunner.app.profiles.profile import Profile, profile_from_json, profile_to_json
@@ -94,6 +102,15 @@ class BatchKey:
         its title or the year each file names, so every place in that row takes the row's show as its root."""
         return replace(self, title=show.title, year=show.year) if self.media is Media.EPISODES else self
 
+    def within(self, place: BatchKey) -> bool:
+        """Whether this place is `place` or lies inside it."""
+        key: BatchKey | None = self
+        while key is not None:
+            if key == place:
+                return True
+            key = key.parent
+        return False
+
     @property
     def root(self) -> BatchKey:
         """The show or the Movies group the place lies in; it follows the profile."""
@@ -101,6 +118,20 @@ class BatchKey:
         while key.parent is not None:
             key = key.parent
         return key
+
+
+@dataclass(frozen=True, slots=True)
+class Discard:
+    """What discarding the changes of a place removes."""
+
+    own: int  # the own choices of a season, an episode or a movie
+    edited: bool  # a show's or the Movies group's unsaved edits of its profile
+    inside: int  # the own choices of the places inside it
+    places: int  # how many places inside it hold some
+
+    @property
+    def anything(self) -> bool:
+        return bool(self.own or self.edited or self.inside)
 
 
 class Batches:
@@ -238,12 +269,31 @@ class Batches:
             copy.set_options(stage_id, replace(current, **follow))
 
     def forget(self, key: BatchKey) -> None:
-        """Drop the place's own choices: a root starts from its profile again at the next `copy`, a nearer place
-        follows its parent."""
+        """Drop the place's own choices, nothing inside it: a root goes back to its profile as saved (the profile it
+        follows now, not the one a new root would start from), a nearer place follows its parent."""
         if key.parent is None:
-            self._copies.pop(key, None)
+            if key in self._copies:
+                self._copies[key].revert()
         else:
             self._layers.pop(key, None)
+
+    def discard_of(self, key: BatchKey) -> Discard:
+        """What `discard` would remove from the place and from every place inside it."""
+        copy = self._copies.get(key) if key.parent is None else None
+        inside = [layer for place, layer in self._layers.items() if place != key and place.within(key)]
+        return Discard(
+            own=choice_count(self.own(key)),
+            edited=copy is not None and copy.changed,
+            inside=sum(choice_count(layer) for layer in inside),
+            places=len(inside),
+        )
+
+    def discard(self, key: BatchKey) -> None:
+        """Discard the changes of the place and of every place inside it, so each follows its parent again."""
+        for place in [place for place in self._layers if place.within(key)]:
+            self.forget(place)
+        if key.parent is None:
+            self.forget(key)
 
     def to_json(self) -> dict[str, Any]:
         """The state to keep with the workspace, so unsaved edits survive a restart."""

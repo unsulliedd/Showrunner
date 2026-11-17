@@ -156,6 +156,26 @@ ApplicationWindow {
 
     JobOffer {}
 
+    // Discard changes: the question names the place and what goes; the answer is final.
+    ConfirmPopup {
+        id: discard
+
+        objectName: "discardPopup"
+        heading: app.discard_question.heading
+        text: app.discard_question.text
+        yes: app.discard_question.yes
+        danger: true
+        onAccepted: app.discard_changes()
+    }
+
+    Connections {
+        target: app
+
+        function onDiscard_asked() {
+            discard.open()
+        }
+    }
+
     SettingsDialog {
         id: settings
     }

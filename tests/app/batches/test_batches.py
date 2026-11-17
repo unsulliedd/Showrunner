@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from showrunner.app.batches.batch import Batches, BatchKey, BatchKind, Media
+from showrunner.app.batches.batch import Batches, BatchKey, BatchKind, Discard, Media
 from showrunner.app.batches.choices import NO_CHOICE, TrackChoice, TrackSignature, choice_of, choose
 from showrunner.app.jobs.preview import preview, preview_each
 from showrunner.app.jobs.stages import TracksStage
@@ -182,6 +182,61 @@ def test_forgetting_a_nearer_place_makes_it_follow_its_parent(tmp_path: Path, st
     batches.forget(show)
     assert not batches.copy(show).changed
     assert dropped(batches, item) == []
+
+
+def test_forgetting_a_root_returns_to_the_profile_it_follows_not_the_one_a_new_root_starts_from(
+    tmp_path: Path, store: ProfileStore
+) -> None:
+    batches = Batches(store)
+    show = BatchKey.of(episode(tmp_path, 1), whole_show=True)
+    other = BatchKey.of(episode(tmp_path, 1, show="Other Show"), whole_show=True)
+    batches.save_as(show, "Mine")
+    drop_commentary(batches, show)
+    batches.switch(other, DEFAULT_PROFILE_NAME)  # the profile a new show starts from is Default again
+    batches.forget(show)
+    assert batches.copy(show).name == "Mine"
+    assert not batches.copy(show).changed
+
+
+def test_discarding_a_folder_clears_it_and_every_place_inside_it(tmp_path: Path, store: ProfileStore) -> None:
+    batches = Batches(store)
+    items = [episode(tmp_path, 1), episode(tmp_path, 2), episode(tmp_path, 1, season=2)]
+    show, one, two = (BatchKey.of(items[0], whole_show=True), BatchKey.of(items[0]), BatchKey.of(items[2]))
+    drop_commentary(batches, show)
+    pick(batches, one, COMMENTARY, TrackChoice(Verdict.KEEP))  # overrides the show: one own rule
+    pick(batches, BatchKey.file(items[1]), ENGLISH, TrackChoice(Verdict.DROP))
+    pick(batches, two, ENGLISH, TrackChoice(Verdict.DROP))
+    other = movie(tmp_path)
+    drop_commentary(batches, BatchKey.file(other))
+    assert batches.discard_of(one) == Discard(own=1, edited=False, inside=1, places=1)
+    assert batches.discard_of(BatchKey.file(items[1])) == Discard(own=1, edited=False, inside=0, places=0)
+    assert batches.discard_of(show) == Discard(own=0, edited=True, inside=3, places=3)
+    batches.discard(one)
+    assert batches.own(one) == {}
+    assert batches.own(BatchKey.file(items[1])) == {}
+    assert batches.own(two) != {}  # a sibling keeps its choices
+    assert dropped(batches, items[0]) == [COMMENTARY.id]  # follows the show again
+    batches.discard(show)
+    assert not batches.discard_of(show).anything
+    assert not batches.copy(show).changed
+    assert dropped(batches, items[2]) == []
+    assert dropped(batches, other) == [COMMENTARY.id]  # the Movies group's place is another folder
+
+
+def test_discarding_the_movies_group_clears_its_movies(tmp_path: Path, store: ProfileStore) -> None:
+    batches = Batches(store)
+    item = movie(tmp_path)
+    drop_commentary(batches, BatchKey.file(item))
+    batches.discard(BatchKey.movies())
+    assert dropped(batches, item) == []
+    assert not batches.discard_of(BatchKey.movies()).anything
+
+
+def test_a_place_with_no_choices_of_its_own_has_nothing_to_discard(tmp_path: Path, store: ProfileStore) -> None:
+    batches = Batches(store)
+    item = episode(tmp_path, 1)
+    for key in (BatchKey.of(item, whole_show=True), BatchKey.of(item), BatchKey.file(item), BatchKey.movies()):
+        assert not batches.discard_of(key).anything
 
 
 def test_files_that_set_nothing_share_their_seasons_options(tmp_path: Path, store: ProfileStore) -> None:

@@ -1261,5 +1261,22 @@
   "rules.delete": "Delete this rule",
   "names.untagged": "Language for untagged tracks",
   "names.untagged_none": "as is",
-  "names.untagged_hint": "Given to audio and subtitle tracks that have no language, such as tr or pt-BR. Empty leaves them as they are."
+  "names.untagged_hint": "Given to audio and subtitle tracks that have no language, such as tr or pt-BR. Empty leaves them as they are.",
+  "workspace.discard": "Discard changes",
+  "workspace.discard_yes": "Discard",
+  "workspace.discard_help": "Remove the choices made on this place and on the places inside it; they follow what is above again.",
+  "discard.heading": "Discard changes on {place}?",
+  "discard.heading_in": "Discard changes on {place} of {over}?",
+  "discard.choices.one": "1 choice",
+  "discard.choices.other": "{count} choices",
+  "discard.places.one": "1 place",
+  "discard.places.other": "{count} places",
+  "discard.parent.season": "the season",
+  "discard.parent.show": "the show",
+  "discard.parent.movies": "the Movies group",
+  "discard.own": "{place} loses {choices} of its own and follows {parent} again.",
+  "discard.edited": "{place} loses its unsaved edits of the profile “{profile}” and goes back to it as saved. The profile pill stops reading edited.",
+  "discard.inside": "Everything set in {places} inside {place} goes too ({choices}).",
+  "discard.final": "This cannot be undone.",
+  "prefs.shortcuts.place_menu": "Library: open the menu of the selected row"
 }

@@ -22,6 +22,9 @@ AbstractButton {
     required property string row_id
 
     readonly property bool isSelected: row_id === app.selected
+
+    // The row was right-clicked, at this point of the row; it is selected first, so the menu is that place's.
+    signal menuAsked(real x, real y)
     readonly property bool isGroup: kind === "show" || kind === "movies"
 
     implicitWidth: treeView.width
@@ -38,6 +41,16 @@ AbstractButton {
         width: parent.width - 2 * x
         radius: Theme.radius_md
         color: row.isSelected ? Theme.select : row.hovered ? Theme.panel_2 : "transparent"
+        border.width: row.isSelected && row.treeView.activeFocus ? Theme.stroke : 0
+        border.color: Theme.control
+    }
+
+    TapHandler {
+        acceptedButtons: Qt.RightButton
+        onTapped: point => {
+            app.select(row.treeView.index(row.row, row.column))
+            row.menuAsked(point.position.x, point.position.y)
+        }
     }
 
     contentItem: Item {

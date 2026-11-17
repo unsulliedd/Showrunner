@@ -46,6 +46,7 @@ SHORTCUT_LIST: tuple[tuple[tuple[str, ...], str], ...] = (
     (("Esc",), "close"),
     (("Up", "Down", "Home", "End"), "sections"),
     (("Up", "Down", "Return"), "results"),
+    (("Menu", "Shift+F10"), "place_menu"),
     (("Return",), "add_token"),
     (("Del",), "remove_chip"),
     (("Ctrl+Left", "Ctrl+Right"), "move_chip"),

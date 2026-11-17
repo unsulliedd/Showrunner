@@ -159,6 +159,7 @@ class WindowController(QObject):
     apply_changed = Signal()  # whether Apply can start, or why it did not
     palette_changed = Signal()
     palette_asked = Signal(str, str)  # the palette asks the window for a place ("place", key) or the drawer
+    discard_asked = Signal()  # Discard changes was chosen: the window asks its question
 
     def __init__(
         self,
@@ -579,6 +580,75 @@ class WindowController(QObject):
             return str(error)
         self._copy_changed()
         return ""
+
+    # Menu of the selected place and Discard changes
+
+    @Property(list, notify=batch_changed)
+    def place_actions(self) -> list[dict[str, Any]]:
+        """What the right-click menu of a library row, and the header, offer for the selected place."""
+        return [{"key": "discard", "text": tr("workspace.discard"), "enabled": self.can_discard}]
+
+    @Slot(str)
+    def place_action(self, key: str) -> None:
+        if key == "discard":
+            self.ask_discard()
+
+    @Property(bool, notify=batch_changed)
+    def can_discard(self) -> bool:
+        """The selected place holds something to discard (its own choices, a root's unsaved edits, or choices of
+        places inside it), and its files are not being applied."""
+        return self._key is not None and not self.locked and self.batches.discard_of(self._key).anything
+
+    @Slot()
+    def ask_discard(self) -> None:
+        if self.can_discard:
+            self.discard_asked.emit()
+
+    @Property("QVariantMap", notify=batch_changed)
+    def discard_question(self) -> dict[str, str]:
+        """The question asked before Discard changes: the place, what goes, and that it cannot be undone."""
+        if self._key is None:
+            return {"heading": "", "text": "", "yes": tr("workspace.discard_yes")}
+        key, found = self._key, self.batches.discard_of(self._key)
+        place = self.batch["title"]
+        lines = []
+        if found.own:
+            parent = key.parent.kind.value if key.parent is not None else ""
+            lines.append(
+                tr(
+                    "discard.own",
+                    place=place,
+                    choices=tr_plural("discard.choices", found.own),
+                    parent=tr(f"discard.parent.{parent}"),
+                )
+            )
+        if found.edited:
+            lines.append(tr("discard.edited", place=place, profile=self.profile))
+        if found.inside:
+            lines.append(
+                tr(
+                    "discard.inside",
+                    place=place,
+                    choices=tr_plural("discard.choices", found.inside),
+                    places=tr_plural("discard.places", found.places),
+                )
+            )
+        lines.append(tr("discard.final"))
+        return {
+            "heading": tr("discard.heading", place=place)
+            if key.kind in (BatchKind.SHOW, BatchKind.MOVIES, BatchKind.MOVIE)
+            else tr("discard.heading_in", place=place, over=self.batch["over"]),
+            "text": "\n\n".join(lines),
+            "yes": tr("workspace.discard_yes"),
+        }
+
+    @Slot()
+    def discard_changes(self) -> None:
+        """Discard the changes of the selected place and of every place inside it, then plan and save as after any
+        other choice."""
+        if self._key is not None and self.can_discard:
+            self.batches.discard(self._key)
+            self._copy_changed()
 
     @Property(QObject, constant=True)
     def settings(self) -> Settings:

@@ -75,9 +75,29 @@ Panel {
             clip: true
             model: app.library
             boundsBehavior: Flickable.StopAtBounds
-            delegate: LibraryRow {}
+            // Tab reaches the tree; Menu or Shift+F10 opens the menu of the selected row.
+            activeFocusOnTab: true
+            delegate: LibraryRow {
+                id: item
+
+                onMenuAsked: (x, y) => menu.popup(item, x, y)
+            }
 
             ScrollBar.vertical: Scroller {}
+
+            function openMenu() {
+                const row = tree.itemAtIndex(app.selected_index)
+                if (row !== null)
+                    menu.popup(row, row.width / 2, row.height)
+            }
+
+            Keys.onMenuPressed: openMenu()
+            Keys.onPressed: event => {
+                if (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier)) {
+                    openMenu()
+                    event.accepted = true
+                }
+            }
 
             function reveal() {
                 const index = app.selected_index
@@ -101,6 +121,14 @@ Panel {
                     tree.reveal()
                 }
             }
+        }
+
+        ActionMenu {
+            id: menu
+
+            objectName: "libraryMenu"
+            actions: app.place_actions
+            onPicked: key => app.place_action(key)
         }
 
         Placeholder {

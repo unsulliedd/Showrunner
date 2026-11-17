@@ -86,6 +86,18 @@ Panel {
             }
 
             ActionButton {
+                objectName: "discardBatch"
+                Layout.alignment: Qt.AlignTop
+                // On Review only, beside what a discard would change; the library's right-click menu offers it anywhere.
+                visible: workspace.place === "review"
+                kind: "ghost"
+                text: Strings.t("workspace.discard")
+                Accessible.description: Strings.t("workspace.discard_help")
+                enabled: app.can_discard
+                onClicked: app.ask_discard()
+            }
+
+            ActionButton {
                 objectName: "leaveOutBatch"
                 Layout.alignment: Qt.AlignTop
                 kind: app.batch_left_out ? "outline" : "ghost"
