@@ -4,7 +4,7 @@ that was interrupted."""
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -52,7 +52,7 @@ class JobResult:
 def create_job(
     store: JobStore,
     preview: Preview,
-    profile: Profile,
+    profile: Profile | Mapping[Path, Profile],
     stages: Sequence[Stage],
     *,
     blocked: Collection[str] = (),
@@ -60,19 +60,20 @@ def create_job(
     left_out_files: Collection[Path] = (),
 ) -> int:
     """Store one step per plan that writes, in file order and then pipeline order, for every file but those in
-    `left_out_files`. `profile`, `stages`, `blocked` and `left_out` are the current ones; a preview made with others
-    raises `StalePreviewError`. A file's plans do not depend on which files are left out, so leaving one out or
-    putting it back needs no new preview."""
+    `left_out_files`. `profile` (one, or one per file by path, see `Preview.is_current`), `stages`, `blocked` and
+    `left_out` are the current ones; a preview made with others raises `StalePreviewError`. A file's plans do not
+    depend on which files are left out, so leaving one out or putting it back needs no new preview."""
     if not preview.is_current(profile, stages, blocked, left_out):
         raise StalePreviewError("the options changed since the preview")
     out = set(left_out_files)
     steps = [
-        (f.item, f.stamp, plan)
+        (f.item, f.stamp, plan, f.options_key)
         for f in preview.files
         if f.stamp is not None and f.item.file.path not in out
         for plan in f.writes
     ]
-    return store.create(preview.options_key, preview.profile, steps)
+    used = {key: preview.profiles[key] for *_, key in steps} or preview.profiles
+    return store.create(preview.options_key, used, steps)
 
 
 def run_job(
@@ -125,7 +126,7 @@ def run_job(
             if resumed.recovery is Recovery.STALE:
                 return StepState.STALE, "", None
             if resumed.recovery is Recovery.RECHECK:
-                verdict, message = _recheck(step, stage, job.profile, read)
+                verdict, message = _recheck(step, stage, job.profile_of(step), read)
         elif not earlier:
             # Only the file's first step can compare stamps: each step that writes changes them.
             verdict, message = _check_stamp(step)
@@ -164,7 +165,7 @@ def run_job(
             step_changed(StepRecord(step.position, step.path, step.plan.stage, state, message, *ended))
         if all(states[s.position][0] is StepState.DONE for s in job.steps if s.path == step.path):
             moved = [written[s.position] for s in job.steps if s.path == step.path and s.position in written]
-            _mark_finished(store, job.options_key, moved[-1] if moved else step.path)
+            _mark_finished(store, step.options_key, moved[-1] if moved else step.path)
         if progress is not None:
             progress(sum(state in FINAL for state, _ in states.values()), len(job.steps))
 

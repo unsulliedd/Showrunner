@@ -71,7 +71,8 @@ Item {
         hoverEnabled: true
         focusPolicy: Qt.StrongFocus
         Accessible.role: Accessible.Button
-        Accessible.name: control.chip.code + " " + control.chip.title + " " + control.chip.name + " " + control.chip.button
+        Accessible.name: [control.chip.code, control.chip.title, control.chip.name, control.chip.button,
+                          control.chip.from || control.chip.over || ""].join(" ")
         onClicked: app.toggle_keep(control.chip.id)
 
         background: Rectangle {
@@ -125,6 +126,12 @@ Item {
                 text: control.chip.count
                 color: Theme.change
                 font.pixelSize: Theme.text_sm
+            }
+
+            PlaceMark {
+                objectName: "placeMark"
+                Layout.maximumWidth: implicitWidth
+                choice: control.chip
             }
 
             FlagButton {

@@ -12,7 +12,7 @@ from showrunner.core.media import Episode, MediaItem, Movie
 from showrunner.core.naming.names import codec_display, hdr_display, resolution
 from showrunner.core.track import ObjectAudio, TrackKind
 from showrunner.ui.i18n.catalog import tr, tr_plural
-from showrunner.ui.sheet.format import movie_name, size_text
+from showrunner.ui.sheet.format import size_text
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,14 +59,21 @@ def heading(key: BatchKey, items: Sequence[MediaItem]) -> Heading:
         seasons = len({i.identity.season for i in items if isinstance(i.identity, Episode)})
         count = (tr_plural("facts.seasons", seasons), tr_plural("facts.episodes", len(items)))
         return Heading(tr("workspace.over.show"), show, _joined((*count, common, size)))
+    first = items[0].identity if items else None
+    if key.kind is BatchKind.EPISODE and len(items) == 1 and isinstance(first, Episode):
+        file = items[0].file
+        over = _joined((show, tr("library.season", number=key.season)))
+        length = duration(file.duration) if file.duration else ""
+        title = first.episode_title or tr("library.episode_untitled", number=first.episode)
+        return Heading(over, title, _joined((length, common, size)))
     if key.kind is BatchKind.MOVIE and len(items) == 1 and isinstance(items[0].identity, Movie):
         movie, file = items[0].identity, items[0].file
         year = str(movie.year) if movie.year else ""
         length = duration(file.duration) if file.duration else ""
         return Heading(tr("workspace.over.movie"), movie.title, _joined((year, length, common, size)))
-    titles = [movie_name(i.identity) for i in items if isinstance(i.identity, Movie)]
-    title = tr("library.movies") if len(titles) == len(items) else tr("workspace.selection")
-    return Heading(tr("workspace.over.selection"), title, _joined((tr_plural("facts.videos", len(items)), size)))
+    return Heading(
+        tr("workspace.over.movies"), tr("library.movies"), _joined((tr_plural("facts.videos", len(items)), size))
+    )
 
 
 def when(opened: str, now: datetime) -> str:

@@ -1,5 +1,6 @@
-"""Choices made on Overview and Tracks: live plans in the background, ordinary rules in the batch's working copy,
-saved to the workspace file as they are made."""
+"""Choices made on Overview and Tracks: live plans in the background, ordinary rules of the place that is open (the
+show's working copy, or a season's, an episode's or a movie's own choices), saved to the workspace file as they are
+made."""
 
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ from pytestqt.qtbot import QtBot
 
 from showrunner.app.library.library import Library
 from showrunner.app.storage.paths import workspace_path
+from showrunner.core.media import Episode
 from showrunner.stages.tracks import Verdict
 from showrunner.ui.quick.library import PLANNED
 from showrunner.ui.quick.window import WindowController
@@ -21,7 +23,9 @@ def open_season(controller: WindowController, library: Library, qtbot: QtBot, ep
     controller.start()
     qtbot.waitUntil(lambda: controller.programs[0]["state"] != "checking")
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[episode].file.path)))
+    row = controller.tree.index_of(str(library.items[episode].file.path))
+    # An episode's row opens that file alone; its season row opens the season. A movie's row opens the movie.
+    controller.select(row.parent() if isinstance(library.items[episode].identity, Episode) else row)
     settle(controller, qtbot)
 
 
@@ -31,6 +35,60 @@ def settle(controller: WindowController, qtbot: QtBot) -> None:
 
 def rules(controller: WindowController) -> list[str]:
     return [" ".join(str(p["text"]) for p in rule["parts"]) for rule in controller.rules]
+
+
+def column(controller: WindowController, header: dict[str, object]) -> int:
+    """The column of the batch open now that stands for the same tracks as `header` of another batch."""
+    same = (
+        h["id"] for h in controller.matrix["headers"] if (h["code"], h["title"]) == (header["code"], header["title"])
+    )
+    return int(next(same))
+
+
+def test_a_show_s_choice_reaches_its_season_and_episode_marked_and_each_can_override_it(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    season = controller.tree.index_of(str(library.items[2].file.path)).parent()
+    controller.select(season.parent())
+    controller.toggle_keep(COMMENTARY)
+    assert controller.profile_edited  # the show's choices are its profile's working copy
+    commentary = controller.matrix["headers"][COMMENTARY]
+    assert (commentary["from"], commentary["over"]) == ("", "")
+    controller.select(season)
+    settle(controller, qtbot)
+    header = controller.matrix["headers"][COMMENTARY]
+    assert (header["state"], header["from"], header["over"]) == ("dropped", "From the show", "")
+    assert controller.overview["groups"][0]["chips"][COMMENTARY]["from"] == "From the show"
+    assert [(r["inherited"], r["from"]) for r in controller.rules] == [(True, "From the show")]
+    # A rule from the show is changed on the show, not here.
+    controller.pause_rule(0, True)
+    assert controller.rules[0]["enabled"]
+    # Kept in this season only: the season's choice takes the place of the show's on the same tracks.
+    controller.toggle_keep(COMMENTARY)
+    settle(controller, qtbot)
+    header = controller.matrix["headers"][COMMENTARY]
+    assert (header["state"], header["from"], header["over"]) == ("kept", "", "Overrides the show")
+    assert [r["inherited"] for r in controller.rules] == [False]
+    assert rules(controller) == ["Leave audio in ENG Dolby Digital 2.0 flagged commentary as it is"]
+    assert controller.matrix["headers"][COMMENTARY]["short"] == "Own choice"
+    assert all(row["cells"][COMMENTARY]["state"] == "kept" for row in controller.matrix["rows"])
+    # One episode: its own place, which follows the season and can drop the track for itself alone.
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    settle(controller, qtbot)
+    assert controller.batch_kind == "episode"
+    assert controller.batch["title"] == "Episode Three"
+    at = column(controller, commentary)
+    header = controller.matrix["headers"][at]
+    assert (header["state"], header["from"]) == ("kept", "From the season")
+    controller.toggle_keep(at)
+    settle(controller, qtbot)
+    assert controller.matrix["headers"][at]["over"] == "Overrides the season"
+    controller.select(season)
+    settle(controller, qtbot)
+    states = [row["cells"][COMMENTARY]["state"] for row in controller.matrix["rows"]]
+    assert states[2] == "dropped"
+    assert states.count("dropped") == 1
 
 
 def test_a_batch_without_choices_plans_nothing(controller: WindowController, library: Library, qtbot: QtBot) -> None:
@@ -48,16 +106,18 @@ def test_a_chip_click_becomes_a_rule_and_the_plan_follows(
     controller.toggle_keep(COMMENTARY)
     # The choice shows at once as a rule; the counts wait for the plan.
     assert rules(controller) == ["Drop audio in ENG Dolby Digital 2.0 flagged commentary"]
-    assert controller.profile_edited
+    # The season's own choice: the show's profile is not edited by it.
+    assert not controller.profile_edited
     settle(controller, qtbot)
     assert controller.matrix["headers"][COMMENTARY]["state"] == "dropped"
     assert controller.change_text == "10 changes in 10 files"
     tabs = {tab["key"]: tab["count"] for tab in controller.workspace_tabs}
     assert (tabs["tracks"], tabs["names"], tabs["review"]) == (10, 0, 10)
-    # The rule is an ordinary one in the batch's working copy.
+    # The rule is an ordinary one among the season's own choices.
     assert controller._key is not None
     (rule,) = controller.batches.profile(controller._key).for_stage("tracks").rules
     assert (rule.verdict, rule.from_choice) == (Verdict.DROP, True)
+    assert controller.batches.own(controller._key) == {"tracks": {"rules": [rule]}}
     # A second click keeps the track again and the rule goes.
     controller.toggle_keep(COMMENTARY)
     settle(controller, qtbot)
@@ -115,9 +175,9 @@ def test_choices_are_saved_as_they_are_made(controller: WindowController, librar
     controller.toggle_keep(COMMENTARY)
     qtbot.waitUntil(workspace_path().is_file)
     saved = json.loads(workspace_path().read_text(encoding="utf-8"))
-    (batch,) = saved["batches"]["batches"]
-    assert batch["key"]["season"] == 1
-    assert batch["options"]["stages"]["tracks"]["rules"][0]["verdict"] == "drop"
+    (place,) = saved["batches"]["places"]
+    assert (place["key"]["kind"], place["key"]["season"]) == ("season", 1)
+    assert place["own"]["tracks"]["rules"][0]["verdict"] == "drop"
 
 
 def test_the_tree_marks_files_with_planned_changes(
@@ -144,10 +204,16 @@ def test_a_movie_shows_cards_and_saves_to_a_new_profile(
 ) -> None:
     open_season(controller, library, qtbot, episode=len(library.items) - 3)
     assert controller.batch_kind == "movie"
+    movie = controller.tree.index_of(str(library.items[-3].file.path))
+    # Dropped on the Movies group, the track is dropped in the movie too, and the profile follows the group.
+    controller.select(movie.parent())
     controller.toggle_keep(COMMENTARY)
+    assert controller.profile_edited
+    controller.select(movie)
     settle(controller, qtbot)
     audio = controller.movie["groups"][0]
     assert [c["state"] for c in audio["cards"]] == ["kept", "kept", "dropped"]
+    assert audio["cards"][2]["from"] == "From Movies"
     assert controller.profile_read_only  # Default cannot be saved over
     controller.save_profile()
     assert controller.profile == "Default"
@@ -163,7 +229,7 @@ def test_the_inspector_follows_the_file_picked_in_a_row(
     controller: WindowController, library: Library, qtbot: QtBot
 ) -> None:
     open_season(controller, library, qtbot)
-    assert controller.inspector["name"] == "Episode Three"
+    assert controller.inspector["name"] == "Episode One"
     controller.focus_file(str(library.items[6].file.path))
     assert controller.inspector["name"] == "Episode Seven"
     assert controller.focus_path == str(library.items[6].file.path)
@@ -182,15 +248,15 @@ def test_the_implied_flags_switch_writes_into_the_working_copy(
     assert not controller.write_implied_flags
     controller.set_write_implied_flags(True)
     assert controller.write_implied_flags
-    assert controller.profile_edited
     assert controller._key is not None
+    assert controller.batches.own(controller._key) == {"metadata": {"write_implied_flags": True}}
     assert controller.batches.profile(controller._key).for_stage("metadata").write_implied_flags
     settle(controller, qtbot)
     tabs = {tab["key"]: tab["count"] for tab in controller.workspace_tabs}
     # Each fixture file has a track whose name implies a flag it does not have.
     assert (tabs["names"], tabs["review"]) == (10, 10)
     controller.set_write_implied_flags(False)
-    assert not controller.profile_edited
+    assert controller.batches.own(controller._key) == {}
 
 
 def test_a_drop_the_plan_refuses_is_undone_by_a_second_click(
@@ -245,12 +311,13 @@ def test_a_column_moves_only_among_its_kind_and_back_again(
     # Pushed past the subtitles, an audio column stops at the last audio place.
     assert controller.move_track(ENGLISH, FORCED) == STEREO
     assert codes(controller)[STEREO] == before[ENGLISH]
-    assert controller.profile_edited
+    assert controller._key is not None
+    assert controller.batches.own(controller._key)["tracks"]["order"]
     # Back where the files have it: no order is stored and nothing is planned.
     assert controller.move_track(STEREO, ENGLISH) == ENGLISH
     assert codes(controller) == before
-    assert controller._key is not None
     assert controller.batches.profile(controller._key).for_stage("tracks").order == []
+    assert controller.batches.own(controller._key) == {}
     settle(controller, qtbot)
     assert controller.change_count == 0
 

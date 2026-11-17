@@ -1,4 +1,5 @@
-"""The workspace state file: every batch's working copy of its profile, so unsaved choices survive a restart."""
+"""The workspace state file: every root's working copy of its profile and every nearer place's own choices, so unsaved
+choices survive a restart. A file of format 1 held a whole profile per batch; `Batches.from_json` reads it as well."""
 
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from showrunner.app.profiles.store import ProfileStore
 from showrunner.app.storage.files import write_json_atomic
 from showrunner.app.storage.paths import workspace_path
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 _log = logging.getLogger(__name__)
 

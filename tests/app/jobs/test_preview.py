@@ -5,8 +5,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import ClassVar
 
-import pytest
-
 from showrunner.app.jobs.groups import ChangeGroup
 from showrunner.app.jobs.preview import FileOutcome, preview
 from showrunner.app.jobs.stages import (
@@ -140,7 +138,7 @@ def test_a_blocked_stage_is_planned_for_no_file_and_seen_as_off(tmp_path: Path, 
     assert tracks.state is PlanState.BLOCKED
     # Metadata plans as if there were no rules: no remux is asked for, the header edits go ahead.
     assert file.outcome is FileOutcome.CHANGES
-    assert result.profile.for_stage("tracks").rules == []
+    assert result.profiles[result.options_key].for_stage("tracks").rules == []
 
 
 def test_a_file_that_cannot_be_read_is_missing(tmp_path: Path, profile: Profile) -> None:
@@ -182,16 +180,6 @@ def test_the_options_key_follows_options_stages_and_blocks(profile: Profile) -> 
     assert preview([], profile, STAGES).is_current(profile, STAGES)
     assert not preview([], profile, STAGES).is_current(profile, STAGES, {"metadata"})
     assert not preview([], profile, STAGES).is_current(profile, STAGES, left_out={ChangeGroup.TRACKS})
-
-
-def test_one_file_can_be_planned_again(tmp_path: Path, profile: Profile) -> None:
-    first, second = movie(tmp_path, "A.mkv"), movie(tmp_path, "B.mkv")
-    whole = preview([first, second], profile, STAGES)
-    titled = replace(second, file=replace(second.file, title="B"))
-    merged = whole.with_files(preview([titled], profile, STAGES))
-    assert [f.item for f in merged.files] == [first, titled]
-    with pytest.raises(ValueError, match="different options"):
-        whole.with_files(preview([titled], naming(profile, title_template=""), STAGES))
 
 
 def test_the_pipeline_leaves_out_a_stage_without_its_program() -> None:

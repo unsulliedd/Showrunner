@@ -11,7 +11,8 @@ from types import SimpleNamespace
 import pytest
 from PySide6.QtWidgets import QApplication
 
-from showrunner.app.jobs.preview import FileOutcome, preview
+from showrunner.app.jobs.hashing import stamp
+from showrunner.app.jobs.preview import FileOutcome, preview, preview_each
 from showrunner.app.jobs.run import JobResult, StalePreviewError, create_job, run_job
 from showrunner.app.jobs.stages import MetadataStage, Stage, StagePlan, StepResult, TracksStage
 from showrunner.app.jobs.store import JobStore, StepState, UnresumableJobError
@@ -134,6 +135,23 @@ def test_a_preview_made_with_other_options_is_refused(
         create_job(store, made, profile.with_options("tracks", TracksOptions(flags_from_names=False)), (stage,))
     with pytest.raises(StalePreviewError):
         create_job(store, made, profile, (stage,), blocked={"metadata"})
+
+
+def test_each_file_keeps_its_own_options_in_the_job(files: SimpleNamespace, store: JobStore, profile: Profile) -> None:
+    """A season whose episode chose otherwise: each file is planned, stored and marked finished with its options."""
+    stage = files.FakeStage()
+    a, b = files.item("a.mkv"), files.item("b.mkv")
+    other = profile.with_options("tracks", TracksOptions(flags_from_names=False))
+    profiles = {a.file.path: profile, b.file.path: other}
+    made = preview_each([a, b], profiles, (stage,))
+    assert made.files[0].options_key != made.files[1].options_key
+    with pytest.raises(StalePreviewError):
+        create_job(store, made, dict.fromkeys(profiles, profile), (stage,))
+    job = store.load(create_job(store, made, profiles, (stage,)))
+    assert [job.profile_of(s).for_stage("tracks").flags_from_names for s in job.steps] == [True, False]
+    run_job(store, job.id, (stage,), read=files.read)
+    for file in made.files:
+        assert store.is_finished(stamp(file.item.file.path).content_hash, file.options_key)
 
 
 def test_a_needs_remux_or_missing_file_gets_no_step(files: SimpleNamespace, store: JobStore, profile: Profile) -> None:

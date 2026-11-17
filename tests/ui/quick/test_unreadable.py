@@ -30,7 +30,7 @@ def season(controller: WindowController, library: Library, qtbot: QtBot) -> Libr
     )
     controller.start()
     controller.model.set_library(failed)
-    controller.select(controller.tree.index_of(str(third.file.path)))
+    controller.select(controller.tree.index_of(str(third.file.path)).parent())
     settle(controller, qtbot)
     return failed
 
@@ -78,7 +78,7 @@ def test_a_file_a_cancelled_read_did_not_reach_says_not_read_without_a_problem(
     unread = replace(third, file=replace(third.file, tracks=()))
     controller.start()
     controller.model.set_library(replace(library, items=(*library.items[:2], unread, *library.items[3:])))
-    controller.select(controller.tree.index_of(str(third.file.path)))
+    controller.select(controller.tree.index_of(str(third.file.path)).parent())
     settle(controller, qtbot)
     row = controller.overview["rows"][2]
     assert (row["warning"], row["changes_text"]) == ("", "Not read")

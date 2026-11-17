@@ -1,34 +1,44 @@
-"""Batches: what one workspace shows (a season, a whole show, a movie or a hand-made selection), each with its own
-working copy of a profile.
+"""Batches: the places a workspace shows (a whole show, a season, an episode, the Movies group or one movie) and the
+choices made on each.
 
-A choice belongs to the batch it was made in. Chips, cards, rules and templates edit that batch's working copy only,
-so dropping a commentary track for one movie never changes another show; Save writes the copy back to its profile,
-Revert returns to the profile. Preview plans a batch's files with that batch's profile, one profile per preview.
+A choice made on a place reaches everything inside it: a show's reaches its seasons and their episodes, a season's
+its episodes, and the Movies group's every movie. A place's own choice overrides the one it receives, for that place
+only. The show and the Movies group follow a profile: they hold a working copy of it, which Save writes back and
+Revert returns to. A season, an episode and a movie hold only what they set themselves (`places.Layer`), laid over
+what they receive, so a later change on the show still reaches them wherever they did not choose otherwise; removing
+a place's own choices (`forget`) makes it follow its parent again. Preview plans each file with its own combined
+options.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from showrunner.app.batches.choices import NO_CHOICE, TrackChoice, TrackSignature, choice_of, choose
+from showrunner.app.batches.places import Layer, combine, difference, layer_from_json, layer_to_json, own_rules
+from showrunner.app.batches.places import with_options as layer_with_options
 from showrunner.app.profiles.errors import ProfileError
 from showrunner.app.profiles.profile import Profile, profile_from_json, profile_to_json
 from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME, ProfileStore
 from showrunner.app.profiles.working import WorkingCopy
 from showrunner.core.media import Episode, MediaItem
+from showrunner.stages.tracks import TracksOptions
 
 
 class BatchKind(StrEnum):
-    SEASON = "season"
     SHOW = "show"
+    SEASON = "season"
+    EPISODE = "episode"
     MOVIE = "movie"
-    SELECTION = "selection"
+    MOVIES = "movies"  # the Movies group: every movie in the library
 
 
 class Media(StrEnum):
-    """What a batch holds; a new batch starts from the profile last used for the same media."""
+    """What a batch holds; a new show or the Movies group starts from the profile last used for the same media."""
 
     EPISODES = "episodes"
     MOVIES = "movies"
@@ -36,15 +46,14 @@ class Media(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class BatchKey:
-    """Names a batch by what it is rather than where its files are, so a renamed or moved file stays in its batch.
-    A selection is the one batch named by its files."""
+    """Names a place by what it is rather than where its files are, so a renamed or moved file keeps its choices."""
 
     kind: BatchKind
     media: Media
     title: str = ""  # the show's or the movie's
     year: int | None = None
     season: int | None = None
-    paths: tuple[str, ...] = ()  # a selection's files
+    episode: int | None = None
 
     @classmethod
     def of(cls, item: MediaItem, *, whole_show: bool = False) -> BatchKey:
@@ -57,34 +66,131 @@ class BatchKey:
         return cls(BatchKind.MOVIE, Media.MOVIES, identity.title, identity.year)
 
     @classmethod
-    def selection(cls, paths: list[Path], media: Media) -> BatchKey:
-        return cls(BatchKind.SELECTION, media, paths=tuple(sorted(str(path) for path in paths)))
+    def file(cls, item: MediaItem) -> BatchKey:
+        """The place of one file: its episode, or its movie."""
+        identity = item.identity
+        if isinstance(identity, Episode):
+            season, episode = identity.season, identity.episode
+            return cls(BatchKind.EPISODE, Media.EPISODES, identity.show, identity.year, season, episode)
+        return cls.of(item)
+
+    @classmethod
+    def movies(cls) -> BatchKey:
+        return cls(BatchKind.MOVIES, Media.MOVIES)
+
+    @property
+    def parent(self) -> BatchKey | None:
+        """The place this one receives choices from; None for a show and for the Movies group."""
+        if self.kind is BatchKind.EPISODE:
+            return BatchKey(BatchKind.SEASON, self.media, self.title, self.year, self.season)
+        if self.kind is BatchKind.SEASON:
+            return BatchKey(BatchKind.SHOW, self.media, self.title, self.year)
+        if self.kind is BatchKind.MOVIE:
+            return BatchKey.movies()
+        return None
+
+    def in_show(self, show: BatchKey) -> BatchKey:
+        """This place named as a place of `show`. The library lists a show's files under one row whatever the case of
+        its title or the year each file names, so every place in that row takes the row's show as its root."""
+        return replace(self, title=show.title, year=show.year) if self.media is Media.EPISODES else self
+
+    @property
+    def root(self) -> BatchKey:
+        """The show or the Movies group the place lies in; it follows the profile."""
+        key = self
+        while key.parent is not None:
+            key = key.parent
+        return key
 
 
 class Batches:
-    """The working copy of every batch opened, created from a profile the first time a batch is asked for."""
+    """The working copy of every show and of the Movies group, created from a profile the first time it is asked for,
+    and the own choices of every nearer place."""
 
     def __init__(self, store: ProfileStore, last_used: dict[Media, str] | None = None) -> None:
         self._store = store
-        self._copies: dict[BatchKey, WorkingCopy] = {}
-        self.last_used: dict[Media, str] = dict(last_used or {})  # media -> the profile a new batch starts from
+        self._copies: dict[BatchKey, WorkingCopy] = {}  # by root
+        self._layers: dict[BatchKey, Layer] = {}  # a season's, an episode's or a movie's own choices
+        self.last_used: dict[Media, str] = dict(last_used or {})  # media -> the profile a new root starts from
 
     def copy(self, key: BatchKey) -> WorkingCopy:
-        """The batch's working copy; edits go through it (`set_options`, `save`, `revert`)."""
-        if key not in self._copies:
-            self._copies[key] = self._open(self.last_used.get(key.media, DEFAULT_PROFILE_NAME))
-        return self._copies[key]
+        """The working copy of the profile the place follows: its show's, or the Movies group's for a movie. The
+        profile pill, Save and Revert work on it, from whichever place inside it is open."""
+        root = key.root
+        if root not in self._copies:
+            self._copies[root] = self._open(self.last_used.get(root.media, DEFAULT_PROFILE_NAME))
+        return self._copies[root]
 
     def profile(self, key: BatchKey) -> Profile:
-        """What Preview plans the batch's files with, unsaved edits included.
+        """What Preview plans the place's files with: the root's working copy, unsaved edits included, with the own
+        choices of each place down to `key` laid over it."""
+        return self._combined(key, {})
 
-        Every file of a batch gets the same profile. An exception for one episode would be kept with the batch as
-        well, as options laid over this profile for that file alone.
-        """
-        return self.copy(key).profile
+    def received(self, key: BatchKey) -> Profile | None:
+        """What the place receives from above; None for a show and for the Movies group."""
+        return self.profile(key.parent) if key.parent is not None else None
+
+    def file_profiles(self, items: Sequence[MediaItem], under: BatchKey) -> dict[Path, Profile]:
+        """Each file's options, the files lying in place `under` (see `BatchKey.in_show`). Files whose places set
+        nothing of their own share their parent's object, so a planner can plan them as one group."""
+        cache: dict[BatchKey, Profile] = {}
+        return {item.file.path: self._combined(BatchKey.file(item).in_show(under), cache) for item in items}
+
+    def own(self, key: BatchKey) -> Layer:
+        """The fields a season, an episode or a movie set itself; empty for a root, whose choices are its copy."""
+        return self._layers.get(key, {})
+
+    def own_tracks(self, key: BatchKey) -> TracksOptions:
+        """The place's track options with only its own rules, which rule edits work on; the other fields are as the
+        place has them."""
+        tracks = self.profile(key).for_stage("tracks")
+        return tracks if key.parent is None else replace(tracks, rules=own_rules(self.own(key)))
+
+    def received_choice(self, key: BatchKey, signature: TrackSignature) -> TrackChoice:
+        """The choice on `signature` the place receives from above; none for a root."""
+        received = self.received(key)
+        return choice_of(received.for_stage("tracks"), signature) if received is not None else NO_CHOICE
+
+    def with_choice(self, key: BatchKey, signature: TrackSignature, choice: TrackChoice) -> TracksOptions:
+        """The place's own track options (`own_tracks`) with `choice` as its choice on `signature`. A choice equal to
+        the one received leaves the place following its parent there; another one, no choice included, overrides it
+        for this place."""
+        return choose(self.own_tracks(key), signature, choice, self.received_choice(key, signature))
+
+    def set_options(self, key: BatchKey, stage_id: str, options: Any) -> None:
+        """Set a place's options of one stage. A root's go into its working copy. A nearer place keeps the fields that
+        differ from what it receives, and the rules of `options` as its own rules (see `own_tracks`)."""
+        if key.parent is None:
+            self.copy(key).set_options(stage_id, options)
+            return
+        received = self.profile(key.parent).for_stage(stage_id)
+        layer = layer_with_options(self.own(key), stage_id, options, received)
+        if layer:
+            self._layers[key] = layer
+        else:
+            self._layers.pop(key, None)
+
+    def origins(self, key: BatchKey) -> list[BatchKey]:
+        """For each rule of the place's tracks options, in order, the place that set it. The root's working copy
+        counts as the root's, the profile's own rules included."""
+        if key.parent is None:
+            return [key] * len(self.copy(key).profile.for_stage("tracks").rules)
+        own = own_rules(self.own(key))
+        received = self.profile(key.parent).for_stage("tracks").rules
+        from_above = self.origins(key.parent)
+        if not own:
+            return from_above
+        kept = self.profile(key).for_stage("tracks").rules[len(own) :]
+        result, n = [key] * len(own), 0
+        # The rules kept from above are the same objects, in the same order.
+        for rule, origin in zip(received, from_above, strict=True):
+            if n < len(kept) and kept[n] is rule:
+                result.append(origin)
+                n += 1
+        return result
 
     def switch(self, key: BatchKey, name: str) -> None:
-        """Start the batch from another profile; its unsaved edits are dropped, so the caller asks first."""
+        """Start the place's root from another profile; its unsaved edits are dropped, so the caller asks first."""
         self.copy(key).switch(name)
         self.last_used[key.media] = name
 
@@ -94,19 +200,19 @@ class Batches:
         self.last_used[key.media] = name
 
     def following(self, name: str) -> list[BatchKey]:
-        """The batches whose working copy starts from profile `name`."""
+        """The roots whose working copy starts from profile `name`."""
         return [key for key, copy in self._copies.items() if copy.name.casefold() == name.casefold()]
 
     def rename_profile(self, name: str, new_name: str) -> None:
-        """Rename a saved profile's file; the batches that follow it keep their edits under the new name."""
+        """Rename a saved profile's file; the roots that follow it keep their edits under the new name."""
         self._store.rename(name, new_name)
         for key in self.following(name):
             self._copies[key].renamed(new_name)
         self.last_used = {media: new_name if used == name else used for media, used in self.last_used.items()}
 
     def delete_profile(self, name: str) -> None:
-        """Delete a saved profile's file. A batch that followed it keeps what it planned with, as edits over the
-        default profile, so nothing chosen is lost; a new batch of that kind starts from the default."""
+        """Delete a saved profile's file. A root that followed it keeps what it planned with, as edits over the
+        default profile, so nothing chosen is lost; a new root of that kind starts from the default."""
         self._store.delete(name)
         for key in self.following(name):
             edited = self._copies[key].profile
@@ -116,7 +222,7 @@ class Batches:
         self.last_used = {media: used for media, used in self.last_used.items() if used != name}
 
     def edit_profile(self, name: str, stage_id: str, **changes: Any) -> None:
-        """Change fields of one stage in a saved profile's file. A batch that follows it takes each change unless
+        """Change fields of one stage in a saved profile's file. A root that follows it takes each change unless
         its working copy already changed that field, so an unsaved choice is kept and nothing reads as edited
         that was not."""
         saved = self._store.load(name).value
@@ -132,8 +238,12 @@ class Batches:
             copy.set_options(stage_id, replace(current, **follow))
 
     def forget(self, key: BatchKey) -> None:
-        """Drop the batch's working copy; the next `copy` starts from a profile again."""
-        self._copies.pop(key, None)
+        """Drop the place's own choices: a root starts from its profile again at the next `copy`, a nearer place
+        follows its parent."""
+        if key.parent is None:
+            self._copies.pop(key, None)
+        else:
+            self._layers.pop(key, None)
 
     def to_json(self) -> dict[str, Any]:
         """The state to keep with the workspace, so unsaved edits survive a restart."""
@@ -143,12 +253,18 @@ class Batches:
                 {"key": _key_json(key), "profile": copy.name, "options": profile_to_json(copy.profile)}
                 for key, copy in self._copies.items()
             ],
+            "places": [{"key": _key_json(key), "own": layer_to_json(layer)} for key, layer in self._layers.items()],
         }
 
     @classmethod
     def from_json(cls, store: ProfileStore, data: Any) -> Batches:
-        """Forgiving like a profile file: an entry that cannot be read is skipped, and a batch whose profile is
-        gone keeps its edits over the default profile."""
+        """Forgiving like a profile file: an entry that cannot be read is skipped, and a root whose profile is gone
+        keeps its edits over the default profile.
+
+        A season or a movie stored before places passed choices down was a whole edited profile of its own. What was
+        changed in it becomes that place's own choices (`places.difference`), so it plans as before wherever it chose
+        and follows its show elsewhere. Its show is started from its profile when the show was never opened. Of the
+        old selections, named by their files, the last becomes the Movies group."""
         data = data if isinstance(data, dict) else {}
         last = data.get("last_used")
         last_used = {
@@ -158,17 +274,52 @@ class Batches:
         }
         batches = cls(store, last_used)
         entries = data.get("batches")
+        whole: list[tuple[BatchKey, str, Profile]] = []
         for entry in entries if isinstance(entries, list) else ():
             try:
                 key = _key_from_json(entry["key"])
-                copy = batches._open(entry["profile"])
-                edited = profile_from_json(copy.name, entry["options"]).value
+                name = entry["profile"]
+                if not isinstance(name, str):
+                    raise TypeError("a profile name is text")
+                edited = profile_from_json(name, entry["options"]).value
             except (AttributeError, KeyError, TypeError, ValueError, ProfileError):
                 continue
-            for stage_id, options in edited.options.items():
-                copy.set_options(stage_id, options)
-            batches._copies[key] = copy
+            whole.append((key, name, edited))
+        # The roots first, so an old season is compared with its show's copy.
+        for key, name, edited in sorted(whole, key=lambda found: found[0].parent is not None):
+            if key.parent is None:
+                copy = batches._copies[key] = batches._open(name)
+                for stage_id, options in edited.options.items():
+                    copy.set_options(stage_id, options)
+                continue
+            if key.root not in batches._copies:
+                batches._copies[key.root] = batches._open(name)
+            root, received = batches._copies[key.root], batches.profile(key.parent)
+            # On the root's profile, only what the place changed there is its own; on another profile, what it planned
+            # with that the root does not give.
+            base = root.saved if root.name.casefold() == name.casefold() else received
+            if layer := difference(edited, base, received):
+                batches._layers[key] = layer
+        places = data.get("places")
+        for entry in places if isinstance(places, list) else ():
+            try:
+                key = _key_from_json(entry["key"])
+            except (AttributeError, KeyError, TypeError, ValueError):
+                continue
+            if key.parent is not None and (layer := layer_from_json(entry.get("own"))):
+                batches._layers[key] = layer
         return batches
+
+    def _combined(self, key: BatchKey, cache: dict[BatchKey, Profile]) -> Profile:
+        if key not in cache:
+            parent = key.parent
+            if parent is None:
+                cache[key] = self.copy(key).profile
+            else:
+                received = self._combined(parent, cache)
+                layer = self._layers.get(key)
+                cache[key] = combine(received, layer) if layer else received
+        return cache[key]
 
     def _open(self, name: str) -> WorkingCopy:
         try:
@@ -178,16 +329,20 @@ class Batches:
 
 
 def _key_json(key: BatchKey) -> dict[str, Any]:
-    return {**asdict(key), "paths": list(key.paths)}
+    return asdict(key)
 
 
 def _key_from_json(data: Any) -> BatchKey:
+    """A selection stored by its files before is read as the Movies group."""
     if not isinstance(data, dict):
         raise TypeError("a batch key is an object")
-    year, season, paths = data.get("year"), data.get("season"), data.get("paths", [])
-    if not all(value is None or type(value) is int for value in (year, season)) or not isinstance(paths, list):
+    if data.get("kind") in ("selection", BatchKind.MOVIES):
+        return BatchKey.movies()
+    kind, media = BatchKind(data["kind"]), Media(data["media"])
+    year, season, episode = data.get("year"), data.get("season"), data.get("episode")
+    if not all(value is None or type(value) is int for value in (year, season, episode)):
         raise TypeError("a batch key has a wrong value")
     title = data.get("title", "")
-    if not isinstance(title, str) or not all(isinstance(path, str) for path in paths):
+    if not isinstance(title, str):
         raise TypeError("a batch key has a wrong value")
-    return BatchKey(BatchKind(data["kind"]), Media(data["media"]), title, year, season, tuple(paths))
+    return BatchKey(kind, media, title, year, season, episode)

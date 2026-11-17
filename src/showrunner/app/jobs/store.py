@@ -8,7 +8,7 @@ import json
 import pickle
 import sqlite3
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -73,6 +73,7 @@ class StoredStep:
     plan: StagePlan
     state: StepState
     message: str = ""
+    options_key: str = ""  # of the options its file was planned with, a key of `StoredJob.profiles`
 
     @property
     def path(self) -> Path:
@@ -84,8 +85,11 @@ class StoredJob:
     id: int
     created: float  # seconds since the epoch
     options_key: str
-    profile: Profile
+    profiles: dict[str, Profile]  # by options key: each file is planned with its own place's options
     steps: tuple[StoredStep, ...]
+
+    def profile_of(self, step: StoredStep) -> Profile:
+        return self.profiles[step.options_key]
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,12 +130,22 @@ class JobStore:
             connection.close()
 
     def create(
-        self, options_key: str, profile: Profile, steps: Sequence[tuple[MediaItem, FileStamp, StagePlan]]
+        self,
+        options_key: str,
+        profiles: Mapping[str, Profile],
+        steps: Sequence[tuple[MediaItem, FileStamp, StagePlan, str]],
     ) -> int:
+        """Each step is an item, its stamp, its plan and the key in `profiles` of the options it was planned with.
+        The options are stored in the job's `profile` column as one object, with each step's key in order."""
+        stored = {
+            "profiles": {key: profile_to_json(profile) for key, profile in profiles.items()},
+            "steps": [key for *_, key in steps],
+        }
+        name = next(iter(profiles.values())).name if profiles else ""
         with self._connect() as connection:
             cursor = connection.execute(
                 "INSERT INTO jobs (created, app_version, options_key, profile_name, profile) VALUES (?, ?, ?, ?, ?)",
-                (time.time(), __version__, options_key, profile.name, json.dumps(profile_to_json(profile))),
+                (time.time(), __version__, options_key, name, json.dumps(stored)),
             )
             job_id = cursor.lastrowid
             assert job_id is not None
@@ -149,7 +163,7 @@ class JobStore:
                         pickle.dumps(plan),
                         StepState.PENDING.value,
                     )
-                    for position, (item, stamp, plan) in enumerate(steps)
+                    for position, (item, stamp, plan, _key) in enumerate(steps)
                 ],
             )
         return job_id
@@ -171,7 +185,9 @@ class JobStore:
         if version != __version__:
             raise UnresumableJobError(f"job {job_id} was stored by version {version}, this is {__version__}")
         try:
-            profile = profile_from_json(name, json.loads(profile_text)).value
+            stored = json.loads(profile_text)
+            profiles = {k: profile_from_json(name, data).value for k, data in stored["profiles"].items()}
+            keys = stored["steps"]
             steps = tuple(
                 StoredStep(
                     position,
@@ -180,12 +196,15 @@ class JobStore:
                     pickle.loads(plan),
                     StepState(state),
                     message,
+                    keys[position],
                 )
                 for position, size, mtime, content, item, plan, state, message in rows
             )
+            if any(step.options_key not in profiles for step in steps):
+                raise KeyError("a step's options are not stored")
         except Exception as error:  # any failure to rebuild the objects means the job cannot be resumed
             raise UnresumableJobError(f"job {job_id} cannot be read: {error}") from error
-        return StoredJob(job_id, created, key, profile, steps)
+        return StoredJob(job_id, created, key, profiles, steps)
 
     def set_state(self, job_id: int, position: int, state: StepState, message: str = "") -> None:
         with self._connect() as connection:

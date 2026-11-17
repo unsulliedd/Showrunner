@@ -7,6 +7,7 @@ field.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
 from enum import Enum, StrEnum
 from typing import Any, cast, get_args, get_origin, get_type_hints
@@ -133,11 +134,21 @@ def to_sparse(obj: Any) -> dict[str, Any]:
     return {f.name: _encode(getattr(obj, f.name)) for f in fields(obj) if getattr(obj, f.name) != _default(f)}
 
 
+def to_fields(obj: Any, names: Iterable[str]) -> dict[str, Any]:
+    """The named fields in JSON-ready form, also those equal to their defaults."""
+    return {name: _encode(getattr(obj, name)) for name in names}
+
+
 def from_sparse(cls: type, data: Any, where: str, warnings: list[LoadWarning]) -> Any:
     """Build `cls` from sparse JSON. Bad or unknown entries are skipped and reported in `warnings`."""
+    return cls(**from_fields(cls, data, where, warnings))
+
+
+def from_fields(cls: type, data: Any, where: str, warnings: list[LoadWarning]) -> dict[str, Any]:
+    """The fields of `cls` that JSON `data` holds, decoded; bad or unknown entries are skipped and reported."""
     if not isinstance(data, dict):
         warnings.append(LoadWarning(WarningKind.WRONG_TYPE, where))
-        return cls()
+        return {}
     hints = get_type_hints(cls)
     known = {f.name for f in fields(cls)}
     values: dict[str, Any] = {}
@@ -150,4 +161,4 @@ def from_sparse(cls: type, data: Any, where: str, warnings: list[LoadWarning]) -
             values[key] = _decode(hints[key], raw)
         except _MismatchError:
             warnings.append(LoadWarning(WarningKind.WRONG_TYPE, location))
-    return cls(**values)
+    return values

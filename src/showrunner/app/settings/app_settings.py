@@ -40,7 +40,7 @@ class AppSettings:
     startup: Startup = Startup.LAST_WORKSPACE
     # The workspace: what the window had open when it closed, for the next start.
     last_folders: list[str] = field(default_factory=list)
-    last_selection: str = ""  # the path of the selected video
+    last_selection: str = ""  # the library row selected: a video's path, or the names down to a show or season row
     # The `{source}` of the batch (BluRay, WEB-DL, ...); empty guesses it from each file's name. Kept with the
     # workspace, not the profile, since it describes the files rather than how to treat them.
     batch_source: str = ""

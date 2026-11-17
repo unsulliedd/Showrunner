@@ -55,6 +55,7 @@ def test_a_track_order_survives_a_restart(tmp_path: Path, store: ProfileStore) -
 
     again = load_batches(store, path).copy(SEASON)
     assert again.profile.for_stage("tracks").order == order
+    assert json.loads(path.read_text(encoding="utf-8"))["format"] == 2
 
 
 def test_a_file_from_before_the_track_order_loads_without_one(tmp_path: Path, store: ProfileStore) -> None:
@@ -67,6 +68,10 @@ def test_a_file_from_before_the_track_order_loads_without_one(tmp_path: Path, st
         "options": {"format": 1, "stages": {"tracks": {"rules": [rule]}}},
     }
     path.write_text(json.dumps({"format": 1, "batches": {"last_used": {}, "batches": [entry]}}), encoding="utf-8")
-    tracks = load_batches(store, path).copy(SEASON).profile.for_stage("tracks")
+    batches = load_batches(store, path)
+    tracks = batches.profile(SEASON).for_stage("tracks")
     assert tracks.order == []
+    # The season's choice is its own; its show, never opened, starts from the season's profile.
+    assert not batches.copy(SEASON).changed
+    assert batches.own(SEASON)["tracks"]["rules"] == tracks.rules
     assert [r.match.languages for r in tracks.rules] == [["tr"]]

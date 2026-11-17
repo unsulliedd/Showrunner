@@ -91,7 +91,7 @@ def test_a_new_rule_is_written_to_the_working_copy_and_the_plan_follows(
     assert rules(controller) == ["Drop subtitles in TUR flagged forced"]
     (rule,) = tracks(controller).rules
     assert (rule.from_choice, rule.enabled) == (False, True)
-    assert controller.profile_edited
+    assert controller.batches.own(controller._key)  # type: ignore[arg-type]
     settle(controller, qtbot)
     # The live plan, Overview's chips and Review follow like for any choice.
     assert controller.matrix["headers"][FORCED]["state"] == "dropped"
@@ -504,7 +504,7 @@ def test_the_editor_opens_and_saves_from_the_keyboard(
     load()
     controller.start()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     load.window.setProperty("place", "tracks")
     load()
@@ -572,7 +572,7 @@ def test_a_choice_has_no_pencil_and_a_written_rule_does(
     load()
     controller.start()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     controller.toggle_keep(COMMENTARY)
     write(controller, TrackRule(label="Mine"))
@@ -596,7 +596,7 @@ def test_the_pattern_switch_answers_the_keyboard(
     load()
     controller.start()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     load.window.setProperty("place", "tracks")
     controller.rule_editor.open_new()

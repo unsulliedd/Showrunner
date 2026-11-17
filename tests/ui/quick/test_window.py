@@ -64,12 +64,14 @@ def test_the_filter_and_needs_a_look_narrow_the_tree(controller: WindowControlle
     assert not controller.tree.index_of(str(library.items[5].file.path)).isValid()
 
 
-def test_an_episode_opens_its_season(controller: WindowController, library: Library) -> None:
+def test_an_episode_opens_its_own_place(controller: WindowController, library: Library) -> None:
     controller.model.set_library(library)
     select_path(controller, library.items[2].file.path)
     assert controller.has_batch
-    assert controller.batch_kind == "season"
-    assert controller.batch["title"] == "Season 1"
+    assert controller.batch_kind == "episode"
+    assert controller.batch["over"] == "Show Name (2020) · Season 1"
+    assert controller.batch["title"] == "Episode Three"
+    assert len(controller.matrix["rows"]) == 1
     assert controller.selected == str(library.items[2].file.path)
     assert controller.selected_index.isValid()
     assert controller.side_tabs("overview") == [
@@ -92,7 +94,7 @@ def test_groups_open_their_batch(controller: WindowController, library: Library)
     controller.select(movie)
     assert controller.batch_kind == "movie"
     controller.select(movie.parent())
-    assert (controller.batch_kind, controller.batch["title"]) == ("selection", "Movies")
+    assert (controller.batch_kind, controller.batch["title"]) == ("movies", "Movies")
 
 
 def test_the_pill_switches_the_selected_batch(controller: WindowController, library: Library) -> None:
@@ -167,22 +169,26 @@ def test_a_dropped_folder_loads_and_is_remembered(qtbot: QtBot, tmp_path: Path, 
     settings = load_settings().value
     assert settings.last_folders == [str(folder)]
     assert list(settings.recent_folders) == [str(folder)]
-    assert json.loads(workspace_path().read_text(encoding="utf-8"))["format"] == 1
+    assert json.loads(workspace_path().read_text(encoding="utf-8"))["format"] == 2
 
     again = WindowController(loader=LibraryLoader(programs=Programs(None, None, None)), get_program=opened.append)
     with qtbot.waitSignal(again.library_changed):
         again.restore_workspace()
     qtbot.waitUntil(lambda: not again.busy)
     assert again.model.library.items[0].file.path == video
+    # The row that was selected opens again: the show, not its first episode alone.
+    assert again.selected == controller.selected
+    assert again.batch_kind == controller.batch_kind == "show"
 
 
 def test_a_second_load_refreshes_the_selected_batch(controller: WindowController, library: Library) -> None:
     season = library.items[:10]
     controller._on_loaded(LibraryLoad(items=season[:2]))
-    select_path(controller, season[0].file.path)
+    controller.select(controller.tree.index_of(str(season[0].file.path)).parent())
     assert controller.batch["facts"].startswith("2 episodes")
+    selected = controller.selected
     controller._on_loaded(LibraryLoad(items=season[2:]))
-    assert controller.selected == str(season[0].file.path)
+    assert controller.selected == selected
     assert controller.batch["facts"].startswith("10 episodes")
 
 

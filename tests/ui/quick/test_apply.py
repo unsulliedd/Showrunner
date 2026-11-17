@@ -107,7 +107,7 @@ def make_setup(qtbot: QtBot, tmp_path: Path, **stand_in: Any) -> Setup:
     controller.model.set_library(library)
     controller.start()
     season = [i.file.path for i in library.items if i.file.path.exists()]
-    controller.select(controller.tree.index_of(str(season[0])))
+    controller.select(controller.tree.index_of(str(season[0])).parent())
     qtbot.waitUntil(lambda: controller.programs[0]["state"] != "checking")
     qtbot.waitUntil(lambda: not controller.planning)
     if controller.matrix["headers"][COMMENTARY]["state"] == "kept":  # a working copy saved by an earlier window
@@ -324,7 +324,7 @@ def test_a_real_file_is_remuxed_checked_and_its_original_kept(
     qtbot.waitUntil(lambda: controller.programs[0]["state"] != "checking")
     copy = controller.batches.copy(BatchKey.of(item))
     copy.set_options("mux", replace(copy.profile.for_stage("mux"), suffix=suffix))
-    controller.select(controller.tree.index_of(str(real_episode.video)))
+    controller.select(controller.tree.index_of(str(real_episode.video)).parent())
     controller.set_original("keep")
     qtbot.waitUntil(lambda: not controller.planning)
     headers = controller.matrix["headers"]

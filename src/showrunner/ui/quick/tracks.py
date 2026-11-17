@@ -15,6 +15,7 @@ from showrunner.app.batches.choices import (
     TrackChoice,
     TrackGroups,
     TrackSignature,
+    choice_index,
     choice_of,
     in_order,
     signature_of,
@@ -60,6 +61,16 @@ class Column:
 
     signature: TrackSignature
     paired: PairedFile | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Received:
+    """What a season, an episode or a movie receives from above, to mark where a choice comes from. An origin is the
+    kind of place that set a rule (`show`, `season`, `selection`), or "" for the batch's own."""
+
+    origins: Sequence[str] = ()  # per rule of the batch's track options
+    tracks: TracksOptions = field(default_factory=TracksOptions)  # the track options received
+    received_origins: Sequence[str] = ()  # per rule of `tracks`
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +184,7 @@ class BatchView:
     firsts: dict[TrackKind, TrackSignature] = field(default_factory=dict)
     # Why a file's tracks could not be read, by path; those files show it instead of a plan.
     failures: Mapping[str, str] = field(default_factory=dict, compare=False)
+    received: Received = field(default_factory=Received)
     # Each file's cells, built on first use: the headers, the rows and the Inspector all read them.
     _cells: dict[str, list[dict[str, object]]] = field(default_factory=dict, compare=False, repr=False)
     # Each signature's track names, file by file, built on first use.
@@ -185,11 +197,13 @@ class BatchView:
         options: TracksOptions,
         files: Sequence[FilePreview],
         failures: Mapping[str, str] | None = None,
+        received: Received | None = None,
     ) -> BatchView:
         groups = TrackGroups.of(items, options.flags_from_names)
         cols = columns(items, groups, options)
         by_path = {str(f.item.file.path): f for f in files}
-        return cls(items, options, by_path, cols, groups, _first_defaults(options, cols), failures=failures or {})
+        firsts = _first_defaults(options, cols)
+        return cls(items, options, by_path, cols, groups, firsts, failures or {}, received or Received())
 
     def file(self, item: MediaItem) -> FilePreview | None:
         return self.files.get(str(item.file.path))
@@ -219,6 +233,21 @@ class BatchView:
 
     def choice(self, index: int) -> TrackChoice:
         return choice_of(self.options, self.cols[index].signature)
+
+    def place_mark(self, index: int) -> dict[str, str]:
+        """Where a column's choice comes from: `from` names the place above that made it, `over` the place whose
+        choice the batch's own one overrides, `short` either of them for a narrow column; all empty when the choice
+        is the batch's own and nothing came from above, or when there is none."""
+        signature, received = self.cols[index].signature, self.received
+        at = choice_index(self.options.rules, signature)
+        origin = received.origins[at] if at is not None and at < len(received.origins) else ""
+        if origin:
+            return {"from": tr(f"place.from.{origin}"), "over": "", "short": tr(f"place.short.from.{origin}")}
+        given = choice_index(received.tracks.rules, signature) if at is not None else None
+        above = received.received_origins[given] if given is not None and given < len(received.received_origins) else ""
+        if not above:
+            return {"from": "", "over": "", "short": ""}
+        return {"from": "", "over": tr(f"place.over.{above}"), "short": tr("place.short.over")}
 
     def _named(self) -> dict[TrackSignature, list[tuple[MediaItem, str]]]:
         """Per signature, each file that has such a track with the name of its first one."""
@@ -342,6 +371,7 @@ class BatchView:
                     "button": tr(f"tracks.state.{state}"),
                     "default": choice.default,
                     "forced": choice.forced,
+                    **self.place_mark(index),
                     # Flags apply to a paired file only once it is added.
                     "flags": column.paired is None or state == "added",
                     "count": f" {tr('status.separator')} ".join(
@@ -465,6 +495,8 @@ class BatchView:
                 None,
             )
             choice = self.choice(index)
+            mark = self.place_mark(index)
+            del mark["short"]  # a card has room for the whole mark
             old = track.name if track is not None else ""
             new = names.get(track.id, "") if track is not None else ""
             cards.append(
@@ -481,6 +513,7 @@ class BatchView:
                     "was": tr("tracks.was", name=old) if new and old else tr("tracks.as_is") if old else "",
                     "default": choice.default,
                     "forced": choice.forced,
+                    **mark,
                     "is_default": found["default"],
                     "is_forced": found["forced"],
                 }
@@ -516,12 +549,17 @@ class BatchView:
     def rules(self) -> list[dict[str, object]]:
         signatures = [c.signature for c in self.cols]
         rules = []
+        origins = self.received.origins
         for index, rule in enumerate(self.options.rules):
             fits = self.fits(rule)
+            origin = origins[index] if index < len(origins) else ""
             rules.append(
                 {
                     "enabled": rule.enabled,
                     "from_choice": rule.from_choice,
+                    # A rule from above is changed where it was set; here it only shows what it decides.
+                    "inherited": bool(origin),
+                    "from": tr(f"place.from.{origin}") if origin else "",
                     "label": rule.label,
                     "parts": rule_parts(rule, signature_of(rule, signatures), self.options.rules[:index]),
                     "fits": tr_plural("tracks.rule.fits", fits),
@@ -587,7 +625,10 @@ def rule_parts(
     """A rule in words, in pieces: plain words, and codes (languages, codecs, names) that QML draws as badges.
     "Keep audio in TUR · default", "Keep audio in ENG · default if none above", "Drop subtitles flagged SDH"."""
     match = rule.match
-    parts = [_part(tr(f"tracks.rule.verb.{rule.verdict.value}")), _part(tr(f"tracks.rule.kind.{match.kind.value}"))]
+    # A choice of nothing, which a nearer place makes to take back a choice it receives.
+    blank = rule.from_choice and rule.verdict is Verdict.PASS and FlagShape.FIRST not in (rule.default, rule.forced)
+    verb = "leave" if blank else rule.verdict.value
+    parts = [_part(tr(f"tracks.rule.verb.{verb}")), _part(tr(f"tracks.rule.kind.{match.kind.value}"))]
     if signature is not None:
         parts += [_part(tr("tracks.rule.in")), _part(_signature_code(signature), True), _part(_codec(signature))]
         parts += [_part(tr("tracks.rule.flag_set", flag=tr(f"tracks.flag.{flag}"))) for flag in _what(signature)]
@@ -623,6 +664,8 @@ def rule_parts(
                 for r in above
             )
             parts.append(_part(tr(f"tracks.rule.{flag}_fallback" if fallback else f"tracks.rule.{flag}")))
+    if blank:
+        parts.append(_part(tr("tracks.rule.as_it_is")))
     return parts
 
 

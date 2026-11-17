@@ -89,11 +89,11 @@ def test_rename_and_delete_carry_the_batch_with_them(
     settings.pick("Series")
     assert settings.rename("Shows") == ""
     assert controller.profile == "Shows"
-    assert controller.profile_edited
+    assert controller.batches.own(controller._key)  # type: ignore[arg-type]
     assert [p["name"] for p in settings.profiles] == [DEFAULT_PROFILE_NAME, "Shows"]
     settings.delete()
     assert controller.profile == DEFAULT_PROFILE_NAME
-    assert controller.profile_edited  # the commentary choice is kept over the default profile
+    assert controller.batches.own(controller._key)  # type: ignore[arg-type]  # the season keeps its choice
     assert settings.picked == DEFAULT_PROFILE_NAME
     assert settings.message == "Shows was deleted."
 
@@ -212,7 +212,7 @@ def test_a_value_map_rewrites_a_token_in_the_batch(
     assert editor["maps"] == [{"read": "", "written": ""}]
     controller.set_value_map("codec", 0, "HEVC", "x265")
     assert naming(controller).value_maps == {"codec": {"HEVC": "x265"}}
-    assert controller.profile_edited
+    assert controller.batches.own(controller._key)  # type: ignore[arg-type]
     editor = controller.tokens["editor"]
     assert editor["maps"][0] == {"read": "HEVC", "written": "x265"}
     controller.set_value_map("codec", 0, "HEVC", "H.265")
@@ -241,7 +241,7 @@ def test_the_untagged_language_is_set_and_its_problem_shown(
     assert controller.untagged == {"value": "", "problem": ""}
     controller.set_untagged_language(" tr ")
     assert controller.untagged["value"] == "tr"
-    assert controller.profile_edited
+    assert controller.batches.own(controller._key)  # type: ignore[arg-type]
     controller.set_untagged_language("not a language")
     assert "not a language" in controller.untagged["problem"]
 

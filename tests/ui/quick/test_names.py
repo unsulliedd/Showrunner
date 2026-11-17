@@ -34,7 +34,7 @@ def test_a_suggestion_then_chips_build_the_template(
     open_season(controller, library, qtbot)
     controller.start_template("title_template")
     assert naming(controller).title_template == "{file_name}"
-    assert controller.profile_edited
+    assert controller.batches.own(controller._key)  # type: ignore[arg-type]
     controller.rail_remove(0)
     for token in ("show", "season", "episode", "episode_title"):
         controller.rail_append(token)
@@ -48,7 +48,7 @@ def test_a_suggestion_then_chips_build_the_template(
     settle(controller, qtbot)
     title = controller.names["cards"][0]
     assert (title["sample"], title["count"], title["count_text"]) == (
-        "Show Name - S01E03 - Episode Three",
+        "Show Name - S01E01 - Episode One",
         10,
         "10 titles",
     )
@@ -156,5 +156,5 @@ def test_a_removed_token_takes_its_value_map_and_the_editor_follows_the_batch(
     controller.remove_token(0)
     assert naming(controller).value_maps == {"show": {"x": "y"}}
     controller.add_token()
-    controller.select(controller.tree.index_of(str(library.items[12].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[12].file.path)).parent())
     assert controller.tokens["editor"] == {}

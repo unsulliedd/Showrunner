@@ -154,24 +154,29 @@ NO_CHOICE = TrackChoice()
 def choice_of(options: TracksOptions, signature: TrackSignature) -> TrackChoice:
     """The choice the rules hold for `signature`; `NO_CHOICE` when none was made or its rule is paused, since a
     paused rule decides nothing. A new choice on it replaces the paused rule in its place, switched on."""
-    index = _index(options.rules, signature)
+    index = choice_index(options.rules, signature)
     if index is None or not options.rules[index].enabled:
         return NO_CHOICE
     rule = options.rules[index]
     return TrackChoice(rule.verdict, rule.default is FlagShape.FIRST, rule.forced is FlagShape.FIRST)
 
 
-def choose(options: TracksOptions, signature: TrackSignature, choice: TrackChoice) -> TracksOptions:
+def choose(
+    options: TracksOptions, signature: TrackSignature, choice: TrackChoice, inherited: TrackChoice = NO_CHOICE
+) -> TracksOptions:
     """The options with `choice` as the rule for `signature`: a new rule, the old one changed in its place, or the
-    old one removed for `NO_CHOICE`. A new choice goes after the choices that lead the list and before every other
-    rule, so a second star becomes the fallback of the first ("default Turkish, else English")."""
+    old one removed when `choice` is what the place receives from above (`inherited`; nothing for a place without a
+    parent), so it follows its parent again. Any other choice is written, `NO_CHOICE` too, as a rule that decides
+    nothing and hides the parent's choice (see `layered_rules`). A new choice goes after the choices that lead the
+    list and before every other rule, so a second star becomes the fallback of the first ("default Turkish, else
+    English")."""
     if choice.verdict is Verdict.DROP:
         choice = TrackChoice(Verdict.DROP)
     rules = list(options.rules)
-    index = _index(rules, signature)
+    index = choice_index(rules, signature)
     if index is not None:
         del rules[index]
-    if choice != NO_CHOICE:
+    if choice != inherited:
         if index is None:
             index = next((n for n, rule in enumerate(rules) if not rule.from_choice), len(rules))
         rules.insert(
@@ -248,12 +253,25 @@ def move_track(
     return replace(options, order=[] if moved == list(natural) else [s.match() for s in moved])
 
 
+def layered_rules(own: Sequence[TrackRule], inherited: Sequence[TrackRule]) -> list[TrackRule]:
+    """A place's rules over the rules it receives: its own first, since the first rule that decides wins, then the
+    received ones without the choices its own choices replace. Hiding them matters for the flags: a `first` star
+    from above would otherwise still pick a track the place took the star from. A paused choice decides nothing, so
+    it hides nothing either."""
+    hidden = [form for rule in own if rule.from_choice and rule.enabled for form in _rule_forms(rule)]
+    return [*own, *(rule for rule in inherited if not (rule.from_choice and rule.match in hidden))]
+
+
+def _rule_forms(rule: TrackRule) -> tuple[TrackMatch, TrackMatch]:
+    return rule.match, replace(rule.match, source=SourceTest.ANY)
+
+
 def signature_of(rule: TrackRule, signatures: Iterable[TrackSignature]) -> TrackSignature | None:
     """The signature among `signatures` whose choice `rule` is, if it is one."""
     return next((s for s in signatures if rule.from_choice and rule.match in _forms(s)), None)
 
 
-def _index(rules: list[TrackRule], signature: TrackSignature) -> int | None:
+def choice_index(rules: list[TrackRule], signature: TrackSignature) -> int | None:
     forms = _forms(signature)
     return next((n for n, rule in enumerate(rules) if rule.from_choice and rule.match in forms), None)
 

@@ -29,7 +29,6 @@ from showrunner.app.batches.choices import (
     TrackChoice,
     add_paired,
     choice_of,
-    choose,
     move_rule,
     move_track,
     pause_rule,
@@ -40,13 +39,14 @@ from showrunner.app.dependencies.service import check, mkvpropedit_from, probe_f
 from showrunner.app.jobs.blocked import blocked_stages
 from showrunner.app.jobs.counts import count_changes
 from showrunner.app.jobs.groups import TITLE_TEMPLATE, ChangeGroup
-from showrunner.app.jobs.preview import FileOutcome, FilePreview, Preview, preview
+from showrunner.app.jobs.preview import FileOutcome, FilePreview, Preview, preview_each
 from showrunner.app.jobs.run import JobResult, Read, StalePreviewError, create_job
 from showrunner.app.jobs.stages import Stage, pipeline
 from showrunner.app.jobs.store import JobStore, StepState
 from showrunner.app.library.library import LibraryLoad
 from showrunner.app.library.loader import BackgroundJob, LibraryLoader
 from showrunner.app.profiles.errors import ProfileError, ProfileExistsError
+from showrunner.app.profiles.profile import Profile
 from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME, ProfileStore
 from showrunner.app.settings.app_settings import Startup, load_settings, save_settings, with_recent
 from showrunner.app.storage.paths import jobs_path, read_cache_path
@@ -77,7 +77,7 @@ from showrunner.ui.quick.plans import LivePlanner
 from showrunner.ui.quick.review import FILTERS, ReviewInput, review, totals
 from showrunner.ui.quick.rule_editor import RuleEditor
 from showrunner.ui.quick.settings import SECTIONS, Settings
-from showrunner.ui.quick.tracks import BatchView, Column, columns, item_number, item_title
+from showrunner.ui.quick.tracks import BatchView, Column, Received, columns, item_number, item_title
 
 _log = logging.getLogger(__name__)
 
@@ -124,9 +124,8 @@ class _Applying:
     """What an Apply was pressed with, kept while its stamped preview is made."""
 
     paths: frozenset[Path]
-    profile: Any
+    profiles: dict[Path, Profile]  # each file's options
     stages: tuple[Stage, ...]
-    blocked: frozenset[str]
     groups: frozenset[ChangeGroup]
     out: frozenset[Path]
     live: dict[Path, Any]  # each file's plans in the run plan on screen
@@ -230,7 +229,7 @@ class WindowController(QObject):
         self._save_timer.setInterval(SAVE_DELAY_MS)
         self._save_timer.timeout.connect(self._save_batches)
         self._rule_editor = RuleEditor(
-            lambda: self._tracks() if self._key is not None else None,
+            lambda: self._own_tracks() if self._key is not None else None,
             self._set_tracks,
             lambda: self.locked,
             lambda: self._items,
@@ -265,7 +264,8 @@ class WindowController(QObject):
         library = self.model.library
         saved = load_settings().value
         folders = [str(r) for r in library.roots] if library.items else saved.last_folders
-        focus = str(self._focus.file.path) if self._focus is not None else saved.last_selection
+        # The row, not the focused video: a season reopens as the season, not as its first episode alone.
+        focus = self._selected or saved.last_selection
         try:
             save_settings(replace(saved, last_folders=folders, last_selection=focus, recent_folders=self._recent))
         except OSError:
@@ -413,7 +413,7 @@ class WindowController(QObject):
         self.loading_changed.emit()
 
     def _select_first(self) -> None:
-        """The video selected when the window last closed, else the first row of the tree."""
+        """The row selected when the window last closed, else the first row of the tree."""
         restored = self.tree.index_of(self._restore) if self._restore else QModelIndex()
         self.select(restored if restored.isValid() else self.tree.index(0, 0))
 
@@ -432,21 +432,30 @@ class WindowController(QObject):
         previous = self._key
         if not items:
             self._key, self._items = None, []
-        elif kind is Kind.EPISODE:
-            self._key = BatchKey.of(items[0])
-            self._items = [i for i in self.model.library.items if BatchKey.of(i) == self._key]
-        elif kind in (Kind.SEASON, Kind.MOVIE):
+        elif kind in (Kind.EPISODE, Kind.MOVIE):
+            # One file's own place: what is chosen here is that file's alone.
+            self._key, self._items = BatchKey.file(items[0]), items
+        elif kind is Kind.SEASON:
             self._key, self._items = BatchKey.of(items[0]), items
         elif kind is Kind.SHOW:
             self._key, self._items = BatchKey.of(items[0], whole_show=True), items
         else:
-            self._key, self._items = BatchKey.selection(paths, Media.MOVIES), items
+            self._key, self._items = BatchKey.movies(), items
+        if self._key is not None and (show := self._show_of(source)) is not None:
+            self._key = self._key.in_show(show)
         if self._key != previous:
             self._editing = -1  # the open token belongs to the other batch's profile
             self._editing_builtin = ""
             self._rule_editor.close()  # as does the rule being written
         self._replan()
         self.batch_changed.emit()
+
+    def _show_of(self, source: QModelIndex) -> BatchKey | None:
+        """The show of the show row at or above a row of the library, named by its first video; None outside a show."""
+        while source.isValid() and self.model.kind(source) is not Kind.SHOW:
+            source = source.parent()
+        first = self.model.library.item(self.model.video_paths(source)[0]) if source.isValid() else None
+        return BatchKey.of(first, whole_show=True) if first is not None else None
 
     @Property(str, notify=batch_changed)
     def selected(self) -> str:
@@ -593,14 +602,24 @@ class WindowController(QObject):
     # Track choices of the selected batch (Overview and Tracks)
 
     def _tracks(self) -> TracksOptions:
+        """The track options the batch plans with: its own choices over the ones it receives."""
         assert self._key is not None
         return self.batches.profile(self._key).for_stage("tracks")
 
+    def _own_tracks(self) -> TracksOptions:
+        """The same with only the batch's own rules, which the Rules panel edits by place."""
+        assert self._key is not None
+        return self.batches.own_tracks(self._key)
+
     def _set_tracks(self, options: TracksOptions) -> None:
+        """Set the batch's own track options; `options.rules` are its own rules (`_own_tracks`)."""
+        self._set_options("tracks", options)
+
+    def _set_options(self, stage_id: str, options: Any) -> None:
         assert self._key is not None
         if self.locked:
             return
-        self.batches.copy(self._key).set_options("tracks", options)
+        self.batches.set_options(self._key, stage_id, options)
         self._copy_changed()
 
     def _column(self, column: int) -> tuple[Column, dict[str, Any]] | None:
@@ -631,14 +650,13 @@ class WindowController(QObject):
         if found is None:
             return
         col, header = found
-        options = self._tracks()
+        assert self._key is not None
         if col.paired is not None:
             added = header["state"] == "added"
-            if added:
-                options = choose(options, col.signature, NO_CHOICE)
+            options = self.batches.with_choice(self._key, col.signature, NO_CHOICE) if added else self._own_tracks()
             self._set_tracks(add_paired(options, col.paired, not added))
             return
-        choice = choice_of(options, col.signature)
+        choice = choice_of(self._tracks(), col.signature)
         if choice.verdict is Verdict.DROP:
             # Undoing this choice's drop gives the track back, also when a refused plan shows the track kept.
             verdict = Verdict.PASS
@@ -646,7 +664,8 @@ class WindowController(QObject):
             verdict = Verdict.KEEP  # a hand-written rule drops it
         else:
             verdict = Verdict.DROP
-        self._set_tracks(choose(options, col.signature, TrackChoice(verdict, choice.default, choice.forced)))
+        chosen = TrackChoice(verdict, choice.default, choice.forced)
+        self._set_tracks(self.batches.with_choice(self._key, col.signature, chosen))
 
     @Slot(int, str)
     def toggle_flag(self, column: int, flag: str) -> None:
@@ -655,8 +674,8 @@ class WindowController(QObject):
         if found is None or flag not in ("default", "forced"):
             return
         col, header = found
-        options = self._tracks()
-        choice = choice_of(options, col.signature)
+        assert self._key is not None
+        choice = choice_of(self._tracks(), col.signature)
         on = not getattr(choice, flag)
         flags = {"default": choice.default, "forced": choice.forced, flag: on}
         if on:
@@ -665,29 +684,39 @@ class WindowController(QObject):
             verdict = Verdict.PASS  # a keep that only carried the flag goes with it
         else:
             verdict = choice.verdict
+        options = self.batches.with_choice(self._key, col.signature, TrackChoice(verdict, **flags))
         if col.paired is not None and header["state"] != "added":
             options = add_paired(options, col.paired, True)
-        self._set_tracks(choose(options, col.signature, TrackChoice(verdict, **flags)))
+        self._set_tracks(options)
 
     @Slot(int)
     def restore(self, column: int) -> None:
-        """Undo every choice on a column: its rule goes, a paired file is no longer added."""
+        """Undo every choice the batch made on a column: its rule goes, and a paired file is added or not as the
+        batch receives it (not at all in a show or the Movies group)."""
         found = self._column(column)
-        if found is None:
+        if found is None or self._key is None:
             return
         col, _header = found
-        options = choose(self._tracks(), col.signature, NO_CHOICE)
-        self._set_tracks(add_paired(options, col.paired, False) if col.paired is not None else options)
+        received = self.batches.received(self._key)
+        given_choice = self.batches.received_choice(self._key, col.signature)
+        options = self.batches.with_choice(self._key, col.signature, given_choice)
+        if col.paired is not None:
+            given = received is not None and col.paired in received.for_stage("tracks").add_paired
+            options = add_paired(options, col.paired, given)
+        self._set_tracks(options)
 
     @Property(QObject, constant=True)
     def rule_editor(self) -> RuleEditor:
         """The editor of a hand-written track rule, in the Rules panel."""
         return self._rule_editor
 
+    # The rule slots take places in the batch's own rules, which lead the Rules panel; the rules it receives from
+    # above follow them there and are changed where they were set.
+
     @Slot(int, int)
     def move_rule(self, source: int, target: int) -> None:
-        if self._key is not None and 0 <= source < len(self._tracks().rules) and source != target:
-            self._set_tracks(move_rule(self._tracks(), source, target))
+        if self._key is not None and 0 <= source < len(self._own_tracks().rules) and source != target:
+            self._set_tracks(move_rule(self._own_tracks(), source, target))
 
     @Slot(int, int, result=int)
     def move_track(self, column: int, target: int) -> int:
@@ -699,22 +728,22 @@ class WindowController(QObject):
         moved = view.cols[column]
         shown = [c.signature for c in view.cols]
         natural = [c.signature for c in columns(view.items, view.grouping)]
-        options = move_track(self._tracks(), shown, natural, column, target)
-        if options != self._tracks():
+        options = move_track(self._own_tracks(), shown, natural, column, target)
+        if options.order != self._tracks().order:
             self._set_tracks(options)
         return self._view.cols.index(moved) if self._view is not None else column
 
     @Slot(int, bool)
     def pause_rule(self, index: int, paused: bool) -> None:
-        if self._key is not None and 0 <= index < len(self._tracks().rules):
-            self._set_tracks(pause_rule(self._tracks(), index, paused))
+        if self._key is not None and 0 <= index < len(self._own_tracks().rules):
+            self._set_tracks(pause_rule(self._own_tracks(), index, paused))
 
     @Slot(int)
     def remove_rule(self, index: int) -> None:
         """Delete a hand-written rule. A rule a choice wrote goes by undoing the choice on its track instead."""
-        rules = self._tracks().rules if self._key is not None else []
-        if 0 <= index < len(rules) and not rules[index].from_choice:
-            self._set_tracks(replace(self._tracks(), rules=rules[:index] + rules[index + 1 :]))
+        own = self._own_tracks() if self._key is not None else TracksOptions()
+        if 0 <= index < len(own.rules) and not own.rules[index].from_choice:
+            self._set_tracks(replace(own, rules=own.rules[:index] + own.rules[index + 1 :]))
 
     @Property("QVariantMap", notify=batch_changed)
     def untagged(self) -> dict[str, str]:
@@ -735,8 +764,7 @@ class WindowController(QObject):
             return
         metadata = self.batches.profile(self._key).for_stage("metadata")
         if text.strip() != metadata.untagged_language:
-            self.batches.copy(self._key).set_options("metadata", replace(metadata, untagged_language=text.strip()))
-            self._copy_changed()
+            self._set_options("metadata", replace(metadata, untagged_language=text.strip()))
 
     @Property(bool, notify=batch_changed)
     def write_implied_flags(self) -> bool:
@@ -748,20 +776,14 @@ class WindowController(QObject):
         if self._key is None or self.locked or on == self.write_implied_flags:
             return
         metadata = self.batches.profile(self._key).for_stage("metadata")
-        self.batches.copy(self._key).set_options("metadata", replace(metadata, write_implied_flags=on))
-        self._copy_changed()
+        self._set_options("metadata", replace(metadata, write_implied_flags=on))
 
     @Slot(str)
     def focus_file(self, path: str) -> None:
-        """Show one file of the batch in the Inspector. Inside a season the tree selects the episode too, which opens
-        the same batch; in a show or a selection selecting it would open its season instead, so only the focus moves.
-        """
+        """Show one file of the batch in the Inspector. Only the focus moves: selecting the file in the tree would open
+        the file's own place instead of the batch."""
         item = next((i for i in self._items if str(i.file.path) == path), None)
         if item is None:
-            return
-        index = self.tree.index_of(path)
-        if index.isValid() and BatchKey.of(item) == self._key:
-            self.select(index)
             return
         self._focus = item
         # Only the Inspector and the Names result follow the focus; rows, headers and Review stay as built.
@@ -825,8 +847,7 @@ class WindowController(QObject):
         if self._key is None or self.locked or options == self._naming():
             self._refresh_names()  # a locked batch's rail shows its template again
             return
-        self.batches.copy(self._key).set_options("naming", options)
-        self._copy_changed()
+        self._set_options("naming", options)
 
     def _set_template(self, text: str) -> None:
         if self._key is not None:
@@ -1038,27 +1059,28 @@ class WindowController(QObject):
         self._refresh()
         if self._key is None:
             return
-        profile = self.batches.profile(self._key)
         statuses = self._statuses or {}
         stages = tuple(self._make_pipeline(statuses))
-        blocked = set(blocked_stages(profile)) & {s.id for s in stages}
         items = tuple(self._items)
+        profiles = self.batches.file_profiles(items, self._key)
         groups = self.left_out.groups_of(self._key)
 
         def work() -> tuple[Preview, Preview]:
-            full = preview(items, profile, stages, blocked=blocked, stamped=False)
-            run = preview(items, profile, stages, blocked=blocked, left_out=groups, stamped=False) if groups else full
+            full = preview_each(items, profiles, stages, stamped=False)
+            run = preview_each(items, profiles, stages, left_out=groups, stamped=False) if groups else full
             return full, run
 
-        self._planner.request(self._plan_token(), work)
+        self._planner.request(self._plan_token(profiles), work)
 
-    def _plan_token(self) -> tuple[Any, ...]:
-        """What a plan was made for; a result for another token is out of date when it arrives."""
+    def _plan_token(self, profiles: dict[Path, Profile] | None = None) -> tuple[Any, ...]:
+        """What a plan was made for; a result for another token is out of date when it arrives. Each file's options
+        count, read once per options object the files share."""
         if self._key is None:
             return (None,)
-        options = self.batches.profile(self._key).options
+        profiles = profiles if profiles is not None else self.batches.file_profiles(self._items, self._key)
+        options = repr([p.options for p in {id(p): p for p in profiles.values()}.values()])
         groups = sorted(self.left_out.groups_of(self._key))
-        return (self._key, tuple(i.file.path for i in self._items), repr(options), repr(self._statuses), groups)
+        return (self._key, tuple(i.file.path for i in self._items), options, repr(self._statuses), groups)
 
     def _on_planned(self, token: object, result: tuple[Preview, Preview]) -> None:
         if token != self._plan_token():
@@ -1086,7 +1108,8 @@ class WindowController(QObject):
         else:
             files = self._current_files()
             profile = self.batches.profile(self._key)
-            self._view = BatchView.build(self._items, profile.for_stage("tracks"), files, self._failures())
+            tracks = profile.for_stage("tracks")
+            self._view = BatchView.build(self._items, tracks, files, self._failures(), self._received())
             counts = dict.fromkeys(ChangeGroup, 0)
             for file in files:
                 for group, count in count_changes(file).items():
@@ -1101,6 +1124,16 @@ class WindowController(QObject):
         self.apply_changed.emit()
         self._signal_shown()
         self._refresh_names()
+
+    def _received(self) -> Received:
+        """Where each rule of the batch comes from, and what the batch receives, for the marks on chips and rules."""
+        assert self._key is not None
+        key, parent = self._key, self._key.parent
+        if parent is None:
+            return Received()
+        origins = ["" if origin == key else origin.kind.value for origin in self.batches.origins(key)]
+        given = self.batches.profile(parent).for_stage("tracks")
+        return Received(origins, given, [origin.kind.value for origin in self.batches.origins(parent)])
 
     def _failures(self) -> dict[str, str]:
         """Why each file of the batch whose tracks could not be read was not read."""
@@ -1199,8 +1232,7 @@ class WindowController(QObject):
             return
         mux = self.batches.profile(self._key).for_stage("mux")
         if mux.original != original:
-            self.batches.copy(self._key).set_options("mux", replace(mux, original=Original(original)))
-            self._copy_changed()
+            self._set_options("mux", replace(mux, original=Original(original)))
 
     # Apply
 
@@ -1248,16 +1280,14 @@ class WindowController(QObject):
         """Plan the batch again with stamps on a pool thread; `_on_stamped` decides whether it may run."""
         if not self.can_apply or self._key is None or self._run_preview is None:
             return
-        profile = self.batches.profile(self._key)
         stages = tuple(self._make_pipeline(self._statuses or {}))
-        blocked = frozenset(blocked_stages(profile)) & {s.id for s in stages}
         items = tuple(self._items)
+        profiles = self.batches.file_profiles(items, self._key)
         head = heading(self._key, items)
         self._applying = _Applying(
             paths=frozenset(i.file.path for i in items),
-            profile=profile,
+            profiles=profiles,
             stages=stages,
-            blocked=blocked,
             groups=self.left_out.groups_of(self._key),
             out=frozenset(p for p in self.left_out.files if any(i.file.path == p for i in items)),
             live={f.item.file.path: f.plans for f in self._run_preview.files},
@@ -1266,9 +1296,7 @@ class WindowController(QObject):
         given, store = self._applying, self.jobs.store
 
         def work() -> Preview:
-            return preview(
-                items, profile, stages, blocked=given.blocked, left_out=given.groups, finished=store.is_finished
-            )
+            return preview_each(items, profiles, stages, left_out=given.groups, finished=store.is_finished)
 
         job = BackgroundJob(work)
         job.finished.connect(self._on_stamped)
@@ -1304,9 +1332,8 @@ class WindowController(QObject):
                 job_id = create_job(
                     self.jobs.store,
                     stamped,
-                    given.profile,
+                    given.profiles,
                     given.stages,
-                    blocked=given.blocked,
                     left_out=given.groups,
                     left_out_files=given.out,
                 )

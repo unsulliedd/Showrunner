@@ -53,7 +53,7 @@ def test_a_season_loads_without_warnings(
 ) -> None:
     load()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     assert controller.batch["title"] == "Season 1"
     assert load() == []
     assert qt_warnings() == []
@@ -111,7 +111,7 @@ def test_choices_reach_every_place_without_warnings(
     load()
     controller.start()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     # Chips, flags and rules driven from QML expressions, as a click would.
     load.run("app.toggle_keep(2)")
@@ -160,7 +160,7 @@ def test_chips_and_rules_answer_the_pointer(
     load()
     controller.start()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     load()
     # A click on the commentary chip drops it; a click on the Turkish chip's star sets the default only.
@@ -263,7 +263,7 @@ def _named_show(load: Any, controller: WindowController, qtbot: QtBot, episodes:
     load()
     controller.start()
     controller.model.set_library(show)
-    controller.select(controller.tree.index_of(str(show.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(show.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     load()
     return load.window.contentItem()
@@ -388,7 +388,7 @@ def test_a_chip_keeps_even_room_on_both_sides_in_every_state_and_ends_with_its_a
     load()
     controller.start()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     load()
     root = load.window.contentItem()
@@ -507,7 +507,7 @@ def test_a_chip_stays_open_through_a_resize_and_the_separator_with_a_height_alre
 ) -> None:
     controller.start()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     load()
     root = load.window.contentItem()
@@ -558,7 +558,7 @@ def test_the_separator_sets_the_height_of_the_tracks_box_and_keeps_it(
     load()
     controller.start()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     load()
     root = load.window.contentItem()
@@ -610,7 +610,7 @@ def test_a_saved_height_of_the_tracks_box_is_used_when_the_window_opens(
 ) -> None:
     controller.start()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     load()
     assert _item(load.window.contentItem(), "tracksBox").height() == saved_height
@@ -635,9 +635,9 @@ def test_a_show_and_a_selection_keep_their_batch_when_a_row_is_picked(
     movie = controller.tree.index_of(str(library.items[-1].file.path))
     controller.select(movie.parent())
     qtbot.waitUntil(lambda: not controller.planning)
-    assert controller.batch_kind == "selection"
+    assert controller.batch_kind == "movies"
     load.run(f"app.focus_file({json.dumps(str(library.items[-2].file.path))})")
-    assert (controller.batch_kind, controller.inspector["name"]) == ("selection", "Another Movie")
+    assert (controller.batch_kind, controller.inspector["name"]) == ("movies", "Another Movie")
     for place in ("tracks", "overview"):
         load.window.setProperty("place", place)
         assert load() == [], place
@@ -913,7 +913,7 @@ def test_names_and_tokens_answer_the_pointer(
     load()
     controller.start()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     load.window.setProperty("place", "names")
     assert load() == []
@@ -1000,7 +1000,7 @@ def test_settings_and_the_palette_answer_the_keyboard(
     load()
     controller.start()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     window = load.window
     dialog = window.findChild(QObject, "settings")
@@ -1060,7 +1060,7 @@ def test_a_narrow_compact_window_and_the_palette_by_pointer(
     load()
     controller.start()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     window = load.window
     window.setWidth(SIZES["window_min_width"])
@@ -1113,7 +1113,7 @@ def test_a_narrow_window_keeps_file_names_and_scrollbars_in_place(
 ) -> None:
     load()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     window = load.window
     window.setWidth(width)
@@ -1141,7 +1141,7 @@ def test_a_narrow_window_elides_text_in_place_and_shows_it_whole_under_the_point
 ) -> None:
     load()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     window = load.window
     window.setWidth(SIZES["window_min_width"])
@@ -1197,7 +1197,7 @@ window.setWidth(SIZES["settings_rail_below"])
 window.setHeight(800)  # the narrow size of the bug hunt
 controller.start()
 controller.model.set_library(library)
-controller.select(controller.tree.index_of(str(library.items[0].file.path)))
+controller.select(controller.tree.index_of(str(library.items[0].file.path)).parent())
 end = time.monotonic() + 2
 while time.monotonic() < end:
     app.processEvents()
@@ -1237,7 +1237,7 @@ def test_matrix_columns_move_by_drag_and_by_keyboard(
     load()
     controller.start()
     controller.model.set_library(library)
-    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     load.window.setProperty("place", "tracks")
     load()

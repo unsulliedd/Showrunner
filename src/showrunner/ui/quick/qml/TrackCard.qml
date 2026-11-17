@@ -132,6 +132,11 @@ Item {
             }
         }
 
+        PlaceMark {
+            objectName: "placeMark"
+            choice: card.track
+        }
+
         FlagButton {
             visible: !card.dropped
             flag: "default"

@@ -221,6 +221,16 @@ Item {
                 }
             }
 
+            PlaceMark {
+                objectName: "placeMark"
+                Layout.fillWidth: true
+                // Kept in the layout while empty, so the toggles below stand at the same height in every column.
+                visible: true
+                horizontalAlignment: Text.AlignHCenter
+                choice: head.column
+                brief: true
+            }
+
             Row {
                 Layout.alignment: Qt.AlignHCenter
                 spacing: Theme.space_xs
@@ -252,7 +262,8 @@ Item {
                 hoverEnabled: true
                 focusPolicy: Qt.StrongFocus
                 Accessible.role: Accessible.Button
-                Accessible.name: head.column.code + " " + head.column.title + " " + head.column.button
+                Accessible.name: [head.column.code, head.column.title, head.column.button,
+                                  head.column.from || head.column.over || ""].join(" ")
                 onClicked: app.toggle_keep(head.column.id)
 
                 readonly property color tone: head.column.state === "dropped" ? Theme.drop

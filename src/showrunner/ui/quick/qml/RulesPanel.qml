@@ -5,7 +5,8 @@ import Showrunner
 
 // The batch's track rules in the order they apply: choices made on Overview and Tracks marked "from the matrix",
 // hand-written ones beside them. Drag a card by its grip to reorder; the pause button keeps a rule but stops it. New
-// rule and the pencil of a hand-written rule open the editor in place of the list.
+// rule and the pencil of a hand-written rule open the editor in place of the list. The rules a season, an episode or
+// a movie receives from above follow its own ones, marked with where they come from, and are changed there.
 Item {
     id: panel
 
@@ -16,6 +17,8 @@ Item {
     readonly property var none: ({
             "enabled": true,
             "from_choice": true,
+            "inherited": false,
+            "from": "",
             "label": "",
             "parts": [],
             "fits": "",
@@ -128,6 +131,7 @@ Item {
 
                             Icon {
                                 anchors.centerIn: parent
+                                visible: !entry.rule.inherited
                                 name: "grip"
                                 size: Theme.icon_sm
                             }
@@ -135,6 +139,7 @@ Item {
                             DragHandler {
                                 id: grip
 
+                                enabled: !entry.rule.inherited
                                 target: null
                                 xAxis.enabled: false
                                 property real moved: 0
@@ -205,11 +210,21 @@ Item {
                                         font.pixelSize: Theme.text_xs
                                     }
                                 }
+
+                                UiText {
+                                    objectName: "ruleFrom"
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: entry.rule.inherited
+                                    text: entry.rule.from
+                                    color: Theme.faint
+                                    font.pixelSize: Theme.text_xs
+                                }
                             }
                         }
 
                         IconButton {
                             Layout.alignment: Qt.AlignTop
+                            visible: !entry.rule.inherited
                             implicitWidth: Theme.row_sm
                             implicitHeight: Theme.row_sm
                             iconName: entry.rule.enabled ? "pause" : "play"
@@ -221,7 +236,7 @@ Item {
                         IconButton {
                             objectName: "editRule"
                             Layout.alignment: Qt.AlignTop
-                            visible: !entry.rule.from_choice
+                            visible: !entry.rule.from_choice && !entry.rule.inherited
                             implicitWidth: Theme.row_sm
                             implicitHeight: Theme.row_sm
                             iconName: "edit"
@@ -235,7 +250,7 @@ Item {
                         IconButton {
                             objectName: "removeRule"
                             Layout.alignment: Qt.AlignTop
-                            visible: !entry.rule.from_choice
+                            visible: !entry.rule.from_choice && !entry.rule.inherited
                             implicitWidth: Theme.row_sm
                             implicitHeight: Theme.row_sm
                             iconName: "x"

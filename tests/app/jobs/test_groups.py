@@ -111,7 +111,8 @@ def test_leaving_every_group_out_changes_nothing(tmp_path: Path, profile: Profil
 
 def test_the_preview_profile_asks_nothing_of_a_left_out_group(profile: Profile) -> None:
     drops = with_rules(profile, DROP_FRENCH)
-    planned = preview([], drops, STAGES, left_out={ChangeGroup.TRACKS, ChangeGroup.NAMES}).profile
+    made = preview([], drops, STAGES, left_out={ChangeGroup.TRACKS, ChangeGroup.NAMES})
+    planned = made.profiles[made.options_key]
     assert planned.for_stage("tracks").rules == []
     assert planned.for_stage("naming").title_template == ""
     assert planned == without(without(drops, ChangeGroup.TRACKS), ChangeGroup.NAMES)
@@ -162,7 +163,8 @@ def test_a_resumed_job_plans_again_with_the_groups_it_left_out(
     flags = with_rules(profile, ENGLISH_DEFAULT)
     made = preview([files.item("a.mkv")], flags, stages, left_out={ChangeGroup.NAMES})
     job = create_job(store, made, flags, stages, left_out={ChangeGroup.NAMES})
-    assert store.load(job).profile.for_stage("naming").title_template == ""
+    stored = store.load(job)
+    assert stored.profile_of(stored.steps[0]).for_stage("naming").title_template == ""
     # The app stopped during the step. Planned again with the full options, the plan would hold a title and the
     # step would count as stale; with the stored ones it equals the plan and runs again.
     store.set_state(job, 0, StepState.RUNNING)

@@ -1,2 +1,2 @@
-"""Batches: the season, show, movie or selection a workspace shows, each with its own working copy of a profile, and
-the track choices written into that copy as rules."""
+"""Batches: the places a workspace shows (show, season, episode, the Movies group, movie), the choices each place
+makes and receives from the places around it, and the track choices written as rules."""

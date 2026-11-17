@@ -9,7 +9,7 @@ from PySide6.QtCore import QSize
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication
 
-from showrunner.app.batches.batch import BatchKey, Media
+from showrunner.app.batches.batch import BatchKey
 from showrunner.app.library.library import Library
 from showrunner.ui.quick.facts import duration, heading, video_summary, when
 from showrunner.ui.quick.icons import ICONS, IconProvider, svg_for
@@ -76,8 +76,10 @@ def test_show_movie_and_selection_headings(library: Library) -> None:
     assert (head.over, head.title) == ("Movie", "Movie Title")
     assert head.facts.startswith("2021 · 2h 14m · 2160p HEVC HDR · ")
     movies = list(library.items[-3:])
-    paths = [m.file.path for m in movies]
-    assert heading(BatchKey.selection(paths, Media.MOVIES), movies).title == "Movies"
+    assert heading(BatchKey.movies(), movies).title == "Movies"
+    episode = library.items[2]
+    head = heading(BatchKey.file(episode), [episode])
+    assert (head.over, head.title) == ("Show Name (2020) · Season 1", "Episode Three")
 
 
 def test_video_summary_and_duration(library: Library) -> None:

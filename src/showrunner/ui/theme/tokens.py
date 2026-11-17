@@ -349,7 +349,7 @@ SIZES: dict[str, int] = {
     "pill": 20,  # a track pill in an episode row, a code badge
     "matrix_label": 150,  # the file names down the track matrix
     "matrix_column": 82,  # one track signature across the matrix
-    "matrix_header": 150,  # the matrix's column headers with their toggles
+    "matrix_header": 166,  # the matrix's column headers with their toggles and where their choice comes from
     "track_card": 64,  # a movie's track card
     "settings_width": 920,  # the Settings dialog
     "settings_height": 660,
