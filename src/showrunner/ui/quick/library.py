@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from pathlib import Path
 
 from PySide6.QtCore import QAbstractItemModel, QByteArray, QModelIndex, QPersistentModelIndex, Qt
 
@@ -14,7 +13,7 @@ from showrunner.ui.library.model import DOT_ROLE, MARK_ROLE, NAME_COLUMN, SUMMAR
 from showrunner.ui.library.proxy import LibraryFilter
 
 _FIRST = Qt.ItemDataRole.UserRole + 100
-KIND, LABEL, NUMBER, SUMMARY, PROBLEM, PLANNED, ROW_ID, LEFT_OUT = range(_FIRST, _FIRST + 8)
+KIND, LABEL, NUMBER, SUMMARY, PROBLEM, PLANNED, ROW_ID, EXCLUDED = range(_FIRST, _FIRST + 8)
 ROLE_NAMES = {
     KIND: "kind",
     LABEL: "label",
@@ -23,7 +22,7 @@ ROLE_NAMES = {
     PROBLEM: "problem",  # a video that needs a look: the theme role its mark is drawn in, else ""
     PLANNED: "planned",  # a planned change at or below the row
     ROW_ID: "row_id",  # a video's path, a group's place in the tree
-    LEFT_OUT: "left_out",  # a video left out of the next run
+    EXCLUDED: "excluded",  # a place that is excluded from every run, whether on its own or through a parent
 }
 _PROBLEM_ROLES = {Mark.FAILED: "drop", Mark.UNSURE: "change"}
 
@@ -33,17 +32,18 @@ type Index = QModelIndex | QPersistentModelIndex
 class LibraryTree(LibraryFilter):
     """The name column of a `LibraryModel`, filtered, with the summary and marks folded in as roles."""
 
-    _left_out: frozenset[Path] = frozenset()
+    _excluded: frozenset[str] = frozenset()
 
-    def set_left_out(self, paths: Iterable[Path]) -> None:
-        """Mark the videos left out of the next run."""
-        paths = frozenset(paths)
-        changed = paths ^ self._left_out
-        self._left_out = paths
-        for path in changed:
-            index = self.index_of(str(path))
-            if index.isValid():
-                self.dataChanged.emit(index, index, [LEFT_OUT])
+    def set_excluded(self, rows: Iterable[str]) -> None:
+        """Mark the rows, by row id, that are excluded: videos and folders alike, since a folder can be excluded while
+        a video inside it is included again."""
+        rows = frozenset(rows)
+        changed = rows ^ self._excluded
+        self._excluded = rows
+        if changed:
+            for index in self._indexes(QModelIndex()):
+                if self.row_id(index) in changed:
+                    self.dataChanged.emit(index, index, [EXCLUDED])
 
     def setSourceModel(self, model: QAbstractItemModel) -> None:  # noqa: N802  # Qt's name
         super().setSourceModel(model)
@@ -71,7 +71,10 @@ class LibraryTree(LibraryFilter):
 
     def row_id(self, index: Index) -> str:
         """A video's path; for a group, the names of the rows down to it, so it stays the same across a reload."""
-        source = self.mapToSource(index)
+        return self.source_row_id(self.mapToSource(index))
+
+    def source_row_id(self, source: QModelIndex) -> str:
+        """The same for a row of the source model, which the filter may hide here."""
         path = self.source().path(source)
         if path is not None:
             return str(path)
@@ -95,8 +98,8 @@ class LibraryTree(LibraryFilter):
             return source.data(DOT_ROLE) == "control"
         if role == ROW_ID:
             return self.row_id(index)
-        if role == LEFT_OUT:
-            return kind.is_video and model.path(source) in self._left_out
+        if role == EXCLUDED:
+            return self.row_id(index) in self._excluded
         if role == PROBLEM:
             return _PROBLEM_ROLES.get(Mark(source.data(MARK_ROLE)), "") if kind.is_video else ""
         path = model.path(source)

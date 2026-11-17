@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Showrunner
 
-// The selected batch: its header with the facts and Leave out, then its places as tabs, each with its count.
+// The selected batch: its header with the facts and Exclude, then its places as tabs, each with its count.
 Panel {
     id: workspace
 
@@ -61,7 +61,7 @@ Panel {
                     color: Theme.muted
                 }
 
-                // The title, then the facts in what room is left; each elides rather than run under Leave out.
+                // The title, then the facts in what room is left; each elides rather than run under Exclude.
                 Row {
                     id: titleRow
 
@@ -98,14 +98,14 @@ Panel {
             }
 
             ActionButton {
-                objectName: "leaveOutBatch"
+                objectName: "excludeBatch"
                 Layout.alignment: Qt.AlignTop
-                kind: app.batch_left_out ? "outline" : "ghost"
-                iconName: app.batch_left_out ? "" : "x"
-                text: app.batch_left_out ? Strings.t("workspace.put_back") : Strings.t("workspace.leave_out")
-                Accessible.description: Strings.t("workspace.leave_out_help")
+                kind: app.place_excluded ? "outline" : "ghost"
+                iconName: app.place_excluded ? "" : "no_entry"
+                text: app.place_excluded ? Strings.t("workspace.include") : Strings.t("workspace.exclude")
+                Accessible.description: app.place_excluded ? Strings.t("workspace.include_help") : Strings.t("workspace.exclude_help")
                 enabled: !app.locked
-                onClicked: app.leave_out_batch()
+                onClicked: app.exclude_place(!app.place_excluded)
             }
         }
 

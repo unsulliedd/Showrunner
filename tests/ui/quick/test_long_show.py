@@ -140,7 +140,7 @@ def test_long_lists_show_a_scrollbar_and_keep_their_place(controller: WindowCont
     qtbot.wait(50)
     files = root.findChild(QQuickItem, "reviewFiles")
     files.setProperty("contentY", 3000.0)
-    controller.leave_out_file(str(controller._items[100].file.path), True)
+    controller.set_file_in_run(str(controller._items[100].file.path), False)
     settle(controller, qtbot)
     qtbot.wait(50)
     assert files.property("contentY") == 3000.0
@@ -195,7 +195,7 @@ def test_lists_that_shrink_while_they_show_read_no_missing_row(controller: Windo
     qtbot.waitUntil(root.isExposed)
     open_show(controller, qtbot)
     root.setProperty("place", "review")
-    controller.leave_out_file(str(controller._items[3].file.path), True)
+    controller.set_file_in_run(str(controller._items[3].file.path), False)
     settle(controller, qtbot)
     controller.review_filter = "out"  # 300 cards become 1
     qtbot.wait(50)

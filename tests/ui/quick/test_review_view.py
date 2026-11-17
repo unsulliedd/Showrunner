@@ -79,7 +79,7 @@ def test_a_left_out_group_says_what_it_would_do_and_counts_nothing(season: list[
     _tracks, names = shown["groups"]
     assert names["in_run"] is False
     assert lines(names) == [("Titles", 10)]  # drawn struck: what it would do
-    assert names["note"] == "Left out today. The templates stay with this batch for the next run."
+    assert names["note"] == "Not this time. The templates stay with this batch for the next run."
     assert shown["count"] == 29
     first = shown["rows"][0]
     assert [m["key"] for m in first["marks"]] == ["tracks", "names"]

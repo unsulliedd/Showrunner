@@ -4,7 +4,7 @@ import QtQuick.Layouts
 import Showrunner
 
 // Review: the run's changes grouped by kind, each group in or out of the run, what stays as it is, and
-// the one Apply button; beside them one card per file, filtered, with Leave out and Put back.
+// the one Apply button; beside them one card per file, filtered, with Not this time and Put back.
 Item {
     id: place
 

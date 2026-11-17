@@ -8,6 +8,9 @@ Revert returns to. A season, an episode and a movie hold only what they set them
 what they receive, so a later change on the show still reaches them wherever they did not choose otherwise; removing
 a place's own choices (`forget`) makes it follow its parent again, and `discard` does so for a place and everything
 inside it. Preview plans each file with its own combined options.
+
+Whether a place is excluded from every run is a value per place too, kept apart from the choices (`Exclusions`): a
+show's excludes its seasons and episodes unless one of them holds its own value, and Discard leaves it alone.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from showrunner.app.batches.choices import NO_CHOICE, TrackChoice, TrackSignature, choice_of, choose
+from showrunner.app.batches.exclusions import Exclusions
 from showrunner.app.batches.places import (
     Layer,
     choice_count,
@@ -142,6 +146,7 @@ class Batches:
         self._store = store
         self._copies: dict[BatchKey, WorkingCopy] = {}  # by root
         self._layers: dict[BatchKey, Layer] = {}  # a season's, an episode's or a movie's own choices
+        self.exclusions = Exclusions()
         self.last_used: dict[Media, str] = dict(last_used or {})  # media -> the profile a new root starts from
 
     def copy(self, key: BatchKey) -> WorkingCopy:
@@ -295,8 +300,19 @@ class Batches:
         if key.parent is None:
             self.forget(key)
 
+    def is_excluded(self, key: BatchKey) -> bool:
+        return self.exclusions.excluded(key)
+
+    def set_excluded(self, key: BatchKey, excluded: bool) -> None:
+        """Exclude the place and everything inside it, or include it again; an own value inside wins for that place."""
+        self.exclusions.set(key, excluded)
+
+    def excluded_files(self, items: Sequence[MediaItem], under: BatchKey) -> set[Path]:
+        """The files among `items`, lying in place `under` (see `BatchKey.in_show`), that are excluded."""
+        return {i.file.path for i in items if self.exclusions.excluded(BatchKey.file(i).in_show(under))}
+
     def to_json(self) -> dict[str, Any]:
-        """The state to keep with the workspace, so unsaved edits survive a restart."""
+        """The state to keep with the workspace, so unsaved edits and exclusions survive a restart."""
         return {
             "last_used": {media.value: name for media, name in self.last_used.items()},
             "batches": [
@@ -304,6 +320,7 @@ class Batches:
                 for key, copy in self._copies.items()
             ],
             "places": [{"key": _key_json(key), "own": layer_to_json(layer)} for key, layer in self._layers.items()],
+            "excluded": [{"key": _key_json(key), "value": value} for key, value in self.exclusions.values.items()],
         }
 
     @classmethod
@@ -358,6 +375,14 @@ class Batches:
                 continue
             if key.parent is not None and (layer := layer_from_json(entry.get("own"))):
                 batches._layers[key] = layer
+        excluded = data.get("excluded")
+        for entry in excluded if isinstance(excluded, list) else ():
+            try:
+                key, value = _key_from_json(entry["key"]), entry["value"]
+            except (AttributeError, KeyError, TypeError, ValueError):
+                continue
+            if type(value) is bool:
+                batches.exclusions.values[key] = value
         return batches
 
     def _combined(self, key: BatchKey, cache: dict[BatchKey, Profile]) -> Profile:

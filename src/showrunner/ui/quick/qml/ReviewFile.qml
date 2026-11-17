@@ -3,15 +3,17 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
-// One file in Review: what changes in it, a mark per group, and Leave out or Put back. Opened, it shows its tracks,
-// defaults, file, title and track names before and after; a row of a left-out group says so and is muted.
+// One file in Review: what changes in it, a mark per group, and Not this time or Put back, or Include for an
+// excluded file. Opened, it shows its tracks, defaults, file, title and track names before and after; a row of a
+// left-out group says so and is muted.
 Item {
     id: card
 
     required property var file
     property bool expanded: false
     property bool locked: false
-    readonly property bool out: file.state === "out"
+    readonly property bool excluded: file.state === "excluded"
+    readonly property bool out: file.state === "out" || excluded
 
     signal toggled()
 
@@ -70,6 +72,13 @@ Item {
             }
 
             Icon {
+                objectName: "excludedMark"
+                visible: card.excluded
+                name: "no_entry"
+                size: Theme.icon_sm
+            }
+
+            Icon {
                 visible: card.file.state === "look"
                 name: "alert"
                 size: Theme.icon_sm
@@ -78,7 +87,7 @@ Item {
 
             UiText {
                 Layout.fillWidth: true
-                text: card.out ? Strings.t("review.file.left_out") : card.file.summary
+                text: card.excluded ? Strings.t("review.file.excluded") : card.out ? Strings.t("review.file.left_out") : card.file.summary
                 color: Theme.muted
                 font.pixelSize: Theme.text_sm
             }
@@ -102,13 +111,13 @@ Item {
             }
 
             ActionButton {
-                objectName: "leaveOut"
+                objectName: card.excluded ? "includeFile" : "notThisTime"
                 kind: card.out ? "outline" : "ghost"
                 size: Theme.row_sm
                 enabled: !card.locked
-                text: card.out ? Strings.t("review.put_back") : Strings.t("review.leave_out")
+                text: card.excluded ? Strings.t("workspace.include") : card.out ? Strings.t("review.put_back") : Strings.t("review.not_this_time")
                 Accessible.description: card.file.title
-                onClicked: app.leave_out_file(card.file.path, !card.out)
+                onClicked: card.excluded ? app.exclude_file(card.file.path, false) : app.set_file_in_run(card.file.path, card.out)
             }
         }
 

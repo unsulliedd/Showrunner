@@ -1,9 +1,9 @@
-"""What the next run leaves out: groups of planned change per batch, and files.
+"""What this run alone leaves out: groups of planned change per batch, and files.
 
 A left-out group is planned as if its options asked for nothing (`groups.without`), so it belongs to the batch whose
-options it empties. A left-out file is one set of paths for the whole window, so a file left out in its season is
-left out in its whole show and in a selection too, and the library marks it once. Both last for the session: they
-choose a run, while the choices themselves stay in the working copy.
+options it empties. A file left out of this run is one set of paths for the whole window, so a file left out in its
+season is left out in its whole show and in a selection too. Both last for the session: they choose one run, while
+the choices stay in the working copy and the saved exclusion of a place (`Exclusions`) is a different thing.
 """
 
 from __future__ import annotations

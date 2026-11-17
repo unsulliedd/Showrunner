@@ -1,5 +1,6 @@
-"""The workspace state file: every root's working copy of its profile and every nearer place's own choices, so unsaved
-choices survive a restart. A file of format 1 held a whole profile per batch; `Batches.from_json` reads it as well."""
+"""The workspace state file: every root's working copy of its profile, every nearer place's own choices and the places
+excluded from every run, so unsaved choices and exclusions survive a restart. A file of format 1 held a whole profile
+per batch; `Batches.from_json` reads it as well."""
 
 from __future__ import annotations
 

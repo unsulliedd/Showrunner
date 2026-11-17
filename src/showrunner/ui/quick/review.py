@@ -2,8 +2,9 @@
 out of the run, and one card per file with what changes in it.
 
 Two plans come in. `run` is planned with the left-out groups emptied, as Apply will run it; `full` with every group
-in, so a left-out group can still show what it would do. Left-out files are in both plans and only left out of the
-counts here and of the job (`create_job(left_out_files=...)`).
+in, so a left-out group can still show what it would do. Files out of the run are in both plans and only out of the
+counts here and of the job (`create_job(left_out_files=...)`): the excluded ones, saved with the workspace, and the
+ones left out of this run alone.
 """
 
 from __future__ import annotations
@@ -45,6 +46,8 @@ LINES: dict[ChangeGroup, tuple[str, ...]] = {
 }
 GROUP_ICONS = {ChangeGroup.TRACKS: "audio", ChangeGroup.NAMES: "names"}
 FILTERS = ("all", "run", "look", "out")
+# A file's state in Review: in the run, in it but needing a look, left out of this run alone, or excluded.
+OUT_STATES = ("out", "excluded")
 # What no stage of this version changes, listed under "Stays as it is".
 STAYS = ("chapters", "attachments", "artwork")
 _LOOK = (FileOutcome.REFUSED, FileOutcome.NEEDS_REMUX, FileOutcome.UNWRITTEN, FileOutcome.MISSING)
@@ -59,7 +62,8 @@ class ReviewInput:
     run: Sequence[FilePreview]  # empty until the run plan for the batch's files arrived
     full: Sequence[FilePreview]
     groups_out: Set[ChangeGroup] = frozenset()
-    files_out: Set[Path] = frozenset()
+    files_out: Set[Path] = frozenset()  # left out of this run alone
+    excluded: Set[Path] = frozenset()  # out of every run until included again
     blocks: dict[str, StageBlock] = field(default_factory=dict)
     mkvtoolnix_missing: bool = False
     filter: str = "all"
@@ -95,9 +99,9 @@ def _by_path(files: Sequence[FilePreview]) -> dict[Path, FilePreview]:
 
 
 def _writing(given: ReviewInput, run: dict[Path, FilePreview]) -> tuple[list[MediaItem], list[MediaItem]]:
-    """The files not left out, and of those the ones Apply writes: a file whose plans write nothing (MKVToolNix
+    """The files in the run, and of those the ones Apply writes: a file whose plans write nothing (MKVToolNix
     missing) is a look, not a run."""
-    included = [i for i in given.items if i.file.path not in given.files_out]
+    included = [i for i in given.items if i.file.path not in given.files_out and i.file.path not in given.excluded]
     return included, [i for i in included if (f := run.get(i.file.path)) is not None and f.writes]
 
 
@@ -119,9 +123,9 @@ def review(given: ReviewInput) -> dict[str, object]:
     rows = [_row(given, item, run_view, full_view, run_parts[item.file.path]) for item in given.items]
     counts = {
         "all": len(rows),
-        "run": sum(r["state"] != "out" for r in rows),
+        "run": sum(r["state"] not in OUT_STATES for r in rows),
         "look": sum(r["state"] == "look" for r in rows),
-        "out": sum(r["state"] == "out" for r in rows),
+        "out": sum(r["state"] in OUT_STATES for r in rows),
     }
     stays = ([tr("review.stays.file_names")] if not given.mux.suffix else []) + [tr(f"review.stays.{k}") for k in STAYS]
     return {
@@ -131,7 +135,7 @@ def review(given: ReviewInput) -> dict[str, object]:
         "groups": [_group(given, group, included, writing, run_parts, full_parts) for group in ChangeGroup],
         "stays": stays,
         "filters": [{"key": key, "label": tr(f"review.filter.{key}"), "count": counts[key]} for key in FILTERS],
-        "rows": [r for r in rows if given.filter == "all" or r["state"] == given.filter or _in_run(given, r)],
+        "rows": [r for r in rows if _shown(given.filter, str(r["state"]))],
         "apply_text": tr("review.apply", changes=tr_plural("top.changes", changes), files=tr_plural("top.files", files))
         if changes
         else tr("review.apply_none"),
@@ -142,8 +146,12 @@ def _changes_in(changes: int, files: int) -> str:
     return tr("top.changes_in", changes=tr_plural("top.changes", changes), files=tr_plural("top.files", files))
 
 
-def _in_run(given: ReviewInput, row: dict[str, object]) -> bool:
-    return given.filter == "run" and row["state"] != "out"
+def _shown(which: str, state: str) -> bool:
+    if which == "run":
+        return state not in OUT_STATES
+    if which == "out":
+        return state in OUT_STATES
+    return which in ("all", state)
 
 
 def _group(
@@ -213,7 +221,9 @@ def _row(
     path = item.file.path
     run_file, full_file = run_view.file(item), full_view.file(item)
     warning = run_view.failure(item) or (run_view.warning(item) if run_file is not None else "")
-    if path in given.files_out:
+    if path in given.excluded:
+        state = "excluded"
+    elif path in given.files_out:
         state = "out"
     elif warning or (run_file is not None and run_file.outcome in _LOOK):
         state = "look"
@@ -235,8 +245,8 @@ def _row(
         "marks": [
             {
                 "key": group.value,
-                "on": _group_count(found, group) > 0 and state != "out",
-                "out": _group_count(every, group) > 0 and (group in given.groups_out or state == "out"),
+                "on": _group_count(found, group) > 0 and state not in OUT_STATES,
+                "out": _group_count(every, group) > 0 and (group in given.groups_out or state in OUT_STATES),
             }
             for group in ChangeGroup
         ],

@@ -18,7 +18,7 @@ AbstractButton {
     required property string summary
     required property string problem
     required property bool planned
-    required property bool left_out
+    required property bool excluded
     required property string row_id
 
     readonly property bool isSelected: row_id === app.selected
@@ -33,6 +33,7 @@ AbstractButton {
     focusPolicy: Qt.NoFocus
     Accessible.role: Accessible.TreeItem
     Accessible.name: number !== "" ? number + " " + label : label
+    Accessible.description: excluded ? Strings.t("library.excluded_tip") : ""
     onClicked: app.select(treeView.index(row.row, row.column))
     onDoubleClicked: if (hasChildren) treeView.toggleExpanded(row.row)
 
@@ -96,7 +97,7 @@ AbstractButton {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(implicitWidth, parent.width - x)
                 text: row.label
-                color: Theme.ink
+                color: row.excluded ? Theme.faint : Theme.ink
                 font.weight: row.isGroup ? Font.DemiBold : row.kind === "season" ? Font.Medium : Font.Normal
             }
         }
@@ -125,19 +126,28 @@ AbstractButton {
                 font.pixelSize: mono ? Theme.text_xs : Theme.text_sm
             }
 
-            UiText {
+            // Excluded places carry the no-entry mark, dimmed with the row; the tooltip says what it means and how to
+            // undo it.
+            Icon {
+                objectName: "excludedMark"
                 anchors.verticalCenter: parent.verticalCenter
-                visible: row.left_out
-                text: Strings.t("library.left_out")
-                color: Theme.faint
-                font.pixelSize: Theme.text_xs
+                visible: row.excluded
+                name: "no_entry"
+                size: Theme.icon_sm
+
+                HoverHandler {
+                    id: markHover
+                }
+
+                ToolTip.visible: markHover.hovered
+                ToolTip.text: Strings.t("library.excluded_tip")
             }
 
             Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Theme.icon_sm
                 height: Theme.icon_sm
-                visible: !row.left_out && (row.problem !== "" || row.planned)
+                visible: !row.excluded && (row.problem !== "" || row.planned)
 
                 Icon {
                     anchors.centerIn: parent

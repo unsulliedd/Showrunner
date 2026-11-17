@@ -23,7 +23,6 @@ from showrunner.stages.mux import Failure, MuxPlan, MuxResult, VerifyProblem
 from showrunner.tools.dependencies.detect import DependencyStatus, State
 from showrunner.tools.probe import Programs
 from showrunner.tools.process import ProcessCancelledError
-from showrunner.ui.quick.library import LEFT_OUT
 from showrunner.ui.quick.window import WindowController
 
 from .conftest import neutral_library, program_statuses
@@ -128,8 +127,7 @@ def setup(qapp: QApplication, qtbot: QtBot, tmp_path: Path) -> Iterator[Setup]:
 def test_apply_writes_the_run_and_leaves_out_a_file(setup: Setup, qtbot: QtBot) -> None:
     controller, ninth = setup.controller, setup.season[8]
     every = controller.change_count
-    controller.leave_out_file(str(ninth), True)
-    assert controller.tree.index_of(str(ninth)).data(LEFT_OUT) is True
+    controller.set_file_in_run(str(ninth), False)
     assert controller.change_count == every - controller.review["rows"][0]["count"]
     assert controller.can_apply
     with qtbot.waitSignal(controller.jobs.ended, timeout=10_000):
@@ -147,6 +145,20 @@ def test_apply_writes_the_run_and_leaves_out_a_file(setup: Setup, qtbot: QtBot) 
     qtbot.waitUntil(lambda: controller.model.library.item(setup.season[0]).file.title == "Read again")
     assert controller.model.library.item(ninth).file.title == ""
     assert setup.store.unfinished() == []
+
+
+def test_apply_skips_an_excluded_file_until_it_is_included_again(setup: Setup, qtbot: QtBot) -> None:
+    controller, ninth = setup.controller, setup.season[8]
+    every = controller.change_count
+    controller.exclude_file(str(ninth), True)
+    assert controller.change_count == every - controller.review["rows"][0]["count"]
+    with qtbot.waitSignal(controller.jobs.ended, timeout=10_000):
+        controller.apply()
+    assert [r["state"] for r in controller.jobs.view["rows"]] == ["done"] * 9
+    assert ninth.read_bytes() == b"original"
+    assert sorted(p.name for p in setup.bin.iterdir()) == sorted(p.name for p in setup.season if p != ninth)
+    # Excluded still after the run: exclusion is not a choice a run uses up.
+    assert next(r for r in controller.review["rows"] if r["path"] == str(ninth))["state"] == "excluded"
 
 
 def test_a_left_out_group_is_not_written_and_its_options_stay(setup: Setup, qtbot: QtBot) -> None:
@@ -207,7 +219,7 @@ def test_the_batch_is_locked_while_its_job_runs_and_others_stay_open(setup: Setu
     assert not controller.can_apply
     rules = controller.rules
     controller.toggle_keep(COMMENTARY)
-    controller.leave_out_file(str(setup.season[0]), True)
+    controller.set_file_in_run(str(setup.season[0]), False)
     controller.set_in_run("names", False)
     assert controller.rules == rules
     assert not controller.left_out.files
@@ -281,15 +293,16 @@ def test_a_job_from_another_version_can_only_be_discarded(
     assert setup.store.unfinished() == []
 
 
-def test_the_header_leaves_out_the_whole_batch(setup: Setup) -> None:
+def test_excluding_the_batch_leaves_nothing_to_apply_until_it_is_included_again(setup: Setup) -> None:
     controller = setup.controller
-    controller.leave_out_batch()
-    assert controller.batch_left_out
+    controller.exclude_place(True)
+    assert controller.place_excluded
     assert controller.change_count == 0
     assert not controller.can_apply
-    controller.leave_out_batch()
-    assert not controller.batch_left_out
+    controller.exclude_place(False)
+    assert not controller.place_excluded
     assert controller.change_count > 0
+    assert controller.can_apply
 
 
 def real_statuses(mkvmerge: Path) -> Callable[[], dict[str, DependencyStatus]]:

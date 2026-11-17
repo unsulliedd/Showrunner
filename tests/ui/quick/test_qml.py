@@ -667,7 +667,7 @@ def test_review_apply_and_the_job_offer_draw_without_warnings(
     _click(window, _item(root, "inRun_names"))
     qtbot.waitUntil(lambda: not controller.planning and not controller.review["groups"][1]["in_run"])
     qtbot.wait(50)
-    _click(window, _items(root, "leaveOut")[1])
+    _click(window, _items(root, "notThisTime")[1])
     assert controller.left_out.files == {made.season[1]}
     qtbot.wait(50)
     _click(window, _items(root, "expand")[0])
@@ -745,7 +745,7 @@ def test_the_job_list_shrinks_and_clears_without_warnings(
         controller.apply()
     qtbot.waitUntil(lambda: _item(root, "jobRows").property("count") == 10)
     for path in made.season[3:]:
-        controller.leave_out_file(str(path), True)
+        controller.set_file_in_run(str(path), False)
     qtbot.waitUntil(lambda: not controller.planning and controller.can_apply)
     with qtbot.waitSignal(controller.jobs.ended, timeout=10_000):
         controller.apply()
@@ -1148,9 +1148,9 @@ def test_a_narrow_window_elides_text_in_place_and_shows_it_whole_under_the_point
     window.setProperty("place", "names")
     assert load() == []
     root = window.contentItem()
-    # The header's facts end before Leave out.
+    # The header's facts end before Exclude.
     facts = next(i for i in _all(root) if i.property("text") == controller.batch["facts"])
-    assert _right(facts) <= _left(_item(root, "leaveOutBatch")) + 1
+    assert _right(facts) <= _left(_item(root, "excludeBatch")) + 1
     # A tab of a place that does not exist yet shows whole or not at all.
     tabs = [i for i in _all(root) if i.metaObject().className().startswith("Tabs")]
     for row in tabs:

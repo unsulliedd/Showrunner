@@ -134,6 +134,20 @@ class _Applying:
     name: str  # the batch, as the job names it
 
 
+def place_key(kind: Kind, first: MediaItem, show: BatchKey | None) -> BatchKey:
+    """The place a library row stands for, from its kind and its first video; `show` is the key of the show row it lies
+    under, so every place in a show's row names the show as the row does."""
+    if kind.is_video:
+        key = BatchKey.file(first)
+    elif kind is Kind.SEASON:
+        key = BatchKey.of(first)
+    elif kind is Kind.SHOW:
+        key = BatchKey.of(first, whole_show=True)
+    else:
+        key = BatchKey.movies()
+    return key.in_show(show) if show is not None else key
+
+
 def available_screens() -> list[Rect]:
     """The usable area of every connected screen, the primary one first."""
     return [(r.x(), r.y(), r.width(), r.height()) for r in (s.availableGeometry() for s in QGuiApplication.screens())]
@@ -151,6 +165,7 @@ def local_paths(urls: list[Any]) -> list[Path]:
 
 class WindowController(QObject):
     library_changed = Signal()
+    needs_look_changed = Signal()
     loading_changed = Signal()
     programs_changed = Signal()
     recent_changed = Signal()
@@ -211,7 +226,8 @@ class WindowController(QObject):
         self._planner.busy_changed.connect(self.apply_changed)
         self._preview: Preview | None = None  # the live plan of the selected batch, once it arrived
         self._run_preview: Preview | None = None  # the same with the left-out groups emptied, as Apply runs it
-        self.left_out = LeftOut()
+        self.left_out = LeftOut()  # what this run alone leaves out; exclusion is saved and lives in `batches`
+        self._excluded_files: frozenset[Path] = frozenset()  # every excluded video of the library
         self._review_filter = "all"
         self._make_pipeline = make_pipeline
         self._read_file = read
@@ -256,6 +272,9 @@ class WindowController(QObject):
         self._recent = dict(settings.recent_folders)
         self._restore = settings.last_selection
         self.model.library_changed.connect(self.library_changed)
+        self.model.library_changed.connect(self._refresh_excluded)
+        self.model.library_changed.connect(self.needs_look_changed)
+        self.model.marks_changed.connect(self.needs_look_changed)
 
     # Start and end
 
@@ -307,7 +326,7 @@ class WindowController(QObject):
     def loaded(self) -> bool:
         return bool(self.model.library.items)
 
-    @Property(int, notify=library_changed)
+    @Property(int, notify=needs_look_changed)
     def needs_look(self) -> int:
         return self.model.needs_look_count()
 
@@ -475,19 +494,8 @@ class WindowController(QObject):
         kind = self.model.kind(source)
         self._focus = items[0] if kind.is_video and items else None
         previous = self._key
-        if not items:
-            self._key, self._items = None, []
-        elif kind in (Kind.EPISODE, Kind.MOVIE):
-            # One file's own place: what is chosen here is that file's alone.
-            self._key, self._items = BatchKey.file(items[0]), items
-        elif kind is Kind.SEASON:
-            self._key, self._items = BatchKey.of(items[0]), items
-        elif kind is Kind.SHOW:
-            self._key, self._items = BatchKey.of(items[0], whole_show=True), items
-        else:
-            self._key, self._items = BatchKey.movies(), items
-        if self._key is not None and (show := self._show_of(source)) is not None:
-            self._key = self._key.in_show(show)
+        # An episode or a movie row is one file's own place: what is chosen there is that file's alone.
+        self._key, self._items = (place_key(kind, items[0], self._show_of(source)), items) if items else (None, [])
         if self._key != previous:
             self._editing = -1  # the open token belongs to the other batch's profile
             self._editing_builtin = ""
@@ -629,13 +637,76 @@ class WindowController(QObject):
 
     @Property(list, notify=batch_changed)
     def place_actions(self) -> list[dict[str, Any]]:
-        """What the right-click menu of a library row, and the header, offer for the selected place."""
-        return [{"key": "discard", "text": tr("workspace.discard"), "enabled": self.can_discard}]
+        """What the right-click menu of a library row offers for the selected place."""
+        excluded = self.place_excluded
+        return [
+            {"key": "discard", "text": tr("workspace.discard"), "enabled": self.can_discard},
+            {
+                "key": "include" if excluded else "exclude",
+                "text": tr("workspace.include" if excluded else "workspace.exclude"),
+                "enabled": self._key is not None and not self.locked,
+            },
+        ]
 
     @Slot(str)
     def place_action(self, key: str) -> None:
         if key == "discard":
             self.ask_discard()
+        elif key in ("exclude", "include"):
+            self.exclude_place(key == "exclude")
+
+    # Exclude and Include
+
+    @Property(bool, notify=batch_changed)
+    def place_excluded(self) -> bool:
+        """The selected place is out of every run, on its own or through a place above it."""
+        return self._key is not None and self.batches.is_excluded(self._key)
+
+    @Slot(bool)
+    def exclude_place(self, excluded: bool) -> None:
+        """Exclude the selected place and everything inside it, or include it again; a place inside that holds a value
+        of its own keeps it. Unlike a choice, it is kept until the user changes it, and Discard leaves it alone."""
+        if self._key is not None:
+            self._set_excluded(self._key, excluded)
+
+    @Slot(str, bool)
+    def exclude_file(self, path: str, excluded: bool) -> None:
+        """Exclude or include one file of the selected batch, which is that file's own place."""
+        item = next((i for i in self._items if str(i.file.path) == path), None)
+        if self._key is not None and item is not None:
+            self._set_excluded(BatchKey.file(item).in_show(self._key), excluded)
+
+    def _set_excluded(self, key: BatchKey, excluded: bool) -> None:
+        if self.locked:
+            return
+        self.batches.set_excluded(key, excluded)
+        self._refresh_excluded()
+        self._refresh()
+        self._save_timer.start()
+        self.batch_changed.emit()
+
+    def _refresh_excluded(self) -> None:
+        """Read which rows of the library are excluded, folders too, and tell the tree and the model."""
+        model, rows, files = self.model, set(), set()
+
+        def walk(parent: QModelIndex, show: BatchKey | None) -> None:
+            for row in range(model.rowCount(parent)):
+                index = model.index(row, 0, parent)
+                kind, paths = model.kind(index), model.video_paths(index)
+                item = model.library.item(paths[0]) if paths else None
+                if item is None:
+                    continue
+                key = place_key(kind, item, show)
+                if self.batches.is_excluded(key):
+                    rows.add(self.tree.source_row_id(index))
+                    if kind.is_video:
+                        files.add(item.file.path)
+                walk(index, key if kind is Kind.SHOW else show)
+
+        walk(QModelIndex(), None)
+        self._excluded_files = frozenset(files)
+        self.tree.set_excluded(rows)
+        model.set_excluded(files)
 
     @Property(bool, notify=batch_changed)
     def can_discard(self) -> bool:
@@ -1226,8 +1297,9 @@ class WindowController(QObject):
             self._view = BatchView.build(self._items, tracks, files, self._failures(), self._received())
             counts = dict.fromkeys(ChangeGroup, 0)
             for file in files:
-                for group, count in count_changes(file).items():
-                    counts[group] += count
+                if file.item.file.path not in self._excluded_files:
+                    for group, count in count_changes(file).items():
+                        counts[group] += count
             self._shown = {"rules": self._view.rules(), "counts": counts, "inspector": self._inspector()}
             if self._key.kind is BatchKind.MOVIE and self._items:
                 groups = self._view.card_groups(self._items[0])
@@ -1289,6 +1361,7 @@ class WindowController(QObject):
             full=files,
             groups_out=self.left_out.groups_of(self._key),
             files_out=self.left_out.files,
+            excluded=self._excluded_files,
             blocks=blocked_stages(profile),
             mkvtoolnix_missing=self._statuses is not None and (status is None or status.state is not State.FOUND),
             filter=self._review_filter,
@@ -1319,24 +1392,11 @@ class WindowController(QObject):
         self._replan()
 
     @Slot(str, bool)
-    def leave_out_file(self, path: str, out: bool) -> None:
+    def set_file_in_run(self, path: str, on: bool) -> None:
+        """A file's "Not this time": left out of this run only, nothing saved; its choices and exclusion stay."""
         if self._key is None or self.locked or all(str(i.file.path) != path for i in self._items):
             return
-        self._set_left_out([Path(path)], out)
-
-    @Property(bool, notify=plans_changed)
-    def batch_left_out(self) -> bool:
-        return bool(self._items) and all(i.file.path in self.left_out.files for i in self._items)
-
-    @Slot()
-    def leave_out_batch(self) -> None:
-        """The header's Leave out: every file of the batch, or all of them back when every one is out."""
-        if self._key is not None and not self.locked:
-            self._set_left_out([i.file.path for i in self._items], not self.batch_left_out)
-
-    def _set_left_out(self, paths: list[Path], out: bool) -> None:
-        self.left_out.set_files(paths, out)
-        self.tree.set_left_out(self.left_out.files)
+        self.left_out.set_files([Path(path)], not on)
         self._refresh()
 
     @Slot(str)
@@ -1403,7 +1463,7 @@ class WindowController(QObject):
             profiles=profiles,
             stages=stages,
             groups=self.left_out.groups_of(self._key),
-            out=frozenset(p for p in self.left_out.files if any(i.file.path == p for i in items)),
+            out=frozenset(i.file.path for i in items if i.file.path in {*self.left_out.files, *self._excluded_files}),
             live={f.item.file.path: f.plans for f in self._run_preview.files},
             name=tr("common.list_separator").join((head.over, head.title)) if self._key.season else head.title,
         )
@@ -1625,6 +1685,13 @@ class WindowController(QObject):
                 edited and not self.profile_read_only,
             ),
             Entry("action", "discard", tr("palette.action.discard"), self.profile, edited),
+            Entry(
+                "action",
+                "include" if self.place_excluded else "exclude",
+                tr("palette.action.include" if self.place_excluded else "palette.action.exclude"),
+                self.batch["title"],
+                batch and not self.locked,
+            ),
             *(
                 Entry("action", f"settings.{key}", tr("palette.action.settings", section=tr(f"prefs.section.{key}")))
                 for key, _icon in SECTIONS
@@ -1673,6 +1740,8 @@ class WindowController(QObject):
                 "close_folder": self.close_folder,
                 "save_profile": self.save_profile,
                 "discard": self.discard_profile,
+                "exclude": lambda: self.exclude_place(True),
+                "include": lambda: self.exclude_place(False),
                 "drawer": lambda: self.palette_asked.emit("drawer", ""),
             }.get(key)
             if run is not None:

@@ -55,6 +55,7 @@ class LibraryModel(QStandardItemModel):
         self._videos: dict[Path, QStandardItem] = {}
         self._order: list[Path] = []  # the videos in tree order
         self._plan: dict[Path, str] = {}  # video -> dot color role from the last preview
+        self._excluded: frozenset[Path] = frozenset()  # videos out of every run: they carry no dot and need no look
 
     @property
     def library(self) -> Library:
@@ -82,6 +83,8 @@ class LibraryModel(QStandardItemModel):
         return [p for row in range(self.rowCount(index)) for p in self.video_paths(self.index(row, 0, index))]
 
     def dot(self, path: Path) -> str | None:
+        if path in self._excluded:
+            return None
         return _LIBRARY_DOTS.get(self._library.mark(path)) or self._plan.get(path)
 
     def needs_look_count(self) -> int:
@@ -94,6 +97,16 @@ class LibraryModel(QStandardItemModel):
         for path in self._order:
             self._refresh_dot(path)
         self.marks_changed.emit()
+
+    def set_excluded(self, paths: Iterable[Path]) -> None:
+        """The videos that are excluded: their dots go, and come back when they are included again."""
+        paths = frozenset(paths)
+        changed = self._excluded ^ paths
+        self._excluded = paths
+        for path in changed & self._videos.keys():
+            self._refresh_dot(path)
+        if changed:
+            self.marks_changed.emit()
 
     def first_marked(self) -> QModelIndex:
         """The first video in tree order that needs a look, or an invalid index."""

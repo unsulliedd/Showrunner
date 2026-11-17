@@ -81,6 +81,19 @@ def test_the_first_video_that_needs_a_look_is_found(model: LibraryModel, sample_
     assert not model.first_marked().isValid()
 
 
+def test_an_excluded_video_carries_no_dot_and_needs_no_look(model: LibraryModel, sample_library: Library) -> None:
+    video = index_of(model, sample_library, "S01E02")
+    path = model.path(video)
+    looks = model.needs_look_count()
+    assert model.dot(path) == "accent_ink"
+    model.set_excluded([path])
+    assert model.dot(path) is None
+    assert model.needs_look_count() == looks - 1
+    model.set_excluded([])
+    assert model.dot(path) == "accent_ink"
+    assert model.needs_look_count() == looks
+
+
 def test_pairing_updates_the_rows_in_place(model: LibraryModel, sample_library: Library) -> None:
     video = index_of(model, sample_library, "S02E01")
     keep = QPersistentModelIndex(video)

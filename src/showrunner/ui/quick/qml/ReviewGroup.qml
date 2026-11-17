@@ -68,7 +68,7 @@ Item {
                 checked: group.card.in_run
                 enabled: !group.locked
                 iconName: checked ? "check" : ""
-                text: checked ? Strings.t("review.in_run") : Strings.t("review.left_out_mark")
+                text: checked ? Strings.t("review.in_run") : Strings.t("review.not_this_time")
                 Accessible.description: Strings.t("review.in_run_help")
                 onToggled: app.set_in_run(group.card.key, checked)
             }
