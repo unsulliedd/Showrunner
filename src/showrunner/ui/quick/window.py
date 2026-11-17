@@ -75,6 +75,7 @@ from showrunner.ui.quick.library import LibraryTree
 from showrunner.ui.quick.palette import Entry, search
 from showrunner.ui.quick.plans import LivePlanner
 from showrunner.ui.quick.review import FILTERS, ReviewInput, review, totals
+from showrunner.ui.quick.rule_editor import RuleEditor
 from showrunner.ui.quick.settings import SECTIONS, Settings
 from showrunner.ui.quick.tracks import BatchView, Column, columns, item_number, item_title
 
@@ -228,6 +229,16 @@ class WindowController(QObject):
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(SAVE_DELAY_MS)
         self._save_timer.timeout.connect(self._save_batches)
+        self._rule_editor = RuleEditor(
+            lambda: self._tracks() if self._key is not None else None,
+            self._set_tracks,
+            lambda: self.locked,
+            lambda: self._items,
+            lambda: self._view,
+            parent=self,
+        )
+        self.plans_changed.connect(self._rule_editor.refresh)
+        self.batch_changed.connect(self._rule_editor.refresh)
         self._settings = Settings(self)
         self.look = self._settings.look
         self._settings.programs_view.statuses_changed.connect(self.refresh_programs)
@@ -433,6 +444,7 @@ class WindowController(QObject):
         if self._key != previous:
             self._editing = -1  # the open token belongs to the other batch's profile
             self._editing_builtin = ""
+            self._rule_editor.close()  # as does the rule being written
         self._replan()
         self.batch_changed.emit()
 
@@ -666,6 +678,11 @@ class WindowController(QObject):
         col, _header = found
         options = choose(self._tracks(), col.signature, NO_CHOICE)
         self._set_tracks(add_paired(options, col.paired, False) if col.paired is not None else options)
+
+    @Property(QObject, constant=True)
+    def rule_editor(self) -> RuleEditor:
+        """The editor of a hand-written track rule, in the Rules panel."""
+        return self._rule_editor
 
     @Slot(int, int)
     def move_rule(self, source: int, target: int) -> None:

@@ -70,6 +70,7 @@ class Seen:
     external: SubtitleFile | None
     state: str
     flags: TrackFlags
+    rule: TrackRule | None = None  # the rule that drops it
 
 
 def code(language: Language | None) -> str:
@@ -116,7 +117,7 @@ def seen(item: MediaItem, file: FilePreview | None) -> list[Seen]:
     if not isinstance(plan, TrackPlan):
         return [Seen(t, None, "kept", t.flags) for t in item.file.tracks]
     staying = [Seen(k.track, k.external, "added" if k.external else "kept", k.flags) for k in plan.kept]
-    rows = staying + [Seen(d.track, d.external, "dropped", d.track.flags) for d in plan.dropped]
+    rows = staying + [Seen(d.track, d.external, "dropped", d.track.flags, d.rule) for d in plan.dropped]
     in_file = sorted(rows, key=lambda s: (s.external is not None, abs(s.track.id)))
     # The places of the tracks that stay, in file order, take them in the order of the new file.
     new_order = iter(staying)
@@ -505,20 +506,23 @@ class BatchView:
 
     # Rules
 
+    def fits(self, rule: TrackRule) -> int:
+        """How many of the batch's files have a track the rule's match fits."""
+        flags = self.options.flags_from_names
+        return sum(
+            any(matches(rule.match, t, flags_from_name=flags) for t in _all(i, self.options)) for i in self.items
+        )
+
     def rules(self) -> list[dict[str, object]]:
         signatures = [c.signature for c in self.cols]
         rules = []
         for index, rule in enumerate(self.options.rules):
-            fits = sum(
-                any(
-                    matches(rule.match, t, flags_from_name=self.options.flags_from_names) for t in _all(i, self.options)
-                )
-                for i in self.items
-            )
+            fits = self.fits(rule)
             rules.append(
                 {
                     "enabled": rule.enabled,
                     "from_choice": rule.from_choice,
+                    "label": rule.label,
                     "parts": rule_parts(rule, signature_of(rule, signatures), self.options.rules[:index]),
                     "fits": tr_plural("tracks.rule.fits", fits),
                     "source": tr("tracks.rule.from_matrix") if rule.from_choice else tr("tracks.rule.written"),
@@ -553,6 +557,8 @@ class BatchView:
                     "name": s.track.name,
                     "new_name": names.get(s.track.id, ""),
                     "state": s.state,
+                    # The label of the rule that drops it, when the rule has one.
+                    "by": tr("inspector.dropped_by", rule=s.rule.label) if s.rule is not None and s.rule.label else "",
                     "default": s.state != "dropped" and s.flags.default,
                     "forced": s.state != "dropped" and s.flags.forced,
                 }

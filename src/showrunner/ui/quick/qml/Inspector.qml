@@ -267,6 +267,13 @@ ScrollPane {
                         }
 
                         UiText {
+                            visible: track.modelData.by !== ""
+                            text: track.modelData.by
+                            color: Theme.drop
+                            font.pixelSize: Theme.text_sm
+                        }
+
+                        UiText {
                             visible: track.modelData.new_name !== ""
                             text: Strings.t("inspector.becomes")
                             color: Theme.faint

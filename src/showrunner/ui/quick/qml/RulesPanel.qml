@@ -4,9 +4,25 @@ import QtQuick.Layouts
 import Showrunner
 
 // The batch's track rules in the order they apply: choices made on Overview and Tracks marked "from the matrix",
-// hand-written ones beside them. Drag a card by its grip to reorder; the pause button keeps a rule but stops it.
+// hand-written ones beside them. Drag a card by its grip to reorder; the pause button keeps a rule but stops it. New
+// rule and the pencil of a hand-written rule open the editor in place of the list.
 Item {
     id: panel
+
+    readonly property bool editing: app.rule_editor.form.open
+    // What had the focus when the editor opened, so that closing it gives the focus back.
+    property Item opener: null
+    // What a delegate reads for a moment after its rule is gone, until the list drops it.
+    readonly property var none: ({
+            "enabled": true,
+            "from_choice": true,
+            "label": "",
+            "parts": [],
+            "fits": "",
+            "source": ""
+        })
+
+    onEditingChanged: if (!editing && opener) opener.forceActiveFocus()
 
     ColumnLayout {
         anchors.fill: parent
@@ -15,15 +31,28 @@ Item {
 
         UiText {
             Layout.fillWidth: true
+            visible: !panel.editing
             text: Strings.t("rules.intro")
             color: Theme.muted
             font.pixelSize: Theme.text_sm
             wrapMode: Text.WordWrap
         }
 
+        ActionButton {
+            objectName: "addRule"
+            visible: !panel.editing
+            size: Theme.row_sm
+            iconName: "plus"
+            text: Strings.t("rules.add")
+            onClicked: {
+                panel.opener = this
+                app.rule_editor.open_new()
+            }
+        }
+
         UiText {
             Layout.fillWidth: true
-            visible: app.rules.length === 0
+            visible: !panel.editing && app.rules.length === 0
             text: Strings.t("rules.empty")
             color: Theme.faint
             font.pixelSize: Theme.text_sm
@@ -35,9 +64,11 @@ Item {
 
             Layout.fillWidth: true
             Layout.fillHeight: true
+            visible: !panel.editing
             clip: true
             spacing: Theme.space_md
-            model: app.rules
+            // A count, not the rules: a change of one rule then updates its delegate in place and keeps the focus.
+            model: app.rules.length
             boundsBehavior: Flickable.StopAtBounds
             // The list stays put while a card is dragged, so the drag moves the card, not the list.
             interactive: !dragging
@@ -59,8 +90,8 @@ Item {
             delegate: Item {
                 id: entry
 
-                required property var modelData
                 required property int index
+                readonly property var rule: app.rules[index] || panel.none
 
                 width: list.width
                 height: card.height
@@ -75,7 +106,7 @@ Item {
                     color: Theme.panel_2
                     border.width: Theme.stroke
                     border.color: grip.active ? Theme.control : Theme.line
-                    opacity: entry.modelData.enabled ? 1 : 0.5
+                    opacity: entry.rule.enabled ? 1 : 0.5
                     transform: Translate {
                         y: grip.active ? grip.activeTranslation.y : 0
                     }
@@ -132,37 +163,18 @@ Item {
                             Layout.fillWidth: true
                             spacing: Theme.space_sm
 
-                            Flow {
+                            UiText {
                                 Layout.fillWidth: true
-                                spacing: Theme.space_sm
+                                visible: entry.rule.label !== ""
+                                text: entry.rule.label
+                                color: Theme.muted
+                                font.pixelSize: Theme.text_sm
+                                font.weight: Font.DemiBold
+                            }
 
-                                Repeater {
-                                    model: entry.modelData.parts
-
-                                    delegate: Item {
-                                        required property var modelData
-
-                                        implicitWidth: modelData.code ? badge.implicitWidth : word.implicitWidth
-                                        implicitHeight: Theme.row_sm
-
-                                        CodeBadge {
-                                            id: badge
-
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            visible: modelData.code
-                                            code: modelData.text
-                                        }
-
-                                        UiText {
-                                            id: word
-
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            visible: !modelData.code
-                                            text: modelData.text
-                                            font.weight: Font.Medium
-                                        }
-                                    }
-                                }
+                            RuleSentence {
+                                Layout.fillWidth: true
+                                parts: entry.rule.parts
                             }
 
                             Row {
@@ -170,7 +182,7 @@ Item {
 
                                 UiText {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: entry.modelData.fits
+                                    text: entry.rule.fits
                                     color: Theme.faint
                                     font.pixelSize: Theme.text_xs
                                 }
@@ -182,14 +194,14 @@ Item {
                                     radius: Theme.radius_sm
                                     color: "transparent"
                                     border.width: Theme.stroke
-                                    border.color: entry.modelData.from_choice ? Theme.control : Theme.line_strong
+                                    border.color: entry.rule.from_choice ? Theme.control : Theme.line_strong
 
                                     UiText {
                                         id: source
 
                                         anchors.centerIn: parent
-                                        text: entry.modelData.source
-                                        color: entry.modelData.from_choice ? Theme.control : Theme.muted
+                                        text: entry.rule.source
+                                        color: entry.rule.from_choice ? Theme.control : Theme.muted
                                         font.pixelSize: Theme.text_xs
                                     }
                                 }
@@ -200,16 +212,30 @@ Item {
                             Layout.alignment: Qt.AlignTop
                             implicitWidth: Theme.row_sm
                             implicitHeight: Theme.row_sm
-                            iconName: entry.modelData.enabled ? "pause" : "play"
-                            active: !entry.modelData.enabled
-                            label: entry.modelData.enabled ? Strings.t("rules.pause") : Strings.t("rules.resume")
-                            onClicked: app.pause_rule(entry.index, entry.modelData.enabled)
+                            iconName: entry.rule.enabled ? "pause" : "play"
+                            active: !entry.rule.enabled
+                            label: entry.rule.enabled ? Strings.t("rules.pause") : Strings.t("rules.resume")
+                            onClicked: app.pause_rule(entry.index, entry.rule.enabled)
+                        }
+
+                        IconButton {
+                            objectName: "editRule"
+                            Layout.alignment: Qt.AlignTop
+                            visible: !entry.rule.from_choice
+                            implicitWidth: Theme.row_sm
+                            implicitHeight: Theme.row_sm
+                            iconName: "edit"
+                            label: Strings.t("rules.edit")
+                            onClicked: {
+                                panel.opener = this
+                                app.rule_editor.open_rule(entry.index)
+                            }
                         }
 
                         IconButton {
                             objectName: "removeRule"
                             Layout.alignment: Qt.AlignTop
-                            visible: !entry.modelData.from_choice
+                            visible: !entry.rule.from_choice
                             implicitWidth: Theme.row_sm
                             implicitHeight: Theme.row_sm
                             iconName: "x"
@@ -221,9 +247,17 @@ Item {
             }
         }
 
+        Loader {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: panel.editing
+            active: panel.editing
+            source: "RuleEditor.qml"
+        }
+
         SaveBar {
             Layout.fillWidth: true
-            visible: app.profile_edited
+            visible: app.profile_edited && !panel.editing
             title: Strings.f("rules.unsaved.title", {"name": app.profile})
             lead: Strings.t("rules.unsaved.lead")
             action: Strings.t("profile.save")

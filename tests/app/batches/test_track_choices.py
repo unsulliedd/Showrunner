@@ -9,12 +9,14 @@ from showrunner.app.batches.choices import (
     TrackGroups,
     TrackSignature,
     add_paired,
+    add_rule,
     choice_of,
     choose,
     in_order,
     move_rule,
     move_track,
     pause_rule,
+    replace_rule,
     signature_of,
 )
 from showrunner.core.language import Language
@@ -183,6 +185,19 @@ def test_rules_move_and_pause_in_place() -> None:
     assert [r.enabled for r in paused.rules] == [True, False, True]
     assert pause_rule(paused, 1, False) == options
     assert options.rules[1].enabled  # the old list is untouched
+
+
+def test_a_written_rule_goes_last_and_an_edited_one_stays_in_place() -> None:
+    turkish = sig(TURKISH)
+    written = TrackRule(label="written")
+    options = add_rule(TracksOptions(rules=[written]), written)
+    assert [r.label for r in options.rules] == ["written", "written"]
+    # A choice made afterwards still leads the list, ahead of the rules written by hand.
+    chosen = choose(options, turkish, TrackChoice(Verdict.KEEP))
+    assert [r.from_choice for r in chosen.rules] == [True, False, False]
+    edited = replace_rule(chosen, 2, TrackRule(label="edited"))
+    assert [r.label for r in edited.rules] == ["", "written", "edited"]
+    assert chosen.rules[2].label == "written"  # the old list is untouched
 
 
 def test_a_choice_rule_names_its_signature() -> None:

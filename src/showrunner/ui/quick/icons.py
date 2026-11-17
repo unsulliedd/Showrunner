@@ -28,6 +28,7 @@ ICONS: dict[str, str] = {
     "check": '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
     "x": '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',
+    "edit": '<path d="M5 19l1-4 9.5-9.5 3 3L9 18z"/><path d="M13.5 7.5l3 3"/>',
     "sliders": '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
     "audio": '<path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 10.5v3"/>',
     "subs": '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M7 14.5h4M13 14.5h4M7 11h2M11 11h6"/>',

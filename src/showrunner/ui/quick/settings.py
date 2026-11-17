@@ -51,6 +51,7 @@ SHORTCUT_LIST: tuple[tuple[tuple[str, ...], str], ...] = (
     (("Ctrl+Left", "Ctrl+Right"), "move_chip"),
     (("Ctrl+Left", "Ctrl+Right"), "move_column"),
     (("Ctrl+Up", "Ctrl+Down"), "move_card"),
+    (("Ctrl+Return",), "save_rule"),
 )
 FONTS_DIR = Path(__file__).parent / "fonts"
 # Licences of what ships with the app; a bundled licence text can be opened.

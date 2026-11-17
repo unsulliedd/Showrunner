@@ -201,6 +201,19 @@ def move_rule(options: TracksOptions, source: int, target: int) -> TracksOptions
     return replace(options, rules=rules)
 
 
+def add_rule(options: TracksOptions, rule: TrackRule) -> TracksOptions:
+    """The options with a hand-written rule at the end of the list. First match wins, so the last place never takes a
+    decision from the choices that lead the list or from a rule written before; a drag moves it up when it should."""
+    return replace(options, rules=[*options.rules, rule])
+
+
+def replace_rule(options: TracksOptions, index: int, rule: TrackRule) -> TracksOptions:
+    """The options with the rule at `index` replaced in its place."""
+    rules = list(options.rules)
+    rules[index] = rule
+    return replace(options, rules=rules)
+
+
 def pause_rule(options: TracksOptions, index: int, paused: bool) -> TracksOptions:
     """The options with one rule paused (kept in the list, deciding nothing) or on again."""
     rules = list(options.rules)
