@@ -314,3 +314,16 @@ def test_the_runner_reports_on_the_calling_thread(
     assert not runner.busy
     assert progress == [(1, 2), (2, 2)]
     assert states(results[0]) == {"a.mkv": StepState.DONE, "b.mkv": StepState.DONE}
+
+
+def test_a_job_stored_before_tracks_had_an_order_is_not_resumed(
+    files: SimpleNamespace, store: JobStore, profile: Profile, tmp_path: Path
+) -> None:
+    """Its track plans were pickled without `TrackPlan.reordered`, so they are refused, and offered to discard."""
+    job = start(store, profile, (files.FakeStage(),), [files.item("a.mkv")])
+    with sqlite3.connect(tmp_path / "data" / "jobs.sqlite3") as connection:
+        connection.execute("UPDATE jobs SET app_version = ?", ("0.1.4",))
+    connection.close()
+    with pytest.raises(UnresumableJobError, match=r"0.1.4"):
+        store.load(job)
+    assert [j.id for j in store.unfinished()] == [job]

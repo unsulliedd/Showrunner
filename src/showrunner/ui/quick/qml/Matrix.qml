@@ -4,7 +4,9 @@ import QtQuick.Layouts
 import Showrunner
 
 // The track matrix of the Tracks place: files down, track signatures across, audio then subtitles. A column's
-// header keeps or drops it in every file and sets its flags; a cell shows what the plans leave in that file.
+// header keeps or drops it in every file and sets its flags; a cell shows what the plans leave in that file. The
+// columns stand in the order of the tracks in the new files: a column's grip drags it, or moves it with Ctrl+Left and
+// Ctrl+Right, among the columns of its kind.
 Item {
     id: matrix
 
@@ -12,6 +14,9 @@ Item {
     readonly property var view: app.matrix
     readonly property var headers: view.headers
     readonly property var rows: view.rows
+    // The column a grip drags and how many places it has gone, for the line that shows where it lands.
+    property int dragFrom: -1
+    property int dragPlaces: 0
 
     TrackNames {
         id: trackNames
@@ -127,15 +132,24 @@ Item {
 
         required property var column
         property TrackNames names: null
+        readonly property alias grip: grip
+
+        signal moveBy(int places)
 
         width: Theme.matrix_column
         height: Theme.matrix_header
+        z: grip.active ? 1 : 0
+        transform: Translate {
+            x: grip.offset
+        }
 
         Rectangle {
             anchors.fill: parent
             anchors.margins: Theme.space_xs
             radius: Theme.radius_md
-            color: head.column.state === "dropped" ? Theme.drop_soft : "transparent"
+            color: head.column.state === "dropped" ? Theme.drop_soft : grip.active ? Theme.panel_2 : "transparent"
+            border.width: grip.active ? Theme.stroke : 0
+            border.color: Theme.control
         }
 
         ColumnLayout {
@@ -143,10 +157,31 @@ Item {
             anchors.margins: Theme.space_sm
             spacing: Theme.space_xs
 
-            CodeBadge {
+            Row {
                 Layout.alignment: Qt.AlignHCenter
-                code: head.column.code
-                look: head.column.state
+                spacing: Theme.space_xs
+
+                Grip {
+                    id: grip
+
+                    objectName: "columnGrip"
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: head.column.movable
+                    step: Theme.matrix_column
+                    label: Strings.f("tracks.order.column", {"track": head.column.code + " " + head.column.title})
+                    onActiveChanged: {
+                        matrix.dragFrom = active ? head.column.id : -1
+                        matrix.dragPlaces = 0
+                    }
+                    onPlacesChanged: if (active) matrix.dragPlaces = places
+                    onMoved: places => head.moveBy(places)
+                }
+
+                CodeBadge {
+                    anchors.verticalCenter: parent.verticalCenter
+                    code: head.column.code
+                    look: head.column.state
+                }
             }
 
             UiText {
@@ -264,6 +299,8 @@ Item {
                 anchors.fill: parent
                 objectName: "matrixRows"
                 clip: true
+                // The matrix stays put while a column is dragged, so the drag moves the column, not the view.
+                interactive: matrix.dragFrom < 0
                 contentWidth: Theme.matrix_label + matrix.headers.length * Theme.matrix_column
                 flickableDirection: Flickable.AutoFlickIfNeeded
                 boundsBehavior: Flickable.StopAtBounds
@@ -278,6 +315,15 @@ Item {
                 }
                 ScrollBar.vertical: Scroller {}
                 ScrollBar.horizontal: Scroller {}
+
+                // Scrolls sideways just enough to show column `at`, so a column moved by keyboard stays in view.
+                function showColumn(at) {
+                    const left = Theme.matrix_label + at * Theme.matrix_column
+                    if (left < contentX)
+                        contentX = left
+                    else if (left + Theme.matrix_column > contentX + width)
+                        contentX = Math.min(left + Theme.matrix_column - width, contentWidth - width)
+                }
 
                 header: Column {
                     Row {
@@ -359,13 +405,25 @@ Item {
                         }
 
                         Repeater {
-                            model: matrix.headers
+                            id: heads
+
+                            // A count, not the headers: a move then updates the headers in place, and the focus can
+                            // follow the moved column to its new place.
+                            model: matrix.headers.length
 
                             delegate: Header {
-                                required property var modelData
+                                required property int index
 
-                                column: modelData
+                                column: matrix.headers[index]
                                 names: trackNames
+                                onMoveBy: places => {
+                                    const focused = grip.activeFocus
+                                    const at = app.move_track(index, index + places)
+                                    if (focused) {
+                                        heads.itemAt(at).grip.forceActiveFocus()
+                                        scroll.showColumn(at)
+                                    }
+                                }
                             }
                         }
                     }
@@ -438,6 +496,27 @@ Item {
                         }
                     }
                 }
+            }
+
+            // Where the dragged column lands: the edge of the column whose place it takes.
+            Rectangle {
+                readonly property var dragged: matrix.dragFrom >= 0 ? matrix.headers[matrix.dragFrom] : null
+                readonly property int first: dragged ? matrix.headers.findIndex(h => h.kind === dragged.kind) : 0
+                readonly property int last: dragged
+                                            ? first + matrix.headers.filter(h => h.kind === dragged.kind).length - 1 : 0
+                readonly property int to: dragged
+                                          ? Math.max(first, Math.min(last, matrix.dragFrom + matrix.dragPlaces)) : -1
+                readonly property int edge: to > matrix.dragFrom ? to + 1 : to
+
+                objectName: "orderLine"
+                visible: dragged !== null && to !== matrix.dragFrom
+                x: Theme.matrix_label + edge * Theme.matrix_column - scroll.contentX - width / 2
+                y: Theme.row_sm
+                z: 2
+                width: 3 * Theme.stroke
+                height: parent.height - y
+                radius: width / 2
+                color: Theme.control
             }
 
             Item {
@@ -516,6 +595,16 @@ Item {
                         }
                     }
                 }
+            }
+
+            UiText {
+                Layout.alignment: Qt.AlignTop
+                Layout.preferredHeight: Theme.row_sm
+                verticalAlignment: Text.AlignVCenter
+                visible: matrix.headers.some(h => h.movable)
+                text: Strings.t("matrix.drag_hint")
+                color: Theme.control
+                font.pixelSize: Theme.text_sm
             }
 
             // A name such as Forced or SDH already counts as the flag when rules match; this writes the flag itself.

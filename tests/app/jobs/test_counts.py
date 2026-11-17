@@ -102,3 +102,12 @@ def test_a_forced_flag_a_name_implies_counts_as_a_name_change(profile: Profile) 
     planned = profile.with_options("naming", naming).with_options("metadata", implied)
     (file,) = preview([item], planned, STAGES, stamped=False).files
     assert count_changes(file) == {ChangeGroup.TRACKS: 0, ChangeGroup.NAMES: 1}
+
+
+def test_a_new_order_is_one_change_beside_the_new_file() -> None:
+    order = [TrackMatch(kind=KindTest.AUDIO, languages=["tr"])]
+    plan = plan_tracks(ITEM, TracksOptions(order=order))
+    assert isinstance(plan, TrackPlan)
+    assert track_changes(plan) == 2  # the new file and its order
+    # The default stays on the English track wherever it stands.
+    assert [k.track.id for k in plan.kept if k.flags.default] == [1]

@@ -6,7 +6,7 @@ no rule decides on is kept. First-match-wins is used because a list then reads l
 Turkish subtitles, drop every other subtitle"), and the rule that dropped a track is a single, definite
 answer for the preview; with later rules overriding earlier ones, that answer would depend on the whole list.
 
-Flag actions work on the tracks that are kept. See `FlagShape`.
+Flag actions work on the tracks that are kept, in the order of the new file. See `FlagShape` and `order`.
 """
 
 from __future__ import annotations
@@ -49,10 +49,10 @@ class Verdict(StrEnum):
 class FlagShape(StrEnum):
     """What a rule does to the default or the forced flag.
 
-    `first`: among the kept tracks the rule matches, the first one of each kind gets the flag and every
-    other kept track of that kind loses it. Rules are tried in order, and the first rule that matches a
-    track of a kind decides that kind, so a later `first` rule acts as a fallback ("Turkish audio, else
-    English audio"). A kind no `first` rule reaches keeps its flags as they are.
+    `first`: among the kept tracks the rule matches, the first one of each kind in the new file's order (`order`)
+    gets the flag and every other kept track of that kind loses it. Rules are tried in order, and the first rule
+    that matches a track of a kind decides that kind, so a later `first` rule acts as a fallback ("Turkish audio,
+    else English audio"). A kind no `first` rule reaches keeps its flags as they are.
     """
 
     LEAVE = "leave"
@@ -131,3 +131,7 @@ class TracksOptions:
     # Rules also see the commentary, hearing impaired and forced flags a track's name implies, since many
     # files name such tracks without setting the flag.
     flags_from_names: bool = True
+    # The order of the new file's tracks. Within each kind, the tracks an entry fits come first, in the order of the
+    # first entry each fits, then the tracks no entry fits in file order; a kind keeps the places it has in the file,
+    # so video stays ahead of audio whatever the entries name. Empty keeps the file's order.
+    order: list[TrackMatch] = field(default_factory=list)

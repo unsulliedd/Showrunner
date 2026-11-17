@@ -104,7 +104,11 @@ class TracksStage:
         result = plan_tracks(item, profile.for_stage(self.id))
         if isinstance(result, PlanRefused):
             return StagePlan(self.id, PlanState.REFUSED, result)
-        changed = bool(result.dropped) or any(k.external is not None or k.flag_changes for k in result.kept)
+        changed = (
+            result.reordered
+            or bool(result.dropped)
+            or any(k.external is not None or k.flag_changes for k in result.kept)
+        )
         state = PlanState.CHANGES if changed else PlanState.UNCHANGED
         return StagePlan(self.id, state, result, needs_remux=result.needs_remux)
 

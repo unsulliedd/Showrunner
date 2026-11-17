@@ -17,7 +17,7 @@ from pathlib import Path
 
 from showrunner.core.encoding import detect_encoding
 from showrunner.core.media import MediaFile
-from showrunner.core.track import TrackFlags
+from showrunner.core.track import Track, TrackFlags
 from showrunner.stages.mux.options import Original
 from showrunner.stages.mux.plan import MuxPlan, MuxTrack
 from showrunner.stages.scan.extensions import TEXT_SUBTITLE_EXTENSIONS
@@ -49,7 +49,7 @@ class VerifyProblem:
     """One way the new file differs from the plan. `position` counts the tracks of the new file from 0, -1 for
     the file itself."""
 
-    what: str  # read, tracks, kind, codec, language, name, flags, title or duration
+    what: str  # read, tracks, kind, codec, channels, language, name, flags, title or duration
     position: int = -1
     planned: str = ""
     found: str = ""
@@ -149,8 +149,9 @@ def resume_mux(
 def check(
     plan: MuxPlan, path: Path, programs: Programs, *, cancel: threading.Event | None = None
 ) -> tuple[VerifyProblem, ...]:
-    """Read the file and compare it with the plan: the tracks in order with their kind, codec, language, name
-    and flags, the title, and the duration within `DURATION_TOLERANCE_SECONDS` of the original's."""
+    """Read the file and compare it with the plan: the tracks in order with their kind, codec, language, name and
+    flags (and channels when the plan puts them in a new order), the title, and the duration within
+    `DURATION_TOLERANCE_SECONDS` of the original's."""
     try:
         after = probe(path, programs, cancel=cancel)
     except ProcessCancelledError:
@@ -178,6 +179,11 @@ def verify(plan: MuxPlan, after: MediaFile) -> tuple[VerifyProblem, ...]:
         # A track copied from the video keeps its codec; a subtitle file's codec is mkvmerge's to choose.
         if want.planned.external is None:
             pairs.append(("codec", source.codec, got.codec))
+            # In a new order the channels also tell apart two audio tracks that differ in nothing else. Only then:
+            # mkvmerge reads the channels again from some audio streams, so a remux that keeps the order is not
+            # held to them.
+            if plan.reordered:
+                pairs.append(("channels", _channels(source), _channels(got)))
         problems += [VerifyProblem(what, position, a, b) for what, a, b in pairs if a != b]
     if after.title != plan.title:
         problems.append(VerifyProblem("title", planned=plan.title, found=after.title))
@@ -292,6 +298,10 @@ def _signature(path: Path) -> tuple[int, int] | None:
     except OSError:
         return None
     return status.st_size, status.st_mtime_ns
+
+
+def _channels(track: Track) -> str:
+    return str(track.audio.channels) if track.audio is not None and track.audio.channels is not None else ""
 
 
 def _flags(flags: TrackFlags) -> str:

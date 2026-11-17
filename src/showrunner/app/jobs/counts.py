@@ -1,8 +1,9 @@
 """How many changes a file's plans make, per group of planned change: the numbers on the workspace tabs, the top bar
 and Review.
 
-A change is one edit to one file. Tracks and new files: the new file, and each flag (default, forced) that moves to
-other tracks of a kind. Names and flags: the title, each track's name and language, and each flag a name implies.
+A change is one edit to one file. Tracks and new files: the new file, its track order, and each flag (default,
+forced) that moves to other tracks of a kind. Names and flags: the title, each track's name and language, and each
+flag a name implies.
 """
 
 from __future__ import annotations
@@ -18,9 +19,9 @@ _FLAG_PROPERTY = {Flag.DEFAULT: Property.FLAG_DEFAULT, Flag.FORCED: Property.FLA
 
 
 def track_changes(plan: TrackPlan) -> int:
-    """1 for a new file, plus 1 for each flag and kind whose tracks change: the default audio moving from English
-    to Turkish is one change, not one per track."""
-    count = int(plan.needs_remux)
+    """1 for a new file, 1 for a new track order, plus 1 for each flag and kind whose tracks change: the default
+    audio moving from English to Turkish is one change, not one per track."""
+    count = int(plan.needs_remux) + int(plan.reordered)
     before = [d.track for d in plan.dropped if d.external is None] + [k.track for k in plan.kept]
     for flag in Flag:
         for kind in TrackKind:

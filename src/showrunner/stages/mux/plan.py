@@ -58,6 +58,8 @@ class MuxPlan:
     duration: float | None  # of the source, for the check after writing
     original: Original
     keep_folder: str
+    # The tracks are in another order than the file's (`TrackPlan.reordered`).
+    reordered: bool = False
 
     @property
     def added(self) -> tuple[SubtitleFile, ...]:
@@ -124,4 +126,5 @@ def plan_mux(
         file.duration,
         options.original,
         options.keep_folder.strip(),
+        track_plan.reordered,
     )

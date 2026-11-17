@@ -11,7 +11,9 @@ from showrunner.app.batches.choices import (
     add_paired,
     choice_of,
     choose,
+    in_order,
     move_rule,
+    move_track,
     pause_rule,
     signature_of,
 )
@@ -357,3 +359,35 @@ def test_a_choice_rule_from_a_name_signature_is_an_ordinary_rule_now() -> None:
     assert choice_of(options, english) == NO_CHOICE
     assert signature_of(options.rules[0], [english]) is None
     assert dropped(options) == [ENGLISH.id]  # it still works
+
+
+# The track order
+
+SHOWN = [sig(ENGLISH), sig(COMMENTARY), sig(STEREO), sig(SUBTITLE), sig(OTHER_SUBTITLE)]
+
+
+def test_moving_a_track_writes_the_order_of_every_signature() -> None:
+    moved = move_track(TracksOptions(), SHOWN, SHOWN, 2, 0)
+    assert moved.order == [s.match() for s in (SHOWN[2], SHOWN[0], SHOWN[1], SHOWN[3], SHOWN[4])]
+    assert in_order(SHOWN, moved) == [2, 0, 1, 3, 4]
+
+
+def test_a_track_moves_only_among_its_kind() -> None:
+    # An audio track pushed past the subtitles stops at the last audio place; a subtitle stops at the first of its own.
+    assert in_order(SHOWN, move_track(TracksOptions(), SHOWN, SHOWN, 0, 4)) == [1, 2, 0, 3, 4]
+    assert in_order(SHOWN, move_track(TracksOptions(), SHOWN, SHOWN, 4, 0)) == [0, 1, 2, 4, 3]
+
+
+def test_moving_a_track_back_to_where_the_files_have_it_stores_no_order() -> None:
+    moved = move_track(TracksOptions(), SHOWN, SHOWN, 2, 0)
+    shown = [SHOWN[n] for n in in_order(SHOWN, moved)]
+    assert move_track(moved, shown, SHOWN, 0, 2).order == []
+
+
+def test_a_moved_track_changes_the_plan_order_and_choices_still_apply() -> None:
+    item = episode(VIDEO, ENGLISH, COMMENTARY, STEREO, SUBTITLE, OTHER_SUBTITLE)
+    shown = [sig(t) for t in (ENGLISH, COMMENTARY, STEREO, SUBTITLE, OTHER_SUBTITLE)]
+    options = choose(move_track(TracksOptions(), shown, shown, 4, 3), sig(COMMENTARY), TrackChoice(Verdict.DROP))
+    result = plan(options, item)
+    assert [k.track.id for k in result.kept] == [0, 1, 4, 7, 6]
+    assert [d.track.id for d in result.dropped] == [2]

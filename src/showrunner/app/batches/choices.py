@@ -1,5 +1,5 @@
-"""Choices made directly on a track (keep, drop, default, forced) written as ordinary track rules, and the choice
-to add a paired subtitle file.
+"""Choices made directly on a track (keep, drop, default, forced) written as ordinary track rules, the choice to add
+a paired subtitle file, and the order of the tracks in the new file.
 
 A choice is made on a track signature, the group of alike tracks across a batch that one chip or matrix column
 stands for. It becomes one rule marked `from_choice`, so what a chip shows is what the rules produce: there is no
@@ -11,7 +11,7 @@ itself is never edited.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
 
@@ -29,6 +29,7 @@ from showrunner.stages.tracks import (
     TracksOptions,
     Verdict,
     is_paired,
+    order_places,
     stand_in,
 )
 
@@ -205,6 +206,33 @@ def pause_rule(options: TracksOptions, index: int, paused: bool) -> TracksOption
     rules = list(options.rules)
     rules[index] = replace(rules[index], enabled=not paused)
     return replace(options, rules=rules)
+
+
+def in_order(signatures: Sequence[TrackSignature], options: TracksOptions) -> list[int]:
+    """The places of `signatures` as `TracksOptions.order` puts their tracks in a new file, as indices into
+    `signatures`: within each kind the ones it names first, in its order, then the rest as they were."""
+    order = options.order
+    if not order:
+        return list(range(len(signatures)))
+    matches = [s.match() for s in signatures]
+    ranks = [next((n for n, m in enumerate(order) if m == match), len(order)) for match in matches]
+    return order_places([s.kind for s in signatures], ranks)
+
+
+def move_track(
+    options: TracksOptions,
+    shown: Sequence[TrackSignature],
+    natural: Sequence[TrackSignature],
+    source: int,
+    target: int,
+) -> TracksOptions:
+    """The options with the track at `source` of `shown` (the batch's signatures in the order the new files get them,
+    each kind's together) moved to `target`, kept among the tracks of its kind. An order that comes out as `natural`,
+    the order without one, is stored as none, so moving a track back plans nothing."""
+    places = [n for n, s in enumerate(shown) if s.kind is shown[source].kind]
+    moved = list(shown)
+    moved.insert(max(places[0], min(target, places[-1])), moved.pop(source))
+    return replace(options, order=[] if moved == list(natural) else [s.match() for s in moved])
 
 
 def signature_of(rule: TrackRule, signatures: Iterable[TrackSignature]) -> TrackSignature | None:

@@ -213,3 +213,74 @@ def test_a_drop_the_plan_refuses_is_undone_by_a_second_click(
         "Drop audio in TUR Dolby Digital Plus 5.1",
         "Drop audio in ENG Dolby Digital 2.0 flagged commentary",
     ]
+
+
+def codes(controller: WindowController) -> list[str]:
+    return [f"{h['code']} {h['title']}" for h in controller.matrix["headers"]]
+
+
+def test_moving_a_column_sets_the_track_order_of_the_new_files(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    before = codes(controller)
+    assert controller.move_track(TURKISH, ENGLISH) == ENGLISH
+    # The columns, chips and the Overview show the order at once.
+    assert codes(controller) == [before[TURKISH], before[ENGLISH], *before[COMMENTARY:]]
+    assert [c["code"] for c in controller.overview["groups"][0]["chips"]][:2] == ["TUR", "ENG"]
+    settle(controller, qtbot)
+    # Every episode with Turkish audio gets a new file with its own order; Episode Seven has none, so stays as it is.
+    assert controller.change_text == "18 changes in 9 files"
+    tracks = controller.review["groups"][0]
+    assert {line["label"]: line["count"] for line in tracks["lines"]} == {"New file": 9, "Track order": 9}
+    assert [t["code"] for t in controller.inspector["tracks"] if t["kind"] == "audio"] == ["TUR", "ENG", "ENG"]
+    assert "track order" in controller.review["rows"][0]["summary"]
+
+
+def test_a_column_moves_only_among_its_kind_and_back_again(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    before = codes(controller)
+    # Pushed past the subtitles, an audio column stops at the last audio place.
+    assert controller.move_track(ENGLISH, FORCED) == STEREO
+    assert codes(controller)[STEREO] == before[ENGLISH]
+    assert controller.profile_edited
+    # Back where the files have it: no order is stored and nothing is planned.
+    assert controller.move_track(STEREO, ENGLISH) == ENGLISH
+    assert codes(controller) == before
+    assert controller._key is not None
+    assert controller.batches.profile(controller._key).for_stage("tracks").order == []
+    settle(controller, qtbot)
+    assert controller.change_count == 0
+
+
+def test_a_paired_file_moves_ahead_of_the_embedded_subtitles(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    controller.toggle_keep(SRT)
+    assert controller.move_track(SRT, SDH) == SDH
+    assert controller.matrix["headers"][SDH]["paired"]
+    settle(controller, qtbot)
+    subtitles = [t for t in controller.inspector["tracks"] if t["kind"] == "subtitle"]
+    assert subtitles[0]["state"] == "added"
+
+
+def test_movie_cards_follow_the_track_order(controller: WindowController, library: Library, qtbot: QtBot) -> None:
+    open_season(controller, library, qtbot, episode=len(library.items) - 3)
+    audio = controller.movie["groups"][0]["cards"]
+    assert all(c["movable"] for c in audio)
+    first, last = audio[0]["id"], audio[-1]["id"]
+    assert controller.move_track(last, first) == first
+    moved = controller.movie["groups"][0]["cards"]
+    assert [c["title"] for c in moved] == [audio[-1]["title"], *(c["title"] for c in audio[:-1])]
+    settle(controller, qtbot)
+    assert controller.change_count == 2
+
+
+def test_the_inspector_names_the_new_order(controller: WindowController, library: Library, qtbot: QtBot) -> None:
+    open_season(controller, library, qtbot)
+    controller.move_track(TURKISH, ENGLISH)
+    settle(controller, qtbot)
+    assert [c["text"] for c in controller.inspector["changes"]][1] == "Tracks in a new order"

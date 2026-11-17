@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
@@ -11,7 +12,7 @@ from showrunner.core.naming.names import channel_layout, codec_display
 from showrunner.core.track import ObjectAudio, SubtitleProperties, Track, TrackFlags, TrackKind
 from showrunner.stages.scan.extensions import TEXT_SUBTITLE_EXTENSIONS
 from showrunner.stages.tracks.matching import matches
-from showrunner.stages.tracks.options import FlagShape, PairedFile, TrackRule, TracksOptions, Verdict
+from showrunner.stages.tracks.options import FlagShape, PairedFile, TrackMatch, TrackRule, TracksOptions, Verdict
 
 # Matroska codec IDs of the subtitle formats the scan collects, so codec rules see a subtitle file like a track.
 _SUBTITLE_CODECS = {
@@ -68,15 +69,23 @@ class DroppedTrack:
 
 @dataclass(frozen=True, slots=True)
 class TrackPlan:
-    # Embedded tracks in file order, then the subtitle files in the order they are paired.
+    # In the new file's order: embedded tracks in file order, then the subtitle files in the order they are paired,
+    # unless `TracksOptions.order` moves them.
     kept: tuple[PlannedTrack, ...]
     # Tracks the rules drop, and subtitle files they leave out.
     dropped: tuple[DroppedTrack, ...]
+    # `kept` is in another order than the one above.
+    reordered: bool = False
 
     @property
     def needs_remux(self) -> bool:
-        """True when a track is dropped or a subtitle file is added; otherwise only headers change."""
-        return any(d.external is None for d in self.dropped) or any(k.external is not None for k in self.kept)
+        """True when a track is dropped, a subtitle file is added or the order changes; otherwise only headers
+        change."""
+        return (
+            self.reordered
+            or any(d.external is None for d in self.dropped)
+            or any(k.external is not None for k in self.kept)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +140,8 @@ def plan_tracks(item: MediaItem, options: TracksOptions) -> TrackPlan | PlanRefu
 
     if problems := _guard(kept, dropped):
         return PlanRefused(problems)
+    in_file_order = kept
+    kept = _in_order(kept, options.order, from_names)
 
     final = [{flag: getattr(track.flags, flag.value) for flag in Flag} for track, _ in kept]
     for flag in Flag:
@@ -150,7 +161,32 @@ def plan_tracks(item: MediaItem, options: TracksOptions) -> TrackPlan | PlanRefu
         )
         for n, (track, external) in enumerate(kept)
     )
-    return TrackPlan(planned, tuple(dropped))
+    return TrackPlan(planned, tuple(dropped), kept != in_file_order)
+
+
+def _in_order(
+    kept: list[tuple[Track, SubtitleFile | None]], order: list[TrackMatch], from_names: bool
+) -> list[tuple[Track, SubtitleFile | None]]:
+    """`kept` in the order `TracksOptions.order` describes."""
+    if not order:
+        return kept
+    ranks = [
+        next((n for n, match in enumerate(order) if matches(match, track, flags_from_name=from_names)), len(order))
+        for track, _ in kept
+    ]
+    return [kept[n] for n in order_places([track.kind for track, _ in kept], ranks)]
+
+
+def order_places(kinds: Sequence[TrackKind], ranks: Sequence[int]) -> list[int]:
+    """For each place of a list of tracks, the index of the track that takes it: each kind's tracks are sorted into
+    the places that kind holds, by rank, and tracks of one rank keep their order. A kind never takes another's place,
+    so video stays ahead of audio whatever the ranks say."""
+    result = list(range(len(kinds)))
+    for kind in dict.fromkeys(kinds):
+        places = [n for n, k in enumerate(kinds) if k is kind]
+        for place, source in zip(places, sorted(places, key=ranks.__getitem__), strict=True):
+            result[place] = source
+    return result
 
 
 def _first_choice(
@@ -160,7 +196,8 @@ def _first_choice(
     kept: list[tuple[Track, SubtitleFile | None]],
     from_names: bool,
 ) -> int | None:
-    """Index into `kept` of the track the first fitting `first` rule picks for this kind."""
+    """Index into `kept`, which is in the new file's order, of the track the first fitting `first` rule picks for
+    this kind."""
     for _, rule in active:
         if getattr(rule, flag.value) is not FlagShape.FIRST:
             continue

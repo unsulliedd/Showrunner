@@ -40,7 +40,7 @@ from showrunner.ui.quick.tracks import (
 
 # The kinds of change of each group, in the order its card lists them.
 LINES: dict[ChangeGroup, tuple[str, ...]] = {
-    ChangeGroup.TRACKS: ("new_file", "flags"),
+    ChangeGroup.TRACKS: ("new_file", "order", "flags"),
     ChangeGroup.NAMES: ("titles", "names", "other"),
 }
 GROUP_ICONS = {ChangeGroup.TRACKS: "audio", ChangeGroup.NAMES: "names"}
@@ -67,8 +67,8 @@ class ReviewInput:
 
 
 def parts(file: FilePreview | None) -> dict[str, int]:
-    """A file's changes by kind: the new file and the flags the rules move (Tracks and new files), then titles,
-    track names and every other header edit (Names and flags). They add up to `count_changes`."""
+    """A file's changes by kind: the new file, its track order and the flags the rules move (Tracks and new files),
+    then titles, track names and every other header edit (Names and flags). They add up to `count_changes`."""
     found = dict.fromkeys((key for keys in LINES.values() for key in keys), 0)
     if file is None:
         return found
@@ -76,7 +76,8 @@ def parts(file: FilePreview | None) -> dict[str, int]:
     tracks = stage.plan if stage is not None and isinstance(stage.plan, TrackPlan) else None
     if tracks is not None:
         found["new_file"] = int(tracks.needs_remux)
-        found["flags"] = track_changes(tracks) - found["new_file"]
+        found["order"] = int(tracks.reordered)
+        found["flags"] = track_changes(tracks) - found["new_file"] - found["order"]
     stage = file.plan_for("metadata")
     if stage is not None and isinstance(stage.plan, MetadataPlan):
         found["titles"] = sum(c.prop is Property.TITLE for c in stage.plan.changes)
@@ -246,7 +247,7 @@ def _row(
 def _summary(found: dict[str, int]) -> str:
     """ "3 changes · new file, 2 flags"."""
     what = [
-        tr(f"review.part.{key}") if key == "new_file" else tr_plural(f"review.part.{key}", n)
+        tr(f"review.part.{key}") if key in ("new_file", "order") else tr_plural(f"review.part.{key}", n)
         for key, n in found.items()
         if n
     ]

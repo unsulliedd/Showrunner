@@ -157,7 +157,7 @@ def test_nothing_set_up_says_so(season: list[MediaItem]) -> None:
 
 def test_parts_add_up_to_the_counts(season: list[MediaItem]) -> None:
     file = preview(season[:1], profile_for(season), STAGES, stamped=False).files[0]
-    assert parts(file) == {"new_file": 1, "flags": 2, "titles": 1, "names": 0, "other": 0}
+    assert parts(file) == {"new_file": 1, "order": 0, "flags": 2, "titles": 1, "names": 0, "other": 0}
     assert parts(None) == dict.fromkeys(parts(file), 0)
     assert Path(file.item.file.path).name == "Show.Name.S01E01.mkv"
 

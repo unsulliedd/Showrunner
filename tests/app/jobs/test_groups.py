@@ -12,7 +12,7 @@ import pytest
 
 from showrunner.app.jobs.blocked import blocked_stages
 from showrunner.app.jobs.groups import ChangeGroup, without
-from showrunner.app.jobs.preview import FileOutcome, preview
+from showrunner.app.jobs.preview import FileOutcome, options_key, preview
 from showrunner.app.jobs.run import StalePreviewError, create_job, run_job
 from showrunner.app.jobs.stages import (
     RECHECK,
@@ -179,3 +179,16 @@ def test_a_problem_in_a_left_out_group_blocks_nothing(tmp_path: Path, profile: P
     # Metadata is planned after all, as the writer of the default flag the rules move.
     assert run.outcome is FileOutcome.CHANGES
     assert props(run.plan_for("metadata")) == {Property.FLAG_DEFAULT}
+
+
+def test_leaving_out_the_track_choices_leaves_out_the_track_order() -> None:
+    order = [TrackMatch(kind=KindTest.AUDIO, languages=["fr"])]
+    profile = Profile("p", {"tracks": TracksOptions(rules=[DROP_FRENCH], order=order)})
+    assert without(profile, ChangeGroup.TRACKS).for_stage("tracks") == TracksOptions()
+
+
+def test_an_order_alone_changes_the_options_key() -> None:
+    order = [TrackMatch(kind=KindTest.AUDIO, languages=["fr"])]
+    plain = Profile("p", {"tracks": TracksOptions()})
+    ordered = Profile("p", {"tracks": TracksOptions(order=order)})
+    assert options_key(plain, (TracksStage(),)) != options_key(ordered, (TracksStage(),))

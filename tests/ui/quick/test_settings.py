@@ -260,3 +260,9 @@ def test_a_hand_written_rule_can_be_deleted_a_choice_cannot(
     controller.remove_rule(1)
     assert len(controller.rules) == 1
     assert controller.rules[0]["from_choice"]
+
+
+def test_the_shortcuts_name_the_keys_that_move_tracks_in_the_order(controller: WindowController) -> None:
+    entries = {entry["text"]: entry["keys"] for entry in controller.settings.shortcuts}
+    assert entries["Tracks: move the focused column in the track order"] == ["Ctrl+Left", "Ctrl+Right"]
+    assert entries["Movie Overview: move the focused track card in the track order"] == ["Ctrl+Up", "Ctrl+Down"]

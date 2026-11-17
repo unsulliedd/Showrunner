@@ -11,7 +11,14 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
-from showrunner.app.batches.choices import TrackChoice, TrackGroups, TrackSignature, choice_of, signature_of
+from showrunner.app.batches.choices import (
+    TrackChoice,
+    TrackGroups,
+    TrackSignature,
+    choice_of,
+    in_order,
+    signature_of,
+)
 from showrunner.app.jobs.counts import count_changes
 from showrunner.app.jobs.preview import FileOutcome, FilePreview
 from showrunner.core.language import Language
@@ -83,8 +90,11 @@ def _what(signature: TrackSignature) -> list[str]:
     return [flag for flag in _WHAT if getattr(signature, flag)]
 
 
-def columns(items: Sequence[MediaItem], groups: TrackGroups | None = None) -> list[Column]:
-    """Audio signatures, then subtitle signatures, each in the order first seen, then the kinds of paired file."""
+def columns(
+    items: Sequence[MediaItem], groups: TrackGroups | None = None, options: TracksOptions | None = None
+) -> list[Column]:
+    """Audio signatures, then subtitle signatures, each in the order first seen, then the kinds of paired file; with
+    `options`, each kind in the order its tracks get in the new files."""
     groups = groups if groups is not None else TrackGroups.of(items, flags_from_names=True)
     found: dict[TrackSignature, None] = {}
     for kind in KINDS:
@@ -94,18 +104,23 @@ def columns(items: Sequence[MediaItem], groups: TrackGroups | None = None) -> li
     for item in items:
         for index, subtitle in enumerate(item.subtitles):
             paired.setdefault(PairedFile.of(subtitle), groups.signature(stand_in(subtitle, index)))
-    return [Column(s) for s in found] + [Column(s, p) for p, s in paired.items()]
+    cols = [Column(s) for s in found] + [Column(s, p) for p, s in paired.items()]
+    return [cols[n] for n in in_order([c.signature for c in cols], options)] if options is not None else cols
 
 
 def seen(item: MediaItem, file: FilePreview | None) -> list[Seen]:
-    """The file's tracks in file order, then the paired files added, as the track plan leaves them."""
+    """The file's tracks, then the paired files added, as the track plan leaves them: the tracks that stay in the new
+    file's order, each dropped one where the file has it."""
     stage = file.plan_for("tracks") if file is not None else None
     plan = stage.plan if stage is not None else None
     if not isinstance(plan, TrackPlan):
         return [Seen(t, None, "kept", t.flags) for t in item.file.tracks]
-    rows = [Seen(k.track, k.external, "added" if k.external else "kept", k.flags) for k in plan.kept]
-    rows += [Seen(d.track, d.external, "dropped", d.track.flags) for d in plan.dropped]
-    return sorted(rows, key=lambda s: (s.external is not None, abs(s.track.id)))
+    staying = [Seen(k.track, k.external, "added" if k.external else "kept", k.flags) for k in plan.kept]
+    rows = staying + [Seen(d.track, d.external, "dropped", d.track.flags) for d in plan.dropped]
+    in_file = sorted(rows, key=lambda s: (s.external is not None, abs(s.track.id)))
+    # The places of the tracks that stay, in file order, take them in the order of the new file.
+    new_order = iter(staying)
+    return [s if s.state == "dropped" else next(new_order) for s in in_file]
 
 
 def by_signature(tracks: Sequence[Seen], groups: TrackGroups) -> dict[TrackSignature, Seen]:
@@ -171,7 +186,7 @@ class BatchView:
         failures: Mapping[str, str] | None = None,
     ) -> BatchView:
         groups = TrackGroups.of(items, options.flags_from_names)
-        cols = columns(items, groups)
+        cols = columns(items, groups, options)
         by_path = {str(f.item.file.path): f for f in files}
         return cls(items, options, by_path, cols, groups, _first_defaults(options, cols), failures=failures or {})
 
@@ -334,6 +349,9 @@ class BatchView:
                     ),
                 }
             )
+        # A kind with one column has no order to set.
+        for header in headers:
+            header["movable"] = sum(c.signature.kind.value == header["kind"] for c in self.cols) > 1
         return headers
 
     def groups(self) -> list[dict[str, object]]:
@@ -480,7 +498,7 @@ class BatchView:
                     "label": tr(f"tracks.kind.{kind.value}"),
                     "icon": "audio" if kind is TrackKind.AUDIO else "subs",
                     "count": tr("tracks.before_after", before=before, after=after),
-                    "cards": of_kind,
+                    "cards": [{**c, "movable": len(of_kind) > 1} for c in of_kind],
                 }
             )
         return groups
@@ -709,6 +727,8 @@ def _what_changes(
         else:
             detail = tr(f"inspector.new_file.{original.value}")
         changes.append({"icon": "film", "text": tr("inspector.new_file", kept=kept, total=before), "detail": detail})
+    if isinstance(plan, TrackPlan) and plan.reordered:
+        changes.append({"icon": "grip", "text": tr("inspector.order"), "detail": ""})
     if isinstance(plan, TrackPlan):
         for flag in FLAGS:
             moved = []

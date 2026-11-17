@@ -23,6 +23,7 @@ from showrunner.stages.tracks.plan import (
     PlanRefused,
     TrackPlan,
     describe_track,
+    order_places,
     plan_tracks,
     stand_in,
 )
@@ -53,6 +54,7 @@ __all__ = [
     "describe_track",
     "is_paired",
     "matches",
+    "order_places",
     "plan_tracks",
     "stand_in",
 ]

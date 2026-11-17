@@ -1218,3 +1218,110 @@ def test_a_narrow_window_settles_with_a_scrolling_inspector(tmp_path: Path) -> N
         check=False,
     )
     assert "settled" in done.stdout, done.stderr[-2000:]
+
+
+def _drag_from(window: Any, qtbot: QtBot, item: QQuickItem, dx: int, dy: int) -> None:
+    """A real pointer drag from the centre of `item` by (dx, dy)."""
+    start = _centre(item)
+    _drag(window, qtbot, start, QPoint(start.x() + dx, start.y() + dy))
+
+
+def _grips(root: QQuickItem, name: str, axis: str) -> list[QQuickItem]:
+    grips = [g for g in _items(root, name) if g.isVisible()]
+    return sorted(grips, key=lambda g: getattr(g.mapToScene(QPointF()), axis)())
+
+
+def test_matrix_columns_move_by_drag_and_by_keyboard(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    load.window.setProperty("place", "tracks")
+    load()
+    root = load.window.contentItem()
+    codes = lambda: [h["code"] for h in controller.matrix["headers"]]  # noqa: E731
+    assert codes()[:4] == ["ENG", "TUR", "ENG", "ENG"]
+    grips = _grips(root, "columnGrip", "x")
+    # Every column of the sample has a grip: each kind has more than one.
+    assert len(grips) == len(controller.matrix["headers"])
+    assert grips[1].property("activeFocusOnTab") is True
+    # Drag the Turkish column one column to the left.
+    _drag_from(load.window, qtbot, grips[1], -SIZES["matrix_column"], 0)
+    load()
+    assert codes()[:2] == ["TUR", "ENG"]
+    # Ctrl+Right on the focused grip moves it one place, and the focus follows the column.
+    grips = _grips(root, "columnGrip", "x")
+    grips[0].forceActiveFocus()
+    QTest.keyClick(load.window, Qt.Key.Key_Right, Qt.KeyboardModifier.ControlModifier)
+    load()
+    assert codes()[:2] == ["ENG", "TUR"]
+    grips = _grips(root, "columnGrip", "x")
+    assert grips[1].hasActiveFocus()
+    QTest.keyClick(load.window, Qt.Key.Key_Right, Qt.KeyboardModifier.ControlModifier)
+    load()
+    assert codes()[:3] == ["ENG", "ENG", "TUR"]
+    assert _grips(root, "columnGrip", "x")[2].hasActiveFocus()
+    # Without Ctrl the arrow moves nothing.
+    QTest.keyClick(load.window, Qt.Key.Key_Left)
+    load()
+    assert codes()[:3] == ["ENG", "ENG", "TUR"]
+    # A column moved by keyboard past the right edge of a narrow window is scrolled into view.
+    load.window.setWidth(1024)
+    load()
+    first_subtitle = len([h for h in controller.matrix["headers"] if h["kind"] == "audio"])
+    _grips(root, "columnGrip", "x")[first_subtitle].forceActiveFocus()
+    for _ in range(3):
+        QTest.keyClick(load.window, Qt.Key.Key_Right, Qt.KeyboardModifier.ControlModifier)
+        load()
+    rows = _item(root, "matrixRows")
+    focused = next(g for g in _items(root, "columnGrip") if g.hasActiveFocus())
+    left = focused.mapToItem(rows, QPointF()).x()
+    assert rows.property("contentX") > 0
+    assert left >= 0
+    assert left + focused.width() <= rows.width()
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def _audio_grips(root: QQuickItem) -> list[QQuickItem]:
+    """The grips of a movie's audio cards: the left one of the two card columns."""
+    grips = _grips(root, "cardGrip", "y")
+    left = min(g.mapToScene(QPointF()).x() for g in grips)
+    return [g for g in grips if g.mapToScene(QPointF()).x() == left]
+
+
+def test_movie_track_cards_move_by_drag_and_by_keyboard(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[-3].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    load()
+    root = load.window.contentItem()
+    titles = lambda: [c["title"] for c in controller.movie["groups"][0]["cards"]]  # noqa: E731
+    before = titles()
+    assert len(before) == 3
+    audio = _audio_grips(root)
+    assert len(audio) == 3
+    # Drag the last audio card two places up.
+    step = SIZES["track_card"] + SIZES["space_md"]
+    _drag_from(load.window, qtbot, audio[2], 0, -2 * step)
+    load()
+    assert titles() == [before[2], before[0], before[1]]
+    # Ctrl+Down moves the focused card one place down, and the focus follows it.
+    audio = _audio_grips(root)
+    audio[0].forceActiveFocus()
+    QTest.keyClick(load.window, Qt.Key.Key_Down, Qt.KeyboardModifier.ControlModifier)
+    load()
+    assert titles() == [before[0], before[2], before[1]]
+    assert _audio_grips(root)[1].hasActiveFocus()
+    QTest.keyClick(load.window, Qt.Key.Key_Up, Qt.KeyboardModifier.ControlModifier)
+    load()
+    assert titles() == [before[2], before[0], before[1]]
+    assert load() == []
+    assert qt_warnings() == []

@@ -30,6 +30,7 @@ from showrunner.app.batches.choices import (
     choice_of,
     choose,
     move_rule,
+    move_track,
     pause_rule,
 )
 from showrunner.app.batches.leave_out import LeftOut
@@ -74,7 +75,7 @@ from showrunner.ui.quick.palette import Entry, search
 from showrunner.ui.quick.plans import LivePlanner
 from showrunner.ui.quick.review import FILTERS, ReviewInput, review, totals
 from showrunner.ui.quick.settings import SECTIONS, Settings
-from showrunner.ui.quick.tracks import BatchView, Column, item_number, item_title
+from showrunner.ui.quick.tracks import BatchView, Column, columns, item_number, item_title
 
 _log = logging.getLogger(__name__)
 
@@ -670,6 +671,21 @@ class WindowController(QObject):
     def move_rule(self, source: int, target: int) -> None:
         if self._key is not None and 0 <= source < len(self._tracks().rules) and source != target:
             self._set_tracks(move_rule(self._tracks(), source, target))
+
+    @Slot(int, int, result=int)
+    def move_track(self, column: int, target: int) -> int:
+        """Move a matrix column or a movie card to `target`, kept among the columns of its kind: the tracks of the new
+        files take that order. Returns where the column is now, so the keyboard focus can follow it."""
+        view = self._view
+        if view is None or self._key is None or not 0 <= column < len(view.cols):
+            return column
+        moved = view.cols[column]
+        shown = [c.signature for c in view.cols]
+        natural = [c.signature for c in columns(view.items, view.grouping)]
+        options = move_track(self._tracks(), shown, natural, column, target)
+        if options != self._tracks():
+            self._set_tracks(options)
+        return self._view.cols.index(moved) if self._view is not None else column
 
     @Slot(int, bool)
     def pause_rule(self, index: int, paused: bool) -> None:
