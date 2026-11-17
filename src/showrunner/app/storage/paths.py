@@ -37,6 +37,11 @@ def workspace_path() -> Path:
     return data_dir() / "workspace.json"
 
 
+def read_cache_path() -> Path:
+    """What was read from each video, so opening the same folders again reads only the files that changed."""
+    return data_dir() / "read_cache.json"
+
+
 def jobs_path() -> Path:
     """The database of job progress."""
     return data_dir() / "jobs.sqlite3"

@@ -228,7 +228,7 @@ def _row(
         "count": count,
         "summary": _summary(found)
         if count
-        else tr("tracks.not_read" if run_view.failure(item) else "review.file.nothing"),
+        else tr("review.file.nothing" if run_view.was_read(item) else "tracks.not_read"),
         "warning": warning,
         # One mark per group: amber where the group changes this file in the run, faint where it would but is out.
         "marks": [

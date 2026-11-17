@@ -4,6 +4,9 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
+
+from showrunner.app.library import service
 from showrunner.app.library.service import load_library
 from showrunner.core.media import MediaFile
 from showrunner.tools.probe import ProbeError, Programs
@@ -94,3 +97,19 @@ def test_without_a_program_the_videos_come_back_as_scanned(make: Callable[..., P
     load = load_library([tmp_path / "Show"], programs=Programs(), read=read)
     assert len(load.items) == 1
     assert load.failures == ()
+
+
+def test_a_cancel_while_the_programs_are_checked_ends_the_load_as_cancelled(
+    make: Callable[..., Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    make("Show/Show S01E01.mkv")
+    cancel = threading.Event()
+
+    def checked(given: threading.Event | None) -> Programs:
+        cancel.set()  # pressed while a program answered; the check then counts the program as broken
+        return Programs()
+
+    monkeypatch.setattr(service, "media_programs", checked)
+    load = load_library([tmp_path / "Show"], read=fake_read, cancel=cancel)
+    assert load.cancelled
+    assert len(load.items) == 1

@@ -48,6 +48,14 @@ def test_tracks_read_without_mkvmerge_are_refused(b: SimpleNamespace) -> None:
     assert result == MuxRefused((MuxProblemKind.IDS_NOT_FROM_MKVMERGE,))
 
 
+def test_a_file_whose_tracks_were_not_read_is_refused_rather_than_written_without_them(b: SimpleNamespace) -> None:
+    # A read cancelled before the file leaves it as scanned: no tracks, though mkvmerge can open it.
+    srt = SubtitleFile(Path("Show Name - S01E01.tr.srt"), Language("tur"))
+    item = b.item(subtitles=(srt,))
+    result = plan_mux(item, tracks=TracksOptions(add_paired=[PairedFile.of(srt)]))
+    assert result == MuxRefused((MuxProblemKind.TRACKS_NOT_READ,))
+
+
 def test_the_plan_keeps_the_rules_tracks_with_metadatas_names_and_title(b: SimpleNamespace) -> None:
     naming = replace(SUGGESTED, audio_track_template="{language}", title_template="{show} {episode}")
     result = plan_mux(two_audio(b, title="Old"), naming=naming)

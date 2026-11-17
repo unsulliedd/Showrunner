@@ -115,23 +115,22 @@ def test_a_paired_file_beside_some_files_has_a_list_of_the_files_without_it(seas
     assert (header["count"], header["names"]) == ("missing in 1 file", True)
 
 
-def test_a_file_that_could_not_be_read_is_neither_counted_as_having_nor_as_lacking_a_track(
+def test_a_file_whose_tracks_were_not_read_is_neither_counted_as_having_nor_as_lacking_a_track(
     season: list[MediaItem],
 ) -> None:
     third = season[2]
     items = [*season[:2], replace(third, file=replace(third.file, tracks=())), *season[3:]]
-    unmarked = BatchView.build(items, TracksOptions(), ())
-    marked = BatchView.build(items, TracksOptions(), (), failures={str(third.file.path): "Not a Matroska file"})
-    assert len(marked.cols) == len(unmarked.cols)
-    for index in range(len(marked.cols)):
-        # Without the mark an empty file lacks every embedded track (the paired file beside it is still there).
-        assert (items[2] in unmarked.lacking(index)) is (index < SRT)
-        assert items[2] not in marked.lacking(index)
-    # Only Episode Seven lacks the Turkish audio; the unread Episode Three says nothing about it.
-    assert marked.headers()[TURKISH]["count"] == "missing in 1 file"
-    assert marked.missing(TURKISH) == "Missing in 07"
-    assert unmarked.headers()[TURKISH]["count"] == "missing in 2 files"
-    assert all(h["count"] == "" for h in marked.headers()[:1])  # a track every readable file has shows no count
+    # Not reached by a cancelled read, and failed: either way the file has no tracks to show.
+    unreached = BatchView.build(items, TracksOptions(), ())
+    failed = BatchView.build(items, TracksOptions(), (), failures={str(third.file.path): "Not a Matroska file"})
+    for batch in (unreached, failed):
+        assert len(batch.cols) == len(BatchView.build(season, TracksOptions(), ()).cols)
+        assert not batch.was_read(items[2])
+        assert all(items[2] not in batch.lacking(index) for index in range(len(batch.cols)))
+        # Only Episode Seven lacks the Turkish audio; the unread Episode Three says nothing about it.
+        assert batch.headers()[TURKISH]["count"] == "missing in 1 file"
+        assert batch.missing(TURKISH) == "Missing in 07"
+        assert all(h["count"] == "" for h in batch.headers()[:1])  # a track every read file has shows no count
 
 
 def test_a_paired_file_not_added_is_offered_and_takes_no_flag(season: list[MediaItem]) -> None:

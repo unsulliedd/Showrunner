@@ -1,4 +1,5 @@
-"""A file whose tracks could not be read says why on Overview, in the Inspector and in Review's Needs a look."""
+"""A file whose tracks could not be read says why on Overview, in the Inspector and in Review's Needs a look; one
+not read yet says so without a problem."""
 
 from __future__ import annotations
 
@@ -68,3 +69,23 @@ def test_review_puts_the_file_under_needs_a_look_with_the_reason(
     row = review["rows"][2]
     assert (row["state"], row["warning"], row["summary"]) == ("look", TEXT, "Not read")
     assert [r["state"] for r in review["rows"]].count("look") == 1
+
+
+def test_a_file_a_cancelled_read_did_not_reach_says_not_read_without_a_problem(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    third = library.items[2]
+    unread = replace(third, file=replace(third.file, tracks=()))
+    controller.start()
+    controller.model.set_library(replace(library, items=(*library.items[:2], unread, *library.items[3:])))
+    controller.select(controller.tree.index_of(str(third.file.path)))
+    settle(controller, qtbot)
+    row = controller.overview["rows"][2]
+    assert (row["warning"], row["changes_text"]) == ("", "Not read")
+    chips = [c for group in controller.overview["groups"] for c in group["chips"]]
+    assert [c["count"] for c in chips][:2] == ["", "missing in 1 file"]  # Episode Seven only, as for a failed file
+    controller.focus_file(str(third.file.path))
+    assert controller.inspector["unread"] == "Not read"
+    controller.show_place("review")
+    row = controller.review["rows"][2]
+    assert (row["state"], row["summary"]) == ("in", "Not read")

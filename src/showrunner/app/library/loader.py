@@ -57,11 +57,13 @@ class LibraryLoader(QObject):
         *,
         programs: Programs | None = None,
         read: Reader = probe,
+        cache: Path | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._programs = programs
         self._read = read
+        self._cache = cache  # the read cache file; None reads every file
         self._cancel = threading.Event()
         self._job: BackgroundJob | None = None
 
@@ -83,6 +85,7 @@ class LibraryLoader(QObject):
                 read=self._read,
                 progress=lambda done, total, _path: self.progress.emit(done, total),
                 cancel=self._cancel,
+                cache=self._cache,
             )
 
         job = BackgroundJob(work)

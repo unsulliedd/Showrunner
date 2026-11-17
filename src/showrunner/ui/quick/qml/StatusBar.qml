@@ -39,12 +39,37 @@ Item {
         }
     }
 
-    UiText {
+    // While folders are read: what is read of how many, a bar and Cancel. Otherwise what the jobs are doing.
+    Row {
         anchors.right: parent.right
         anchors.rightMargin: Theme.space_lg + Theme.space_xs
         anchors.verticalCenter: parent.verticalCenter
-        text: app.jobs.status || app.job_text
-        color: Theme.ink
-        font.pixelSize: Theme.text_sm
+        spacing: Theme.space_md
+
+        UiText {
+            objectName: "jobText"
+            anchors.verticalCenter: parent.verticalCenter
+            text: app.busy ? app.job_text : app.jobs.status || app.job_text
+            color: Theme.ink
+            font.pixelSize: Theme.text_sm
+        }
+
+        ProgressLine {
+            objectName: "readProgress"
+            anchors.verticalCenter: parent.verticalCenter
+            visible: app.busy
+            width: Theme.progress_width
+            value: app.read_fraction
+        }
+
+        ActionButton {
+            objectName: "cancelReading"
+            anchors.verticalCenter: parent.verticalCenter
+            visible: app.busy
+            kind: "ghost"
+            size: Theme.row_sm
+            text: Strings.t("common.cancel")
+            onClicked: app.cancel_reading()
+        }
     }
 }

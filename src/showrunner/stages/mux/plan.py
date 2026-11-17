@@ -29,6 +29,8 @@ _PARTIAL = ".showrunner-partial.mkv"
 class MuxProblemKind(StrEnum):
     # Only ffprobe read the file, so its track IDs mean nothing to mkvmerge.
     IDS_NOT_FROM_MKVMERGE = "ids-not-from-mkvmerge"
+    # The file's tracks are not known (a read that was cancelled before it): the new file would hold none of them.
+    TRACKS_NOT_READ = "tracks-not-read"
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +97,8 @@ def plan_mux(
     if isinstance(track_plan, PlanRefused) or not track_plan.needs_remux:
         return None
     file = item.file
+    if not file.tracks:
+        return MuxRefused((MuxProblemKind.TRACKS_NOT_READ,))
     if not file.ids_from_mkvmerge:
         return MuxRefused((MuxProblemKind.IDS_NOT_FROM_MKVMERGE,))
     header = plan_metadata(item, metadata, naming, tracks, source=source)

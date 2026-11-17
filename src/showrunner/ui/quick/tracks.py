@@ -178,6 +178,11 @@ class BatchView:
     def file(self, item: MediaItem) -> FilePreview | None:
         return self.files.get(str(item.file.path))
 
+    def was_read(self, item: MediaItem) -> bool:
+        """Whether the file's tracks are known: not when they could not be read, nor when a cancelled read did not
+        reach the file."""
+        return str(item.file.path) not in self.failures and bool(item.file.tracks)
+
     def cells(self, item: MediaItem) -> list[dict[str, object]]:
         key = str(item.file.path)
         if key not in self._cells:
@@ -236,15 +241,11 @@ class BatchView:
         return len({(i.identity.show, i.identity.season) for i in self.items if isinstance(i.identity, Episode)}) <= 1
 
     def lacking(self, index: int) -> list[MediaItem]:
-        """The files that were read and have no such track. A file whose tracks could not be read has none to show,
+        """The files that were read and have no such track. A file whose tracks were not read has none to show,
         which says nothing about whether it has this one, so it is in neither list."""
         if not 0 <= index < len(self.cols):
             return []
-        return [
-            item
-            for item in self.items
-            if str(item.file.path) not in self.failures and self.cells(item)[index]["state"] == "missing"
-        ]
+        return [item for item in self.items if self.was_read(item) and self.cells(item)[index]["state"] == "missing"]
 
     def held(self, index: int) -> list[MediaItem]:
         """The files whose plan is known and keeps a track that the column's choice drops: a plan that was refused
@@ -257,9 +258,7 @@ class BatchView:
         return [
             item
             for item in self.items
-            if str(item.file.path) not in self.failures
-            and self.file(item) is not None
-            and self.cells(item)[index]["state"] == "kept"
+            if self.was_read(item) and self.file(item) is not None and self.cells(item)[index]["state"] == "kept"
         ]
 
     def missing(self, index: int) -> str:
@@ -286,13 +285,13 @@ class BatchView:
 
     def headers(self) -> list[dict[str, object]]:
         grid = [self.cells(item) for item in self.items]
-        # Rows of files that were read: an unreadable file counts neither as having a track nor as lacking it.
-        read = [row for item, row in zip(self.items, grid, strict=True) if str(item.file.path) not in self.failures]
+        # Rows of files that were read: an unread file counts neither as having a track nor as lacking it.
+        read = [row for item, row in zip(self.items, grid, strict=True) if self.was_read(item)]
         # Of those, the rows whose plan has arrived; the same files `held` looks at.
         planned = [
             row
             for item, row in zip(self.items, grid, strict=True)
-            if str(item.file.path) not in self.failures and self.file(item) is not None
+            if self.was_read(item) and self.file(item) is not None
         ]
         headers = []
         for index, column in enumerate(self.cols):
@@ -376,7 +375,7 @@ class BatchView:
                     "changes": changes,
                     "changes_text": tr_plural("tracks.changes", changes)
                     if changes
-                    else tr("tracks.not_read" if self.failure(item) else "tracks.no_changes"),
+                    else tr("tracks.no_changes" if self.was_read(item) else "tracks.not_read"),
                     "warning": self.warning(item),
                 }
             )
@@ -523,7 +522,7 @@ class BatchView:
             "file": item.file.path.name,
             "count": sum(count_changes(file).values()) if file is not None else 0,
             "changes": changes,
-            "unread": self.failure(item),
+            "unread": self.failure(item) or ("" if self.was_read(item) else tr("tracks.not_read")),
             "stays": tr("inspector.stays"),
             "title_now": item.file.title,
             "title_new": title,

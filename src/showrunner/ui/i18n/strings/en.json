@@ -190,7 +190,7 @@
   "status.scanning": "Reading folders…",
   "status.reading": "Reading tracks {done} of {total}",
   "status.cancelling": "Cancelling…",
-  "status.cancelled": "Cancelled. The videos that were reached were added.",
+  "status.cancelled": "Reading cancelled. The videos it did not reach show as not read.",
   "status.nothing_new": "No new videos found.",
   "status.load_failed": "The folder could not be read: {error}",
   "empty.title": "Drop a folder to start",

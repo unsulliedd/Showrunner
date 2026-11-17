@@ -47,7 +47,7 @@ from showrunner.app.library.loader import BackgroundJob, LibraryLoader
 from showrunner.app.profiles.errors import ProfileError, ProfileExistsError
 from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME, ProfileStore
 from showrunner.app.settings.app_settings import Startup, load_settings, save_settings, with_recent
-from showrunner.app.storage.paths import jobs_path
+from showrunner.app.storage.paths import jobs_path, read_cache_path
 from showrunner.core.media import MediaFile, MediaItem
 from showrunner.core.naming import (
     SUGGESTED_TEMPLATES,
@@ -175,7 +175,7 @@ class WindowController(QObject):
         self.model = LibraryModel(self)
         self.tree = LibraryTree(self)
         self.tree.setSourceModel(self.model)
-        self._loader = loader or LibraryLoader(parent=self)
+        self._loader = loader or LibraryLoader(cache=read_cache_path(), parent=self)
         self._loader.progress.connect(self._on_progress)
         self._loader.finished.connect(self._on_loaded)
         self._loader.failed.connect(self._on_failed)
@@ -186,6 +186,7 @@ class WindowController(QObject):
         self._statuses: Statuses | None = None
         self._jobs: set[BackgroundJob] = set()
         self._progress: tuple[int, int] | None = None
+        self._cancelling = False
         self._message = ""  # what the last load ended with, when it is worth saying
         self._filter = ""
         self._needs_look_only = False
@@ -292,8 +293,18 @@ class WindowController(QObject):
     def busy(self) -> bool:
         return self._loader.busy
 
+    @Property(float, notify=loading_changed)
+    def read_fraction(self) -> float:
+        """How much of the load's reading is done, from 0 to 1; 0 while the folders are scanned."""
+        if self._progress is None or not self._progress[1]:
+            return 0.0
+        done, total = self._progress
+        return done / total
+
     @Property(str, notify=loading_changed)
     def job_text(self) -> str:
+        if self._cancelling:
+            return tr("status.cancelling")
         if self._progress is not None:
             done, total = self._progress
             return tr("status.reading", done=done, total=total)
@@ -351,6 +362,14 @@ class WindowController(QObject):
         self._loader.start(paths, known=[item.file.path for item in self.model.library.items])
         self.loading_changed.emit()
 
+    @Slot()
+    def cancel_reading(self) -> None:
+        """Stop the load after the file being read; what was read so far is kept and the rest shows as not read."""
+        if self._loader.busy:
+            self._loader.cancel()
+            self._cancelling = True
+            self.loading_changed.emit()
+
     def _on_progress(self, done: int, total: int) -> None:
         self._progress = (done, total)
         self.loading_changed.emit()
@@ -358,12 +377,17 @@ class WindowController(QObject):
     def _on_failed(self, error: Exception) -> None:
         _log.error("Loading failed: %s", error)
         self._progress = None
+        self._cancelling = False
         self._message = tr("status.load_failed", error=error)
         self.loading_changed.emit()
 
     def _on_loaded(self, load: LibraryLoad) -> None:
         self._progress = None
-        self._message = tr("status.nothing_new") if not load.items and not load.cancelled else ""
+        self._cancelling = False
+        if load.cancelled:
+            self._message = tr("status.cancelled")
+        else:
+            self._message = "" if load.items else tr("status.nothing_new")
         self.model.add(load)
         if load.roots:
             self._recent = with_recent(self._recent, [str(root) for root in load.roots], self._clock())
