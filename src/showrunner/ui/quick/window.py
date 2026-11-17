@@ -16,6 +16,7 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -185,7 +186,6 @@ class WindowController(QObject):
         self._store = store or ProfileStore()
         self.batches: Batches = load_batches(self._store)
         self._statuses: Statuses | None = None
-        self._jobs: set[BackgroundJob] = set()
         self._progress: tuple[int, int] | None = None
         self._cancelling = False
         self._message = ""  # what the last load ended with, when it is worth saying
@@ -1253,17 +1253,15 @@ class WindowController(QObject):
                 items, profile, stages, blocked=given.blocked, left_out=given.groups, finished=store.is_finished
             )
 
-        job = BackgroundJob(work, self)
+        job = BackgroundJob(work)
         job.finished.connect(self._on_stamped)
         job.failed.connect(self._on_stamp_failed)
-        self._jobs.add(job)
         self._apply_message = ""
         self._on_lock_changed()
         job.start()
 
     def _on_stamped(self, stamped: Preview) -> None:
         given, self._applying = self._applying, None
-        self._forget_job(self.sender())
         if given is None:
             return
         in_run = [f for f in stamped.files if f.item.file.path not in given.out]
@@ -1305,14 +1303,8 @@ class WindowController(QObject):
     def _on_stamp_failed(self, error: Exception) -> None:
         _log.error("The preview for Apply failed: %s", error)
         self._applying = None
-        self._forget_job(self.sender())
         self._set_apply_message(tr("review.refused.error", error=str(error) or type(error).__name__))
         self._on_lock_changed()
-
-    def _forget_job(self, job: object) -> None:
-        if isinstance(job, BackgroundJob):
-            self._jobs.discard(job)
-            job.deleteLater()
 
     def _on_lock_changed(self) -> None:
         self.batch_changed.emit()
@@ -1320,12 +1312,13 @@ class WindowController(QObject):
 
     def _job_pipeline(self) -> tuple[Sequence[Stage], Read]:
         """The stages and the reader a job runs with: those of the programs found now."""
-        return tuple(self._make_pipeline(self._statuses or {})), self._read
+        return tuple(self._make_pipeline(self._statuses or {})), self._reader()
 
-    def _read(self, path: Path) -> MediaFile:
+    def _reader(self) -> Read:
+        """A reader that holds what it needs: it runs on a pool thread, which must never reach this object."""
         if self._read_file is not None:
-            return self._read_file(path)
-        return probe_file(path, programs_from(self._statuses or {}))
+            return self._read_file
+        return partial(probe_file, programs=programs_from(self._statuses or {}))
 
     def _names_of(self, path: Path) -> tuple[str, str]:
         """A job row's number and title, from the library when the file is in it."""
@@ -1353,7 +1346,7 @@ class WindowController(QObject):
         targets = {old: new for old, new in paths.items() if old in known}
         if not targets and not gone:
             return
-        read = self._read
+        read = self._reader()
 
         def work() -> tuple[dict[Path, MediaFile], tuple[Path, ...]]:
             files = {}
@@ -1364,14 +1357,12 @@ class WindowController(QObject):
                     _log.exception("Could not read %s again", new)
             return files, tuple(gone)
 
-        job = BackgroundJob(work, self)
+        job = BackgroundJob(work)
         job.finished.connect(self._on_read_again)
-        job.failed.connect(self._forget_sender)
-        self._jobs.add(job)
+        job.failed.connect(self._on_read_again_failed)
         job.start()
 
     def _on_read_again(self, result: tuple[dict[Path, MediaFile], tuple[Path, ...]]) -> None:
-        self._forget_job(self.sender())
         files, gone = result
         self.model.replace_files(files, gone)
         # The batch is selected again, so it holds the files as read now; a file with a new name opens its season.
@@ -1381,28 +1372,24 @@ class WindowController(QObject):
         else:
             self._select_first()
 
-    def _forget_sender(self, error: Exception) -> None:
+    def _on_read_again_failed(self, error: Exception) -> None:
         _log.error("Reading files again failed: %s", error)
-        self._forget_job(self.sender())
 
     # Programs
 
     @Slot()
     def refresh_programs(self) -> None:
-        # A child with bound slots: a check that ends after the window is gone is deleted with it and reaches nothing.
-        job = BackgroundJob(self._check, self)
+        # Bound slots: a check that ends after the window is gone reaches nothing, as Qt drops a deleted receiver.
+        job = BackgroundJob(self._check)
         job.finished.connect(self._on_statuses)
         job.failed.connect(self._on_check_failed)
-        self._jobs.add(job)
         job.start()
 
     def _on_check_failed(self, error: Exception) -> None:
         _log.error("Checking the programs failed: %s", error)
-        self._forget_job(self.sender())
         self._set_statuses({})
 
     def _on_statuses(self, statuses: Statuses) -> None:
-        self._forget_job(self.sender())
         self._set_statuses(statuses)
 
     def _set_statuses(self, statuses: Statuses) -> None:

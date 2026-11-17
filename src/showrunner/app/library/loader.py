@@ -6,7 +6,7 @@ import threading
 from collections.abc import Callable, Collection, Iterable
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QThreadPool, Signal
+from PySide6.QtCore import QCoreApplication, QObject, QThreadPool, Signal
 
 from showrunner.app.library.library import LibraryLoad
 from showrunner.app.library.service import load_library
@@ -18,14 +18,17 @@ class BackgroundJob(QObject):
     """Runs `work` once on a pool thread. `finished` or `failed` is delivered on the thread this object lives on.
 
     A signal emitted from the pool thread is queued to receivers that live on the UI thread, so a slot
-    never runs on the worker's thread.
+    never runs on the worker's thread. The job deletes itself once its run has ended; nothing else deletes it.
     """
 
     finished = Signal(object)
     failed = Signal(object)
 
-    def __init__(self, work: Callable[[], object], parent: QObject | None = None) -> None:
-        super().__init__(parent)
+    def __init__(self, work: Callable[[], object]) -> None:
+        # Owned by the application, not by a caller: a receiver that deleted the job on its result, or a window
+        # closing with its children, could free it while the pool thread is still inside the emit. Nor may the
+        # last Python reference delete it, which can drop on the pool thread.
+        super().__init__(QCoreApplication.instance())
         self._work = work
 
     def start(self) -> None:
@@ -39,6 +42,8 @@ class BackgroundJob(QObject):
                 self.failed.emit(error)
             else:
                 self.finished.emit(result)
+            # The pool thread's last touch: the deletion runs on the job's own thread after this emit has returned.
+            self.deleteLater()
         except RuntimeError:
             # The job was deleted while the work ran, as the application shuts down: nobody is left to tell.
             return

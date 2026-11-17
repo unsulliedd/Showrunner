@@ -41,7 +41,7 @@ class LivePlanner(QObject):
         assert self._waiting is not None
         self._token, work = self._waiting
         self._waiting = None
-        job = BackgroundJob(work, self)
+        job = BackgroundJob(work)
         # Bound methods, not closures: Qt then delivers on this object's thread, never on the pool thread.
         job.finished.connect(self._on_finished)
         job.failed.connect(self._on_failed)
@@ -67,6 +67,4 @@ class LivePlanner(QObject):
             self.busy_changed.emit()
 
     def _end(self) -> None:
-        if self._job is not None:
-            self._job.deleteLater()
-        self._job = None
+        self._job = None  # the job deletes itself once its pool thread is done with it
