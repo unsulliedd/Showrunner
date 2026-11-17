@@ -25,6 +25,7 @@ from showrunner.core.naming import (
     TOKENS,
     CustomKind,
     CustomToken,
+    EpisodeCodeFormat,
     NamingContext,
     NamingOptions,
     PatternSource,
@@ -32,8 +33,10 @@ from showrunner.core.naming import (
     PieceKind,
     Problem,
     Scope,
+    SpaceStyle,
     TokenProblem,
     check_tokens,
+    episode_code,
     parse,
     pieces,
     preview,
@@ -515,6 +518,7 @@ def place(given: NamesInput) -> dict[str, object]:
         "end": len(pieces(parse(text))),
         "text": text,
         "suggestion": suggestion,
+        "space": space_choice(naming, template),
         "rail": rail(text, focused.context if focused else None, naming.custom_tokens),
         "problems": [problem_text(p) for p in template_problems(naming, template)] if text else [],
         # The picked template's own problems show under the rail.
@@ -523,6 +527,14 @@ def place(given: NamesInput) -> dict[str, object]:
         "rows_title": tr("names.preview_on", batch=given.batch_title),
         "rows_count": _count_text(template, len(entries)),
         "rows": _rows(text, entries, focus, given.files) if text else [],
+    }
+
+
+def space_choice(naming: NamingOptions, template: str) -> dict[str, object]:
+    """What a space inside a token's value becomes in the picked template, with the choices."""
+    return {
+        "value": naming.space_for(template).value,
+        "choices": [{"key": s.value, "label": tr(f"names.space.{s.value}")} for s in SpaceStyle],
     }
 
 
@@ -661,7 +673,9 @@ def tokens(given: NamesInput, query: str, editing: int, builtin: str = "") -> di
         context = track if scope is Scope.TRACK else title
         if context is None:
             return ""
-        return preview(f"{{{name}}}", context if mapped else replace(context, value_maps={})).text
+        # The raw value is what a row reads, so neither the replacements nor the space choice apply to it.
+        raw = replace(context, value_maps={}, space=SpaceStyle.SPACE)
+        return preview(f"{{{name}}}", context if mapped else raw).text
 
     groups = []
     for scope in _SCOPES:
@@ -690,6 +704,7 @@ def tokens(given: NamesInput, query: str, editing: int, builtin: str = "") -> di
             "label": token_label(builtin),
             "value": value(builtin, scope),
             "value_label": tr("tokens.editor.on_file", file=_file_label(focus)) if focus is not None else "",
+            **(_code_formats(given.naming, focus) if builtin == "episode_code" else {}),
         }
     else:
         return {"groups": groups, "editor": {}}
@@ -699,6 +714,20 @@ def tokens(given: NamesInput, query: str, editing: int, builtin: str = "") -> di
         "raw": tr("tokens.maps.read_here", value=raw) if raw else "",
     }
     return {"groups": groups, "editor": editor}
+
+
+def _code_formats(naming: NamingOptions, focus: MediaItem | None) -> dict[str, object]:
+    """The spellings of the episode code, each shown on the focused episode, and what a two-episode file reads."""
+    episode = focus.identity if focus is not None and isinstance(focus.identity, Episode) else None
+    season, first, last = (episode.season, episode.episode, episode.last_episode) if episode else (1, 1, None)
+    return {
+        "formats": [
+            {"key": f.value, "label": episode_code(f, season, first, last), "checked": f is naming.episode_code_format}
+            for f in EpisodeCodeFormat
+        ],
+        "formats_label": tr("tokens.code.format"),
+        "formats_note": tr("tokens.code.note", example=episode_code(naming.episode_code_format, 1, 1, 2)),
+    }
 
 
 def _editor(given: NamesInput, token: CustomToken, index: int, problems: list[TokenProblem]) -> dict[str, object]:

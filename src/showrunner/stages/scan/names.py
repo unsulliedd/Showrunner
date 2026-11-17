@@ -54,7 +54,14 @@ _BARE_YEAR = re.compile(rf"(?<![A-Za-z0-9])({_YEAR})(?![A-Za-z0-9])")
 _SEASON_RANGE_WORD = re.compile(r"s\d{1,2}(?:-s?\d{1,2})?", re.IGNORECASE)
 
 _SEASON_EPISODE = re.compile(r"(?<![A-Za-z0-9])s(\d{1,2})[ ._-]?e(\d{1,3})(?!\d)", re.IGNORECASE)
-_CROSS = re.compile(r"(?<![A-Za-z0-9])(\d{1,2})x(\d{2,3})(?![A-Za-z0-9])", re.IGNORECASE)
+# `1x01x02` is a range, so an `x` and a number may follow the code.
+_CROSS = re.compile(r"(?<![A-Za-z0-9])(\d{1,2})x(\d{2,3})(?:(?![A-Za-z0-9])|(?=x\d{2}(?![A-Za-z0-9])))", re.IGNORECASE)
+# What may follow the code of the first episode of a file that holds several: `E02`, `-E02`, `-S01E02`, and `-02` with
+# the dash tight against the code, so "S01E01 - 24 Hours" and "S01E01-720p" are no ranges.
+_MORE_SEASON_EPISODE = re.compile(
+    r"(?:[ ._-]?(?:s\d{1,2}[ ._-]?)?e|-)(\d{1,3})(?:(?![A-Za-z0-9])|(?=e\d))", re.IGNORECASE
+)
+_MORE_CROSS = re.compile(r"(?:x|-(?:\d{1,2}x)?)(\d{2,3})(?![A-Za-z0-9])", re.IGNORECASE)
 # "305" for season 3, episode 5; only as a word of its own, so "1080p" and "x264" never match.
 _RUN_TOGETHER = re.compile(r"(?<![^ ._-])(\d{1,2})(\d{2})(?![^ ._-])")
 
@@ -74,7 +81,8 @@ class EpisodeCode:
     season: int
     episode: int
     start: int
-    end: int
+    end: int  # after the last episode of a range
+    last: int | None = None  # the last episode of a range such as `S01E01-E02`; None for one episode
 
 
 def spaced(name: str) -> str:
@@ -88,11 +96,20 @@ def is_release_word(word: str) -> bool:
     return head in _RELEASE_WORDS or _RELEASE_PATTERN.fullmatch(head) is not None
 
 
+def _with_range(text: str, found: re.Match[str], more: re.Pattern[str]) -> EpisodeCode:
+    """The code `found`, extended over the episodes that follow it, each one after the last."""
+    first = last = int(found[2])
+    end = found.end()
+    while (tail := more.match(text, end)) and int(tail[1]) > last:
+        last, end = int(tail[1]), tail.end()
+    return EpisodeCode(int(found[1]), first, found.start(), end, last if last > first else None)
+
+
 def find_code(text: str, *, run_together: bool = False) -> EpisodeCode | None:
-    """The first `S03E01`, `3x01` or (with `run_together`) `301` in the text."""
-    for pattern in (_SEASON_EPISODE, _CROSS):
+    """The first `S03E01`, `3x01` or (with `run_together`) `301` in the text, with its range such as `S03E01-E02`."""
+    for pattern, more in ((_SEASON_EPISODE, _MORE_SEASON_EPISODE), (_CROSS, _MORE_CROSS)):
         if found := pattern.search(text):
-            return EpisodeCode(int(found[1]), int(found[2]), found.start(), found.end())
+            return _with_range(text, found, more)
     if run_together:
         for found in _RUN_TOGETHER.finditer(text):
             # Years and the numbers of video codecs look like codes.

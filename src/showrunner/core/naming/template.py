@@ -278,16 +278,22 @@ def _read(
         if field.padding and not builtin.numeric:
             report(ProblemKind.BAD_FORMAT, "0" * field.padding)
         value = builtin.read(context)
+        spaced = True
     elif defined:
         if field.padding:
             report(ProblemKind.BAD_FORMAT, "0" * field.padding)
         value = _read_defined(defined, context, active, problems, where)
+        # A constant is typed text and a composite's own values were changed where they were read.
+        spaced = defined.kind is CustomKind.PATTERN
     else:
         report(ProblemKind.UNKNOWN_TOKEN, name)
         return None
     mapped = context.value_maps.get(name)
+    # The map matches the value as read and writes the text the user typed, so the space choice touches neither.
     if mapped and value not in (None, "") and str(value) in mapped:
         return mapped[str(value)]
+    if spaced and isinstance(value, str):
+        return value.replace(" ", context.space.character)
     return value
 
 

@@ -21,6 +21,7 @@ from showrunner.core.naming.names import (
     hdr_display,
     resolution,
 )
+from showrunner.core.naming.style import EpisodeCodeFormat, SpaceStyle, episode_code
 from showrunner.core.track import ObjectAudio, Track, TrackKind, flags_with_name
 
 
@@ -43,6 +44,9 @@ class NamingContext:
     value_maps: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     # `{flags}` also names the flags the track's name implies, as the track rules read them.
     flags_from_names: bool = True
+    # How tokens are written: what a space inside a value becomes, and the spelling of `{episode_code}`.
+    space: SpaceStyle = SpaceStyle.SPACE
+    episode_code_format: EpisodeCodeFormat = EpisodeCodeFormat.UPPER
 
     @property
     def video(self) -> Track | None:
@@ -91,6 +95,12 @@ def _season(c: NamingContext) -> int | None:
 
 def _episode_number(c: NamingContext) -> int | None:
     return episode.episode if (episode := _episode(c)) else None
+
+
+def _episode_code(c: NamingContext) -> str | None:
+    if (episode := _episode(c)) is None:
+        return None
+    return episode_code(c.episode_code_format, episode.season, episode.episode, episode.last_episode)
 
 
 def _episode_title(c: NamingContext) -> str | None:
@@ -170,6 +180,8 @@ _TOKENS = (
     Token("year", Scope.ITEM, "2020", lambda c: c.item.identity.year, numeric=True),
     Token("season", Scope.ITEM, "1", _season, numeric=True),
     Token("episode", Scope.ITEM, "5", _episode_number, numeric=True),
+    # `S01E01`, or `S01E01-E02` for a file of two episodes; the spelling is the naming option `episode_code_format`.
+    Token("episode_code", Scope.ITEM, "S01E05", _episode_code),
     Token("episode_title", Scope.ITEM, "Episode Name", _episode_title),
     # The file's base name: no folder, no extension.
     Token("file_name", Scope.ITEM, "Show Name (2020) - 1x05 - Episode Name", lambda c: c.item.file.path.stem),

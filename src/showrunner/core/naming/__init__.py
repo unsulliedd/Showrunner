@@ -4,6 +4,7 @@ from showrunner.core.naming.check import Part, TokenProblem, check_tokens
 from showrunner.core.naming.custom import CustomKind, CustomToken, PatternSource
 from showrunner.core.naming.names import DEFAULT_CODEC_NAMES, DEFAULT_HDR_NAMES, guess_source, guess_source_of
 from showrunner.core.naming.options import SUGGESTED_TEMPLATES, NamingOptions
+from showrunner.core.naming.style import EpisodeCodeFormat, SpaceStyle, episode_code
 from showrunner.core.naming.template import (
     Piece,
     PieceKind,
@@ -25,6 +26,7 @@ __all__ = [
     "TOKENS",
     "CustomKind",
     "CustomToken",
+    "EpisodeCodeFormat",
     "NamingContext",
     "NamingOptions",
     "Part",
@@ -35,10 +37,12 @@ __all__ = [
     "Problem",
     "ProblemKind",
     "Scope",
+    "SpaceStyle",
     "Template",
     "Token",
     "TokenProblem",
     "check_tokens",
+    "episode_code",
     "guess_source",
     "guess_source_of",
     "parse",

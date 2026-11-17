@@ -150,3 +150,14 @@ def test_files_read_again_update_their_rows_or_rebuild_the_tree_for_a_new_name(
     model.replace_files({first.file.path: replace(first.file, path=renamed)})
     assert not keep.isValid()
     assert model.index_for_path(renamed).isValid()
+
+
+def test_a_file_of_two_episodes_is_one_row_at_its_first_episode(model: LibraryModel, sample_library: Library) -> None:
+    second = sample_library.items[1]
+    ranged = replace(second, identity=replace(second.identity, episode=2, last_episode=3))
+    other = replace(sample_library.items[0], identity=replace(sample_library.items[0].identity, episode=4))
+    library = replace(sample_library, items=(other, ranged, *sample_library.items[2:]))
+    model.set_library(library)
+    names = [name for name, _, _ in rows(model) if name[:2].isdigit()]
+    assert names[:2] == ["02  Second", "04  Pilot"]
+    assert model.library.counts().videos == 5

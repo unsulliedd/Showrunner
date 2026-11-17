@@ -196,6 +196,44 @@ Item {
             }
         }
 
+        // What a space inside a token's value becomes in this template; the text typed between tokens is not changed.
+        RowLayout {
+            objectName: "spaceChoice"
+            Layout.fillWidth: true
+            visible: !place.empty && place.names.space !== undefined
+            spacing: Theme.space_sm
+
+            UiText {
+                text: Strings.t("names.space.label")
+                color: Theme.muted
+                font.pixelSize: Theme.text_sm
+            }
+
+            Repeater {
+                model: place.names.space ? place.names.space.choices : []
+
+                delegate: ActionButton {
+                    required property var modelData
+
+                    objectName: "space_" + modelData.key
+                    kind: checked ? "outline" : "ghost"
+                    size: Theme.row_sm
+                    checked: place.names.space.value === modelData.key
+                    text: modelData.label
+                    onClicked: app.set_space(modelData.key)
+                }
+            }
+
+            UiText {
+                Layout.fillWidth: true
+                Layout.leftMargin: Theme.space_sm
+                text: Strings.t("names.space.note")
+                color: Theme.faint
+                font.pixelSize: Theme.text_xs
+                wrapMode: Text.WordWrap
+            }
+        }
+
         Repeater {
             model: place.names.problems || []
 

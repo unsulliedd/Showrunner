@@ -61,3 +61,40 @@ def test_run_together_code_counts_only_inside_a_season_folder() -> None:
 )
 def test_movies(path: str, alone: bool, expected: Movie) -> None:
     assert identify(Path(path), alone=alone) == expected
+
+
+@pytest.mark.parametrize(
+    ("name", "last", "title"),
+    [
+        ("Show Name - S01E01-E02 - Episode One.mkv", 2, "Episode One"),
+        ("Show.Name.S01E01E02.Episode.One.mkv", 2, "Episode One"),
+        ("Show Name s01e01-e02 Episode One.mkv", 2, "Episode One"),
+        ("Show Name S01E01-S01E02 Episode One.mkv", 2, "Episode One"),
+        ("Show Name S01E01-02 Episode One.mkv", 2, "Episode One"),
+        ("Show Name S01E01E02E03 Episode One.mkv", 3, "Episode One"),
+        ("Show Name 1x01-1x02 Episode One.mkv", 2, "Episode One"),
+        ("Show Name 1x01-02 Episode One.mkv", 2, "Episode One"),
+        ("Show Name 1x01x02 Episode One.mkv", 2, "Episode One"),
+    ],
+)
+def test_two_episodes_in_one_file_keep_the_first_as_the_episode_and_the_last_beside_it(
+    name: str, last: int, title: str
+) -> None:
+    assert identify(Path("lib") / name, alone=False) == Episode("Show Name", 1, 1, None, title, last)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Show Name S01E01 - 24 Hours.mkv",  # a spaced dash is no range
+        "Show Name S01E01-720p.mkv",
+        "Show Name S01E01-1080p.mkv",
+        "Show Name 1x01.x264.mkv",
+        "Show Name S01E02-E01.mkv",  # a last episode before the first is no range
+        "Show Name S01E01-E01.mkv",
+    ],
+)
+def test_a_dash_or_number_after_the_code_is_no_range_unless_it_is_an_episode_after_the_first(name: str) -> None:
+    found = identify(Path("lib") / name, alone=False)
+    assert isinstance(found, Episode)
+    assert found.last_episode is None

@@ -122,3 +122,12 @@ def test_subtitle_name_without_a_language(file_name: str) -> None:
 def test_match_tokens_drop_release_words_codes_and_brackets() -> None:
     assert match_tokens("Show.Name.S14E04.720p.HDTV.x264-GROUP (Tag)") == ["show", "name", "group"]
     assert match_tokens("Show Name - 305 - Mr. Baker's Holiday") == ["show", "name", "mr", "bakers", "holiday"]
+
+
+def test_a_range_is_part_of_the_code_so_it_is_neither_title_nor_match_word() -> None:
+    code = find_code("Show Name S01E01-E02 Episode One")
+    assert code is not None
+    assert (code.season, code.episode, code.last) == (1, 1, 2)
+    assert "Show Name S01E01-E02 Episode One"[code.start : code.end] == "S01E01-E02"
+    assert match_tokens("Show Name S01E01-E02 Episode One") == ["show", "name", "episode", "one"]
+    assert episode_code("Show Name S01E01-E02") == (1, 1)

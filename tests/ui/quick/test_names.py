@@ -8,8 +8,9 @@ from dataclasses import replace
 from pytestqt.qtbot import QtBot
 
 from showrunner.app.library.library import Library
-from showrunner.core.naming import CustomKind, NamingOptions
+from showrunner.core.naming import CustomKind, EpisodeCodeFormat, NamingOptions, SpaceStyle
 from showrunner.tools.dependencies.detect import DependencyStatus, State
+from showrunner.ui.i18n.catalog import tr
 from showrunner.ui.quick.window import WindowController
 
 from .conftest import program_statuses
@@ -158,3 +159,102 @@ def test_a_removed_token_takes_its_value_map_and_the_editor_follows_the_batch(
     controller.add_token()
     controller.select(controller.tree.index_of(str(library.items[12].file.path)).parent())
     assert controller.tokens["editor"] == {}
+
+
+def test_the_space_choice_belongs_to_the_picked_template_and_changes_its_result(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    controller.start_template("title_template")
+    controller.rail_remove(0)
+    for token in ("show", "episode_title"):
+        controller.rail_append(token)
+    controller.rail_add_text(1, " - ")
+    assert controller.names["space"]["value"] == "space"
+    assert [c["key"] for c in controller.names["space"]["choices"]] == ["space", "dot", "underscore", "dash"]
+    assert controller.names["result"]["segments"][-1]["text"] == "Episode One"
+
+    controller.set_space("dot")
+    settle(controller, qtbot)
+    assert naming(controller).title_space is SpaceStyle.DOT
+    parts = controller.names["result"]["segments"]
+    assert "".join(p["text"] for p in parts) == "Show.Name - Episode.One"
+    assert controller.names["rows"][0]["after"] == "Show.Name - Episode.One"
+
+    # Another template has its own choice, and a bad one changes nothing.
+    controller.pick_template("audio_track_template")
+    assert controller.names["space"]["value"] == "space"
+    controller.set_space("tilde")
+    assert naming(controller).audio_track_space is SpaceStyle.SPACE
+    controller.set_space("dash")
+    assert (naming(controller).title_space, naming(controller).audio_track_space) == (SpaceStyle.DOT, SpaceStyle.DASH)
+
+
+def test_the_episode_code_format_is_chosen_in_the_tokens_editor(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    controller.rail_append("episode_code")
+    controller.edit_builtin("episode_code")
+    editor = controller.tokens["editor"]
+    assert editor["value"] == "S01E01"
+    assert [(f["key"], f["label"], f["checked"]) for f in editor["formats"]] == [
+        ("S01E01", "S01E01", True),
+        ("s01e01", "s01e01", False),
+        ("S1E01", "S1E01", False),
+        ("1x01", "1x01", False),
+        ("1e01", "1e01", False),
+    ]
+    assert (
+        editor["formats_note"]
+        == "The same spelling in every template. A file that holds two episodes reads S01E01-E02."
+    )
+
+    controller.set_episode_code_format("1x01")
+    assert naming(controller).episode_code_format is EpisodeCodeFormat.CROSS
+    editor = controller.tokens["editor"]
+    assert editor["value"] == "1x01"
+    assert "1x01-02" in editor["formats_note"]
+    controller.set_episode_code_format("nothing")
+    assert naming(controller).episode_code_format is EpisodeCodeFormat.CROSS
+    # Only this token has formats.
+    controller.edit_builtin("show")
+    assert "formats" not in controller.tokens["editor"]
+
+
+def test_replace_values_rows_are_saved_and_the_example_row_is_not(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    controller.pick_template("audio_track_template")
+    controller.edit_builtin("codec")
+    # The editor offers one empty row; the example it hints at is placeholder text and no rule.
+    assert controller.tokens["editor"]["maps"] == [{"read": "", "written": ""}]
+    assert naming(controller).value_maps == {}
+    assert tr("tokens.maps.title") == "Replace values"
+    assert (tr("settings.naming.col.value_read"), tr("settings.naming.col.write_instead")) == (
+        "When it reads",
+        "Write instead",
+    )
+    assert (tr("tokens.maps.example_read"), tr("tokens.maps.example_written")) == ("Dolby Digital Plus", "DDP")
+
+    controller.set_value_map("codec", 0, "Dolby Digital Plus", "DDP")
+    assert naming(controller).value_maps == {"codec": {"Dolby Digital Plus": "DDP"}}
+    assert controller.tokens["editor"]["maps"] == [
+        {"read": "Dolby Digital Plus", "written": "DDP"},
+        {"read": "", "written": ""},
+    ]
+
+
+def test_the_value_a_row_reads_is_shown_without_the_space_choice(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    controller.pick_template("audio_track_template")
+    controller.rail_append("codec")
+    controller.set_space("dot")
+    controller.edit_builtin("codec")
+    editor = controller.tokens["editor"]
+    assert editor["value"] == "Dolby.Digital.Plus"
+    # A row matches the value as read, so the line a user copies from shows it without the choice.
+    assert editor["raw"] == "Reads here: Dolby Digital Plus"

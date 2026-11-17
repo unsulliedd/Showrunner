@@ -27,14 +27,14 @@ def identify(path: Path, *, alone: bool) -> Movie | Episode:
     # A bare "305" is only read as an episode where a season folder says this is a show.
     code = find_code(text, run_together=season_folder is not None)
     if code:
-        season, number, start, end = code.season, code.episode, code.start, code.end
+        season, number, start, end, last = code.season, code.episode, code.start, code.end, code.last
     elif season_folder is not None and (found := _NUMBER_ONLY.match(text)):
-        season, number, start, end = season_folder, int(found[1]), 0, found.end()
+        season, number, start, end, last = season_folder, int(found[1]), 0, found.end(), None
     else:
         return _movie(path, alone)
 
     show, year = _show(text[:start], path.parent.parent if season_folder is not None else path.parent)
-    return Episode(show, season, number, year, leading_title(text[end:]))
+    return Episode(show, season, number, year, leading_title(text[end:]), last)
 
 
 def _show(before_code: str, show_folder: Path) -> tuple[str, int | None]:

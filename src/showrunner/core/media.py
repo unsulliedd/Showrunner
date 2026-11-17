@@ -84,6 +84,9 @@ class Episode:
     episode: int
     year: int | None = None  # of the show
     episode_title: str = ""
+    # The last episode of a file that holds several (`S01E01-E02`); `episode` stays the first, which is the file's
+    # place in the library. None for a file of one episode.
+    last_episode: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

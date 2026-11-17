@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from showrunner.core.media import SubtitleFile
-from showrunner.core.naming import SUGGESTED_TEMPLATES, NamingOptions, ProblemKind
+from showrunner.core.naming import SUGGESTED_TEMPLATES, EpisodeCodeFormat, NamingOptions, ProblemKind, SpaceStyle
 from showrunner.stages.metadata import (
     HeaderChange,
     MetadataOptions,
@@ -79,6 +79,22 @@ def test_custom_templates_are_used(episode) -> None:
     result = changes(plan(episode, naming=naming))
     assert result[0] == (Property.TITLE, None, "Old Title", "Show Name 01x01")
     assert (Property.NAME, 1, "AC-3 5.1", "Dolby Digital") in result
+
+
+def test_each_template_has_its_own_space_choice_and_the_episode_code_its_format(episode) -> None:
+    naming = NamingOptions(
+        title_template="{show} {episode_code}",
+        audio_track_template="{show} ({codec})",
+        video_track_template="{show}",
+        audio_track_space=SpaceStyle.DOT,
+        video_track_space=SpaceStyle.UNDERSCORE,
+        episode_code_format=EpisodeCodeFormat.CROSS,
+    )
+    assert changes(plan(episode, naming=naming)) == [
+        (Property.TITLE, None, "Old Title", "Show Name 1x01"),
+        (Property.NAME, 0, "", "Show_Name"),
+        (Property.NAME, 1, "AC-3 5.1", "Show.Name (Dolby.Digital)"),
+    ]
 
 
 @pytest.mark.parametrize(

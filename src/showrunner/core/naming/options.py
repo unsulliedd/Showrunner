@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 
 from showrunner.core.naming.custom import CustomToken
+from showrunner.core.naming.style import EpisodeCodeFormat, SpaceStyle
 from showrunner.core.options.registry import REGISTRY
 
 # Templates offered for an empty template field: the title is the file's name, and each track name adds what is
@@ -30,8 +31,20 @@ class NamingOptions:
     video_track_template: str = ""
     audio_track_template: str = ""
     subtitle_track_template: str = ""
+    # What a space inside a token's value becomes in each template; typed text is never changed. The field of a
+    # template is its name with `_template` replaced by `_space`.
+    title_space: SpaceStyle = SpaceStyle.SPACE
+    video_track_space: SpaceStyle = SpaceStyle.SPACE
+    audio_track_space: SpaceStyle = SpaceStyle.SPACE
+    subtitle_track_space: SpaceStyle = SpaceStyle.SPACE
+    # How `{episode_code}` is spelled, in every template.
+    episode_code_format: EpisodeCodeFormat = EpisodeCodeFormat.UPPER
     # The user's own tokens, usable in every template; they may not reuse a built-in token's name.
     custom_tokens: list[CustomToken] = field(default_factory=list)
     # Token name -> value read -> text to use instead. Applies to built-in and defined tokens; the default
     # display names (codecs, HDR kinds) are rewritten the same way.
     value_maps: dict[str, dict[str, str]] = field(default_factory=dict)
+
+    def space_for(self, template: str) -> SpaceStyle:
+        """The space choice of a template given by its field name, `title_template` for example."""
+        return getattr(self, template.removesuffix("_template") + "_space")

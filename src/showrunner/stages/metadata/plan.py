@@ -103,8 +103,16 @@ def naming_context(
     """What a template reads for the file's title (`track` None) or for one kept track."""
     # The flags after the rules, so `{flags}` names what the track will be.
     named = replace(track.track, flags=track.flags) if track else None
+    template = _TEMPLATES[named.kind] if named else "title_template"
     return NamingContext(
-        item, named, source, naming.custom_tokens, naming.value_maps, flags_from_names=tracks.flags_from_names
+        item,
+        named,
+        source,
+        naming.custom_tokens,
+        naming.value_maps,
+        flags_from_names=tracks.flags_from_names,
+        space=naming.space_for(template),
+        episode_code_format=naming.episode_code_format,
     )
 
 

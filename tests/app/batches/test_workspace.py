@@ -10,6 +10,8 @@ from showrunner.app.batches.batch import BatchKey, BatchKind, Media
 from showrunner.app.batches.workspace import load_batches, save_batches
 from showrunner.app.profiles import registered  # noqa: F401
 from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME, ProfileStore
+from showrunner.core.media import Episode, MediaFile, MediaItem
+from showrunner.core.naming import EpisodeCodeFormat, NamingOptions, SpaceStyle
 from showrunner.stages.tracks import KindTest, TrackMatch, TracksOptions
 
 SEASON = BatchKey(BatchKind.SEASON, Media.EPISODES, "Show Name", 2020, 1)
@@ -75,3 +77,55 @@ def test_a_file_from_before_the_track_order_loads_without_one(tmp_path: Path, st
     assert not batches.copy(SEASON).changed
     assert batches.own(SEASON)["tracks"]["rules"] == tracks.rules
     assert [r.match.languages for r in tracks.rules] == [["tr"]]
+
+
+def test_a_file_of_two_episodes_is_placed_by_its_first_episode_and_keeps_its_choices_after_a_restart(
+    tmp_path: Path, store: ProfileStore
+) -> None:
+    path = tmp_path / "workspace.json"
+    ranged = MediaItem(
+        Episode("Show Name", 1, 1, 2020, "Episode One", last_episode=2),
+        MediaFile(tmp_path / "Show Name S01E01-E02.mkv", "matroska"),
+    )
+    single = replace(ranged, identity=replace(ranged.identity, last_episode=None))
+    key = BatchKey.file(ranged)
+    assert key == BatchKey.file(single) == BatchKey(BatchKind.EPISODE, Media.EPISODES, "Show Name", 2020, 1, 1)
+    assert key.parent == SEASON
+
+    batches = load_batches(store, path)
+    batches.set_options(
+        key, "naming", NamingOptions(audio_track_space=SpaceStyle.DOT, episode_code_format=EpisodeCodeFormat.CROSS)
+    )
+    save_batches(batches, path)
+
+    saved = load_batches(store, path)
+    naming = saved.profile(BatchKey.file(ranged)).for_stage("naming")
+    assert (naming.audio_track_space, naming.episode_code_format) == (SpaceStyle.DOT, EpisodeCodeFormat.CROSS)
+    # The season beside it is untouched.
+    assert saved.profile(SEASON).for_stage("naming").audio_track_space is SpaceStyle.SPACE
+
+
+def test_the_space_choice_passes_from_show_to_season_to_episode_and_the_nearest_place_decides(
+    tmp_path: Path, store: ProfileStore
+) -> None:
+    show = BatchKey(BatchKind.SHOW, Media.EPISODES, "Show Name", 2020)
+    episode = BatchKey(BatchKind.EPISODE, Media.EPISODES, "Show Name", 2020, 1, 1)
+    other = BatchKey(BatchKind.SEASON, Media.EPISODES, "Show Name", 2020, 2)
+    batches = load_batches(store, tmp_path / "workspace.json")
+
+    def space(key: BatchKey) -> SpaceStyle:
+        return batches.profile(key).for_stage("naming").audio_track_space
+
+    batches.set_options(show, "naming", NamingOptions(audio_track_space=SpaceStyle.DOT))
+    assert [space(k) for k in (show, SEASON, episode, other)] == [SpaceStyle.DOT] * 4
+
+    batches.set_options(SEASON, "naming", NamingOptions(audio_track_space=SpaceStyle.DASH))
+    assert [space(k) for k in (show, SEASON, episode, other)] == [
+        SpaceStyle.DOT,
+        SpaceStyle.DASH,
+        SpaceStyle.DASH,
+        SpaceStyle.DOT,
+    ]
+
+    batches.set_options(episode, "naming", NamingOptions(audio_track_space=SpaceStyle.SPACE))
+    assert [space(k) for k in (show, SEASON, episode)] == [SpaceStyle.DOT, SpaceStyle.DASH, SpaceStyle.SPACE]

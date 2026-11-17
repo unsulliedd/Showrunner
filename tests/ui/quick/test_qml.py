@@ -22,6 +22,7 @@ from pytestqt.qtbot import QtBot
 
 from showrunner.app.batches.batch import BatchKind
 from showrunner.app.library.library import Library
+from showrunner.core.naming import EpisodeCodeFormat, SpaceStyle
 from showrunner.tools.probe import Programs
 from showrunner.ui.i18n.catalog import STRINGS_DIR
 from showrunner.ui.quick import names, palette
@@ -987,6 +988,54 @@ def test_names_and_tokens_answer_the_pointer(
     qtbot.waitUntil(lambda: not controller.planning)
     assert load() == []
     assert controller.names["title"] == "File title"
+    assert qt_warnings() == []
+
+
+def test_the_space_choice_and_the_episode_code_spelling_answer_the_pointer(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
+    qtbot.waitUntil(lambda: not controller.planning)
+    load.window.setProperty("place", "names")
+    root = load.window.contentItem()
+
+    def naming() -> Any:
+        assert controller._key is not None
+        return controller.batches.profile(controller._key).for_stage("naming")
+
+    # Nothing to choose a space for until the template has something.
+    assert not [i for i in _items(root, "spaceChoice") if i.isVisible()]
+    controller.start_template("title_template")
+    controller.rail_append("show")
+    load()
+    assert _item(root, "spaceChoice").isVisible()
+    _click(load.window, _item(root, "space_dot"))
+    load()
+    assert naming().title_space is SpaceStyle.DOT
+    assert _item(root, "space_dot").property("checked") is True
+    assert _item(root, "space_space").property("checked") is False
+    # A second click on the same choice keeps it.
+    _click(load.window, _item(root, "space_dot"))
+    load()
+    assert naming().title_space is SpaceStyle.DOT
+    assert _item(root, "space_dot").property("checked") is True
+
+    controller.edit_builtin("episode_code")
+    assert load() == []
+    _click(load.window, _item(root, "codeFormat_s01e01"))
+    load()
+    assert naming().episode_code_format is EpisodeCodeFormat.LOWER
+    assert _item(root, "codeFormat_s01e01").property("checked") is True
+    assert _item(root, "codeFormat_S01E01").property("checked") is False
+    # The built-in editors of other tokens have no spellings, and the empty row's example is placeholder text only.
+    controller.edit_builtin("show")
+    assert load() == []
+    assert _item(root, "mapRead_0").property("placeholderText") == "Dolby Digital Plus"
+    assert _item(root, "mapRead_0").property("text") == ""
+    assert naming().value_maps == {}
     assert qt_warnings() == []
 
 

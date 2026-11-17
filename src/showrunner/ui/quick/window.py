@@ -57,8 +57,10 @@ from showrunner.core.naming import (
     TOKENS,
     CustomKind,
     CustomToken,
+    EpisodeCodeFormat,
     NamingOptions,
     PatternSource,
+    SpaceStyle,
     parse,
     pieces,
 )
@@ -1143,6 +1145,19 @@ class WindowController(QObject):
     @Slot(int)
     def rail_padding(self, at: int) -> None:
         self._set_template(rail.cycle_padding(self._template_text(), at))
+
+    @Slot(str)
+    def set_space(self, style: str) -> None:
+        """What a space inside a token's value becomes in the picked template."""
+        if self._key is not None and style in SpaceStyle:
+            field = self._template.removesuffix("_template") + "_space"
+            self._set_naming(replace(self._naming(), **{field: SpaceStyle(style)}))
+
+    @Slot(str)
+    def set_episode_code_format(self, style: str) -> None:
+        """How the Episode code token is spelled, in every template."""
+        if self._key is not None and style in EpisodeCodeFormat:
+            self._set_naming(replace(self._naming(), episode_code_format=EpisodeCodeFormat(style)))
 
     def _get_token_query(self) -> str:
         return self._token_query

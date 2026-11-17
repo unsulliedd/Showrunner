@@ -149,8 +149,8 @@ Rectangle {
             visible: editor.custom
             Layout.fillWidth: true
             mono: true
-            label: editor.token.text_label
-            text: editor.token.text
+            label: editor.token.text_label || ""
+            text: editor.token.text || ""
             onEditingFinished: if (text !== editor.token.text) app.set_token_text(editor.token.index, text)
         }
 
@@ -184,6 +184,43 @@ Rectangle {
             }
         }
 
+        // The Episode code token's spelling, one choice for every template.
+        Label {
+            visible: editor.token.formats !== undefined
+            text: editor.token.formats_label || ""
+        }
+
+        Flow {
+            Layout.fillWidth: true
+            visible: editor.token.formats !== undefined
+            spacing: Theme.space_xs
+
+            Repeater {
+                model: editor.token.formats || []
+
+                delegate: ActionButton {
+                    required property var modelData
+
+                    objectName: "codeFormat_" + modelData.key
+                    kind: checked ? "outline" : "ghost"
+                    size: Theme.row_sm
+                    checked: modelData.checked
+                    text: modelData.label
+                    onClicked: app.set_episode_code_format(modelData.key)
+                }
+            }
+        }
+
+        UiText {
+            Layout.fillWidth: true
+            visible: editor.token.formats !== undefined
+            text: editor.token.formats_note || ""
+            color: Theme.faint
+            font.pixelSize: Theme.text_xs
+            wrapMode: Text.WordWrap
+            elide: Text.ElideNone
+        }
+
         RowLayout {
             Layout.fillWidth: true
             Layout.topMargin: Theme.space_sm
@@ -208,7 +245,28 @@ Rectangle {
             elide: Text.ElideNone
         }
 
-        // One row per rewrite, then an empty row that adds one. Clearing what a row reads removes it.
+        // The columns of the table below, each over its field; what it reads gets more room than what is written.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.space_sm
+
+            Label {
+                Layout.preferredWidth: 3
+                text: Strings.t("settings.naming.col.value_read")
+            }
+
+            Item {
+                implicitWidth: Theme.icon_sm
+            }
+
+            Label {
+                Layout.preferredWidth: 2
+                text: Strings.t("settings.naming.col.write_instead")
+            }
+        }
+
+        // One row per replacement, then an empty row that adds one; its example is a hint and is never saved.
+        // Clearing what a row reads removes it.
         Repeater {
             model: editor.token.maps
 
@@ -224,10 +282,10 @@ Rectangle {
                 InputField {
                     objectName: "mapRead_" + mapRow.index
                     Layout.fillWidth: true
-                    Layout.preferredWidth: 1
+                    Layout.preferredWidth: 3
                     mono: true
-                    label: Strings.t("tokens.maps.read")
-                    placeholderText: Strings.t("tokens.maps.read")
+                    label: Strings.t(mapRow.modelData.read === "" ? "settings.naming.new_value" : "settings.naming.col.value_read")
+                    placeholderText: mapRow.modelData.read === "" ? Strings.t("tokens.maps.example_read") : ""
                     text: mapRow.modelData.read
                     onEditingFinished: if (text !== mapRow.modelData.read)
                         app.set_value_map(editor.token.name, mapRow.index, text, written.text)
@@ -244,10 +302,10 @@ Rectangle {
 
                     objectName: "mapWritten_" + mapRow.index
                     Layout.fillWidth: true
-                    Layout.preferredWidth: 1
+                    Layout.preferredWidth: 2
                     mono: true
-                    label: Strings.t("tokens.maps.written")
-                    placeholderText: Strings.t("tokens.maps.written")
+                    label: Strings.t("settings.naming.col.write_instead")
+                    placeholderText: mapRow.modelData.read === "" ? Strings.t("tokens.maps.example_written") : ""
                     text: mapRow.modelData.written
                     onEditingFinished: if (text !== mapRow.modelData.written && mapRow.modelData.read !== "")
                         app.set_value_map(editor.token.name, mapRow.index, mapRow.modelData.read, text)
