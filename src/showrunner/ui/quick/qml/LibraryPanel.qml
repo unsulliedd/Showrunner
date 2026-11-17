@@ -30,12 +30,29 @@ Panel {
             }
 
             IconButton {
+                id: add
+
                 anchors.right: parent.right
                 anchors.rightMargin: Theme.space_md
                 anchors.verticalCenter: parent.verticalCenter
                 iconName: "plus"
                 label: Strings.t("library.add")
                 onClicked: app.choose_folder()
+            }
+
+            // Back to Home; a library being read or a batch being applied is not closed under its job.
+            IconButton {
+                objectName: "closeFolder"
+                anchors.right: add.left
+                anchors.rightMargin: Theme.space_xs
+                anchors.verticalCenter: parent.verticalCenter
+                visible: app.loaded
+                enabled: !app.busy && !app.applying
+                iconName: "x"
+                label: Strings.t("library.close")
+                ToolTip.visible: hovered
+                ToolTip.text: label
+                onClicked: app.close_folder()
             }
         }
 

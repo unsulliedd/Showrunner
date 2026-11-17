@@ -65,11 +65,9 @@ def problem_text(problem: Problem) -> str:
     return tr(f"problem.{problem.kind.value.replace('-', '_')}", detail=problem.detail)
 
 
-def card_label(template: str, media: Media) -> str:
-    """The title card is named for what the batch holds; the engine has one title template for both."""
-    if template == TITLE_TEMPLATE:
-        return tr(f"names.card.{media.value}")
-    return tr(f"names.card.{TRACK_KIND[template].value}")
+def card_label(template: str) -> str:
+    """The title card reads "File title" for shows and movies alike: the engine has one title template for both."""
+    return tr("names.card.title" if template == TITLE_TEMPLATE else f"names.card.{TRACK_KIND[template].value}")
 
 
 def token_label(name: str) -> str:
@@ -439,13 +437,13 @@ def card_counts(files: Sequence[FilePreview]) -> dict[str, int]:
     return counts
 
 
-def blocked_lines(block: StageBlock | None, media: Media, shown: str = "") -> list[str]:
+def blocked_lines(block: StageBlock | None, shown: str = "") -> list[str]:
     """Every reason the metadata stage plans nothing, worded and named by where it is; the problems of the template
     `shown` are left to the place that shows it."""
     if block is None:
         return []
     lines = [
-        tr("names.blocked.template", card=card_label(name, media), problem=problem_text(problem))
+        tr("names.blocked.template", card=card_label(name), problem=problem_text(problem))
         for name, problems in block.templates.items()
         if name != shown
         for problem in problems
@@ -494,7 +492,7 @@ def place(given: NamesInput) -> dict[str, object]:
         cards.append(
             {
                 "key": name,
-                "label": card_label(name, given.media),
+                "label": card_label(name),
                 "icon": _ICON.get(name, "tv" if given.media is Media.EPISODES else "film"),
                 "empty": not own,
                 "sample": sample.after if own and sample else "",
@@ -510,7 +508,8 @@ def place(given: NamesInput) -> dict[str, object]:
     return {
         "cards": cards,
         "template": template,
-        "title": card_label(template, given.media),
+        "title": card_label(template),
+        "note": tr("names.card.title_note") if template == TITLE_TEMPLATE else "",
         "empty": not text,
         "editable": not parse(text).problems,
         "end": len(pieces(parse(text))),
@@ -519,7 +518,7 @@ def place(given: NamesInput) -> dict[str, object]:
         "rail": rail(text, focused.context if focused else None, naming.custom_tokens),
         "problems": [problem_text(p) for p in template_problems(naming, template)] if text else [],
         # The picked template's own problems show under the rail.
-        "blocked": blocked_lines(given.block, given.media, template),
+        "blocked": blocked_lines(given.block, template),
         "result": _result(text, focused),
         "rows_title": tr("names.preview_on", batch=given.batch_title),
         "rows_count": _count_text(template, len(entries)),

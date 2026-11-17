@@ -104,6 +104,18 @@ Item {
             wrapMode: Text.WordWrap
         }
 
+        // On the file title card: the title written inside the file is not the file name.
+        UiText {
+            objectName: "titleNote"
+            Layout.fillWidth: true
+            Layout.topMargin: -Theme.space_md
+            visible: (place.names.note || "") !== ""
+            text: place.names.note || ""
+            color: Theme.muted
+            font.pixelSize: Theme.text_sm
+            wrapMode: Text.WordWrap
+        }
+
         Rectangle {
             id: frame
 

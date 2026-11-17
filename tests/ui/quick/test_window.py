@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QUrl
+from PySide6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
 
 from showrunner.app.library.library import Library, LibraryLoad
 from showrunner.app.library.loader import LibraryLoader
 from showrunner.app.profiles.store import ProfileStore
-from showrunner.app.settings.app_settings import load_settings
+from showrunner.app.settings.app_settings import load_settings, save_settings
 from showrunner.app.storage.paths import workspace_path
 from showrunner.tools.probe import Programs
 from showrunner.ui.quick.library import KIND, LABEL, NUMBER, PROBLEM, ROW_ID, SUMMARY
@@ -198,3 +200,74 @@ def test_the_status_bar_says_how_a_load_ended(controller: WindowController) -> N
     assert controller.job_text == "No new videos found."
     controller._on_failed(OSError("denied"))
     assert controller.job_text == "The folder could not be read: denied"
+
+
+def test_the_window_comes_back_where_it_was_and_inside_a_screen(qapp: QApplication) -> None:
+    controller = WindowController(screens=lambda: [(0, 0, 1920, 1040)])
+    assert controller.window_state() == {}
+    controller.save_window_state(100, 80, 1200, 800, False)
+    assert controller.window_state() == {"x": 100, "y": 80, "width": 1200, "height": 800, "maximized": False}
+    controller.save_window_state(2500, 80, 1200, 800, True)  # the screen it was on is gone
+    assert controller.window_state() == {"x": 360, "y": 120, "width": 1200, "height": 800, "maximized": True}
+    assert load_settings().value.window_geometry == "2500,80,1200,800,1"
+    controller.deleteLater()
+
+
+def test_a_damaged_or_old_window_place_is_ignored(controller: WindowController) -> None:
+    save_settings(replace(load_settings().value, window_geometry="g"))
+    assert controller.window_state() == {}
+
+
+def test_closing_the_folder_goes_back_to_home_and_starts_the_next_time_there(
+    controller: WindowController, library: Library, tmp_path: Path
+) -> None:
+    controller.close_folder()  # nothing is open: nothing happens
+    controller.model.set_library(library)
+    controller._recent = {str(tmp_path): "2026-01-01T00:00:00"}
+    controller.select(controller.tree.index(0, 0))
+    controller.save_workspace()
+    assert controller.loaded
+    assert controller.has_batch
+    controller.close_folder()
+    assert not controller.loaded
+    assert not controller.has_batch
+    assert controller.selected == ""
+    assert controller.change_count == 0
+    settings = load_settings().value
+    assert (settings.last_folders, settings.last_selection) == ([], "")
+    assert list(settings.recent_folders) == [str(tmp_path)]
+    controller.save_workspace()  # leaving the window afterwards does not bring the folder back
+    assert load_settings().value.last_folders == []
+
+
+def test_the_folder_stays_open_while_a_batch_is_being_applied(controller: WindowController, library: Library) -> None:
+    controller.model.set_library(library)
+    controller._applying = object()  # type: ignore[assignment]
+    controller.close_folder()
+    assert controller.loaded
+    controller._applying = None
+
+
+def test_a_recent_folder_is_removed_from_the_list_only(controller: WindowController, tmp_path: Path) -> None:
+    kept, gone = tmp_path / "Show Name (2020)", tmp_path / "Movie Name (2019)"
+    kept.mkdir()
+    gone.mkdir()
+    controller._recent = {str(kept): "2026-01-02T00:00:00", str(gone): "2026-01-01T00:00:00"}
+    controller.remove_recent(str(gone))
+    assert [entry["name"] for entry in controller.recent] == ["Show Name (2020)"]
+    assert list(load_settings().value.recent_folders) == [str(kept)]
+    assert gone.is_dir()
+    controller.remove_recent(str(gone))  # a second removal changes nothing
+    assert [e["key"] for e in controller.recent_actions()] == ["open", "remove"]
+
+
+def test_the_palette_offers_to_close_only_an_open_folder(controller: WindowController, library: Library) -> None:
+    def keys() -> list[object]:
+        controller.palette_query = "close the folder"
+        return [e["key"] for e in controller.palette]
+
+    assert "close_folder" not in keys()
+    controller.model.set_library(library)
+    assert "close_folder" in keys()
+    controller.palette_run("action", "close_folder")
+    assert not controller.loaded

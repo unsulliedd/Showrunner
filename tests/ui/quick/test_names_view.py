@@ -177,7 +177,7 @@ def test_cards_follow_the_engines_templates_and_the_batch_kind(library: Library)
     shown = names.place(given(items, NamingOptions(title_template=EPISODE)))
     cards = shown["cards"]
     assert [c["label"] for c in cards] == [
-        "Episode titles",
+        "File title",
         "Video track names",
         "Audio track names",
         "Subtitle track names",
@@ -189,7 +189,14 @@ def test_cards_follow_the_engines_templates_and_the_batch_kind(library: Library)
         "",
     )
     movies = names.place(given(items, NamingOptions(), media=Media.MOVIES))
-    assert movies["cards"][0]["label"] == "Movie titles"
+    assert movies["cards"][0]["label"] == "File title"
+
+
+def test_only_the_file_title_says_it_is_not_the_file_name(library: Library) -> None:
+    items = season(library)
+    title = names.place(given(items, NamingOptions()))
+    assert "not the file's name" in str(title["note"])
+    assert names.place(given(items, NamingOptions(), template="audio_track_template"))["note"] == ""
 
 
 def test_the_place_shows_the_batch_before_and_after(library: Library) -> None:

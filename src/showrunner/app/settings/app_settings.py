@@ -44,9 +44,10 @@ class AppSettings:
     # The `{source}` of the batch (BluRay, WEB-DL, ...); empty guesses it from each file's name. Kept with the
     # workspace, not the profile, since it describes the files rather than how to treat them.
     batch_source: str = ""
-    # Opaque to this layer: whatever string the window produces and later restores.
+    # Opaque to this layer: the text the window produces and later restores (its place and whether it is maximized).
     window_geometry: str = ""
-    # Widths of the panes of the main window, as the splitters report them; empty until the user has moved one.
+    # Not read or written by anything: the Widgets window's splitters. `panel_sizes` holds the Qt Quick window's
+    # panels. Kept only so that old settings files load as they did.
     library_splitter: list[int] = field(default_factory=list)
     sheet_splitter: list[int] = field(default_factory=list)
     # Panel sizes of the Qt Quick window: split name to the split's own saved state, as base64.

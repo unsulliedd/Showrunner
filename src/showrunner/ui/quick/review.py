@@ -200,7 +200,7 @@ def _problems(given: ReviewInput, group: ChangeGroup) -> list[str]:
         if block := given.blocks.get("mux"):
             found += [tr(f"review.blocked.{name.value}", folder=given.mux.keep_folder) for name in block.names]
     else:
-        found += blocked_lines(given.blocks.get("metadata"), given.media)
+        found += blocked_lines(given.blocks.get("metadata"))
     return found
 
 

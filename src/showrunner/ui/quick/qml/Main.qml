@@ -11,12 +11,34 @@ ApplicationWindow {
     property bool drawerOpen: false
     readonly property bool sideShown: app.has_batch && app.side_tabs(place).length > 0
 
+    // The window's place while it is neither maximized nor minimized, and whether it was maximized, as last seen.
+    property rect normal: Qt.rect(x, y, width, height)
+    property bool maximized: false
+
     // The start size is set once: a binding would snap the window back each time Appearance changes the theme.
+    // The place of the last session comes from the controller, already moved onto a screen that exists now.
     Component.onCompleted: {
         width = Theme.quick_window_width
         height = Theme.quick_window_height
+        const saved = app.window_state()
+        if (saved.width !== undefined) {
+            x = saved.x
+            y = saved.y
+            width = saved.width
+            height = saved.height
+            if (saved.maximized)
+                visibility = Window.Maximized
+        }
+        normal = Qt.rect(x, y, width, height)
+        maximized = visibility === Window.Maximized
         app.show_place(place)
     }
+    onXChanged: placeTimer.restart()
+    onYChanged: placeTimer.restart()
+    onWidthChanged: placeTimer.restart()
+    onHeightChanged: placeTimer.restart()
+    onVisibilityChanged: placeTimer.restart()
+    onClosing: placeTimer.save()
     // The controller builds a place's data only while it shows.
     onPlaceChanged: app.show_place(place)
     minimumWidth: Theme.window_min_width
@@ -37,6 +59,28 @@ ApplicationWindow {
     }
 
     footer: StatusBar {}
+
+    // The place is written a moment after the last move or resize, not at every pixel of a drag, and on closing.
+    Timer {
+        id: placeTimer
+
+        objectName: "placeTimer"
+        interval: app.save_delay
+
+        function save() {
+            stop()
+            if (window.visibility === Window.Windowed) {
+                window.normal = Qt.rect(window.x, window.y, window.width, window.height)
+                window.maximized = false
+            } else if (window.visibility === Window.Maximized) {
+                window.maximized = true
+            }
+            app.save_window_state(window.normal.x, window.normal.y, window.normal.width, window.normal.height,
+                                  window.maximized)
+        }
+
+        onTriggered: save()
+    }
 
     Shortcut {
         sequence: app.settings.keys.palette

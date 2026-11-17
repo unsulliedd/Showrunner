@@ -24,7 +24,7 @@ def naming(controller: WindowController) -> NamingOptions:
 def test_opening_names_writes_nothing(controller: WindowController, library: Library, qtbot: QtBot) -> None:
     open_season(controller, library, qtbot)
     assert [c["empty"] for c in controller.names["cards"]] == [True] * 4
-    assert controller.names["title"] == "Episode titles"
+    assert controller.names["title"] == "File title"
     assert not controller.profile_edited
 
 

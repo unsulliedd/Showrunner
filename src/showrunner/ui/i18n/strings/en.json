@@ -543,6 +543,7 @@
   "library.tab.library": "Library",
   "library.tab.files": "Files",
   "library.add": "Add folders",
+  "library.close": "Close folder",
   "library.filter_short": "Filter",
   "library.drop": "Drop folders to add",
   "library.empty.title": "Nothing here yet",
@@ -559,6 +560,8 @@
   "home.programs": "Programs",
   "home.recent": "Recent",
   "home.recent_empty": "Folders you open show up here.",
+  "home.recent.open": "Open",
+  "home.recent.remove": "Remove from recent",
   "home.get": "Get it",
   "home.get_named": "Get {name}",
   "home.art.kept": "ENG",
@@ -876,8 +879,8 @@
   "profile.error.exists": "A profile named {name} already exists.",
   "profile.error.name": "That cannot be a profile name: it is empty, or holds a character a file name cannot.",
   "inspector.episode_code": "S{season:02d}E{episode:02d}",
-  "names.card.episodes": "Episode titles",
-  "names.card.movies": "Movie titles",
+  "names.card.title": "File title",
+  "names.card.title_note": "The title stored inside the file, not the file's name. Files are not renamed here.",
   "names.card.video": "Video track names",
   "names.card.audio": "Audio track names",
   "names.card.subtitle": "Subtitle track names",
@@ -1245,6 +1248,7 @@
   "palette.kind.token": "token",
   "palette.action.open_folder": "Open a folder…",
   "palette.action.add_files": "Add files…",
+  "palette.action.close_folder": "Close the folder",
   "palette.action.place": "Go to {place}",
   "palette.action.drawer": "Show or hide the drawer",
   "palette.action.save_profile": "Save the choices to the profile",
@@ -1278,5 +1282,5 @@
   "discard.edited": "{place} loses its unsaved edits of the profile “{profile}” and goes back to it as saved. The profile pill stops reading edited.",
   "discard.inside": "Everything set in {places} inside {place} goes too ({choices}).",
   "discard.final": "This cannot be undone.",
-  "prefs.shortcuts.place_menu": "Library: open the menu of the selected row"
+  "prefs.shortcuts.place_menu": "Library and Home: open the menu of the selected row or recent folder"
 }

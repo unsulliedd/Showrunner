@@ -220,4 +220,4 @@ def test_the_menu_key_and_shift_f10_open_the_menu_of_the_selected_row(
 
 def test_the_shortcuts_list_the_keys_that_open_the_row_menu(controller: WindowController) -> None:
     entries = {entry["text"]: entry["keys"] for entry in controller.settings.shortcuts}
-    assert len(entries["Library: open the menu of the selected row"]) == 2
+    assert len(entries["Library and Home: open the menu of the selected row or recent folder"]) == 2

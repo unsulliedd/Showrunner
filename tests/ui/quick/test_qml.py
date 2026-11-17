@@ -981,12 +981,12 @@ def test_names_and_tokens_answer_the_pointer(
     for card in ("video_track_template", "audio_track_template", "subtitle_track_template", "title_template"):
         _click(load.window, _item(root, "templateCard_" + card))
         assert load() == [], card
-    # A movie names its title card for movies.
+    # A movie's title card reads the same.
     movie = next(i for i in library.items if i.file.path.name.startswith("Movie.Title"))
     controller.select(controller.tree.index_of(str(movie.file.path)))
     qtbot.waitUntil(lambda: not controller.planning)
     assert load() == []
-    assert controller.names["title"] == "Movie titles"
+    assert controller.names["title"] == "File title"
     assert qt_warnings() == []
 
 

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Property, QByteArray, QModelIndex, QObject, QThreadPool, QTimer, QUrl, Signal, Slot
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QFileDialog
 
 from showrunner.app.batches.batch import Batches, BatchKey, BatchKind, Media
@@ -43,7 +44,7 @@ from showrunner.app.jobs.preview import FileOutcome, FilePreview, Preview, previ
 from showrunner.app.jobs.run import JobResult, Read, StalePreviewError, create_job
 from showrunner.app.jobs.stages import Stage, pipeline
 from showrunner.app.jobs.store import JobStore, StepState
-from showrunner.app.library.library import LibraryLoad
+from showrunner.app.library.library import Library, LibraryLoad
 from showrunner.app.library.loader import BackgroundJob, LibraryLoader
 from showrunner.app.profiles.errors import ProfileError, ProfileExistsError
 from showrunner.app.profiles.profile import Profile
@@ -78,6 +79,7 @@ from showrunner.ui.quick.review import FILTERS, ReviewInput, review, totals
 from showrunner.ui.quick.rule_editor import RuleEditor
 from showrunner.ui.quick.settings import SECTIONS, Settings
 from showrunner.ui.quick.tracks import BatchView, Column, Received, columns, item_number, item_title
+from showrunner.ui.quick.window_state import Rect, WindowState, decode, encode, fit
 
 _log = logging.getLogger(__name__)
 
@@ -132,6 +134,11 @@ class _Applying:
     name: str  # the batch, as the job names it
 
 
+def available_screens() -> list[Rect]:
+    """The usable area of every connected screen, the primary one first."""
+    return [(r.x(), r.y(), r.width(), r.height()) for r in (s.availableGeometry() for s in QGuiApplication.screens())]
+
+
 def check_shown() -> Statuses:
     return {spec_id: check(SPEC_BY_ID[spec_id]) for spec_id in SHOWN_PROGRAMS}
 
@@ -172,6 +179,7 @@ class WindowController(QObject):
         jobs: JobStore | None = None,
         make_pipeline: MakePipeline = default_pipeline,
         read: Read | None = None,
+        screens: Callable[[], Sequence[Rect]] = available_screens,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -184,6 +192,7 @@ class WindowController(QObject):
         self._loader.failed.connect(self._on_failed)
         self._check = statuses
         self._clock = clock
+        self._screens = screens
         self._store = store or ProfileStore()
         self.batches: Batches = load_batches(self._store)
         self._statuses: Statuses | None = None
@@ -366,6 +375,41 @@ class WindowController(QObject):
     @Slot(str)
     def open_recent(self, folder: str) -> None:
         self.add_paths([Path(folder)])
+
+    @Slot()
+    def close_folder(self) -> None:
+        """Back to Home: the library is emptied and nothing stays selected, and the next start opens on Home as well.
+        Nothing on disk changes; the folders stay in Recent and each batch keeps its saved choices."""
+        if not self.loaded or self._loader.busy or self.applying:
+            return
+        self._set_filter("")
+        self._set_needs_look_only(False)
+        self.model.set_library(Library())
+        self._selected = self._restore = self._message = ""
+        self._focus = self._preview = self._run_preview = None
+        self._key, self._items = None, []
+        self._editing, self._editing_builtin = -1, ""
+        self._marks.clear()
+        self._rule_editor.close()
+        self._replan()
+        self.batch_changed.emit()
+        self.loading_changed.emit()
+        self._remember(last_folders=[], last_selection="")
+
+    @Slot(str)
+    def remove_recent(self, folder: str) -> None:
+        """Take a folder off the Recent list; the folder itself is not touched."""
+        if folder in self._recent:
+            self._recent = {f: opened for f, opened in self._recent.items() if f != folder}
+            self.recent_changed.emit()
+            self._remember()
+
+    def _remember(self, **changes: Any) -> None:
+        """Write the recent folders, with `changes` to other settings, at once rather than at exit."""
+        try:
+            save_settings(replace(load_settings().value, recent_folders=self._recent, **changes))
+        except OSError:
+            _log.exception("Could not save the workspace")
 
     def add_paths(self, paths: list[Path]) -> None:
         # A second drop while reading is ignored: the loader runs one load at a time.
@@ -1567,6 +1611,7 @@ class WindowController(QObject):
         actions = [
             Entry("action", "open_folder", tr("palette.action.open_folder")),
             Entry("action", "add_files", tr("palette.action.add_files")),
+            Entry("action", "close_folder", tr("palette.action.close_folder"), "", self.loaded),
             *(
                 Entry("action", f"place.{key}", tr("palette.action.place", place=tr(f"workspace.tab.{key}")), "", batch)
                 for key in places
@@ -1625,6 +1670,7 @@ class WindowController(QObject):
             run = {
                 "open_folder": self.choose_folder,
                 "add_files": self.choose_files,
+                "close_folder": self.close_folder,
                 "save_profile": self.save_profile,
                 "discard": self.discard_profile,
                 "drawer": lambda: self.palette_asked.emit("drawer", ""),
@@ -1633,6 +1679,14 @@ class WindowController(QObject):
                 run()
 
     # Recent folders
+
+    @Slot(result=list)
+    def recent_actions(self) -> list[dict[str, Any]]:
+        """The right-click menu of a recent folder."""
+        return [
+            {"key": "open", "text": tr("home.recent.open"), "enabled": True},
+            {"key": "remove", "text": tr("home.recent.remove"), "enabled": True},
+        ]
 
     @Property(list, notify=recent_changed)
     def recent(self) -> list[dict[str, str]]:
@@ -1643,7 +1697,34 @@ class WindowController(QObject):
             if Path(folder).is_dir()
         ]
 
-    # Panel sizes
+    # Window and panel sizes
+
+    @Property(int, constant=True)
+    def save_delay(self) -> int:
+        """How long QML waits after the last move or resize before it saves the window's place, in milliseconds."""
+        return SAVE_DELAY_MS
+
+    @Slot(result="QVariantMap")
+    def window_state(self) -> dict[str, Any]:
+        """Where the window was when it last closed, moved onto a screen that exists now; empty when it was never
+        saved or no screen is known."""
+        saved = decode(load_settings().value.window_geometry)
+        fitted = fit(saved, self._screens()) if saved is not None else None
+        if fitted is None:
+            return {}
+        x, y, width, height = fitted.rect
+        return {"x": x, "y": y, "width": width, "height": height, "maximized": fitted.maximized}
+
+    @Slot(int, int, int, int, bool)
+    def save_window_state(self, x: int, y: int, width: int, height: int, maximized: bool) -> None:
+        text = encode(WindowState((x, y, width, height), maximized))
+        settings = load_settings().value
+        if text == settings.window_geometry:
+            return
+        try:
+            save_settings(replace(settings, window_geometry=text))
+        except OSError:
+            _log.exception("Could not save the window's place")
 
     @Slot(result=int)
     def overview_tracks_height(self) -> int:
