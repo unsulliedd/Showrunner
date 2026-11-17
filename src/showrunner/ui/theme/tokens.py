@@ -337,6 +337,7 @@ SIZES: dict[str, int] = {
     "library_width": 272,
     "details_width": 320,
     "progress_width": 160,  # the progress bar in the status bar
+    "dim_percent": 60,  # how far the loading layer hides the workspace under it, in percent
     "mark_size": 8,  # the status dot of a row
     "empty_width": 560,  # the block in the middle of the empty state
     "spinner": 32,  # the loading spinner, drawn with a stroke of an eighth of its size

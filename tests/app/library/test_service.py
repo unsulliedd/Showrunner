@@ -37,6 +37,22 @@ def test_every_video_is_scanned_then_probed(make: Callable[..., Path], tmp_path:
     assert not load.cancelled
 
 
+def test_the_scan_names_the_videos_about_to_be_read_and_leaves_out_known_ones(
+    make: Callable[..., Path], tmp_path: Path
+) -> None:
+    known = make("Show/Show S01E01.mkv")
+    make("Show/Show S01E02.mkv")
+    told: list[tuple[str, ...]] = []
+    load_library(
+        [tmp_path / "Show"],
+        known=[known],
+        programs=PROGRAMS,
+        read=fake_read,
+        scanned=lambda items: told.append(tuple(i.file.path.name for i in items)),
+    )
+    assert told == [("Show S01E02.mkv",)]
+
+
 def test_a_file_that_cannot_be_read_is_reported_and_the_rest_go_on(make: Callable[..., Path], tmp_path: Path) -> None:
     make("Show/Show S01E01.mkv")
     make("Show/Show S01E02.mkv")

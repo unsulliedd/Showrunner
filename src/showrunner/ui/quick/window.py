@@ -148,6 +148,11 @@ def place_key(kind: Kind, first: MediaItem, show: BatchKey | None) -> BatchKey:
     return key.in_show(show) if show is not None else key
 
 
+def _loose(key: BatchKey) -> BatchKey:
+    """A place as the library groups it: shows by title without case, whatever year each file names."""
+    return replace(key, title=key.title.casefold(), year=None) if key.media is Media.EPISODES else key
+
+
 def available_screens() -> list[Rect]:
     """The usable area of every connected screen, the primary one first."""
     return [(r.x(), r.y(), r.width(), r.height()) for r in (s.availableGeometry() for s in QGuiApplication.screens())]
@@ -202,6 +207,8 @@ class WindowController(QObject):
         self.tree = LibraryTree(self)
         self.tree.setSourceModel(self.model)
         self._loader = loader or LibraryLoader(cache=read_cache_path(), parent=self)
+        self._loader.scanned.connect(self._on_scanned)
+        self._loader.file_read.connect(self._on_file_read)
         self._loader.progress.connect(self._on_progress)
         self._loader.finished.connect(self._on_loaded)
         self._loader.failed.connect(self._on_failed)
@@ -213,6 +220,8 @@ class WindowController(QObject):
         self._statuses: Statuses | None = None
         self._progress: tuple[int, int] | None = None
         self._cancelling = False
+        self._unread: dict[Path, BatchKey] = {}  # the running load's videos not yet read, by their (loose) place
+        self._open_unread = 0  # how many of them lie in the open place
         self._message = ""  # what the last load ended with, when it is worth saying
         self._filter = ""
         self._needs_look_only = False
@@ -353,6 +362,20 @@ class WindowController(QObject):
             return tr("status.scanning")
         return self._message or tr("statusbar.no_jobs")
 
+    @Property(bool, notify=loading_changed)
+    def reading_open_batch(self) -> bool:
+        """Whether files of the open place are still being read, so the workspace waits. With nothing open yet (the
+        start, or after Close folder) the place that will open comes out of this load, so it waits as well."""
+        if not self._loader.busy or self._cancelling:
+            return False
+        return self._key is None or self._open_unread > 0
+
+    def _count_open_unread(self) -> None:
+        place = _loose(self._key) if self._key is not None else None
+        self._open_unread = sum(1 for key in self._unread.values() if place is not None and key.within(place))
+        if self._loader.busy:
+            self.loading_changed.emit()
+
     def _get_filter(self) -> str:
         return self._filter
 
@@ -446,6 +469,15 @@ class WindowController(QObject):
             self._cancelling = True
             self.loading_changed.emit()
 
+    def _on_scanned(self, items: tuple[MediaItem, ...]) -> None:
+        self._unread = {item.file.path: _loose(BatchKey.file(item)) for item in items}
+        self._count_open_unread()
+
+    def _on_file_read(self, path: Path) -> None:
+        key = self._unread.pop(path, None)
+        if key is not None and self._key is not None and key.within(_loose(self._key)):
+            self._open_unread -= 1
+
     def _on_progress(self, done: int, total: int) -> None:
         self._progress = (done, total)
         self.loading_changed.emit()
@@ -453,12 +485,14 @@ class WindowController(QObject):
     def _on_failed(self, error: Exception) -> None:
         _log.error("Loading failed: %s", error)
         self._progress = None
+        self._unread, self._open_unread = {}, 0
         self._cancelling = False
         self._message = tr("status.load_failed", error=error)
         self.loading_changed.emit()
 
     def _on_loaded(self, load: LibraryLoad) -> None:
         self._progress = None
+        self._unread, self._open_unread = {}, 0
         self._cancelling = False
         if load.cancelled:
             self._message = tr("status.cancelled")
@@ -500,6 +534,7 @@ class WindowController(QObject):
             self._editing = -1  # the open token belongs to the other batch's profile
             self._editing_builtin = ""
             self._rule_editor.close()  # as does the rule being written
+        self._count_open_unread()
         self._replan()
         self.batch_changed.emit()
 

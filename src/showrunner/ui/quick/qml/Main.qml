@@ -139,15 +139,18 @@ ApplicationWindow {
             Item {
                 SplitView.fillHeight: true
 
+                // While files of the open place are read the workspace is disabled, which keeps keys out, and covered.
                 Home {
                     id: home
 
                     anchors.fill: parent
+                    enabled: !app.reading_open_batch
                     visible: !app.loaded
                 }
 
                 Workspace {
                     anchors.fill: parent
+                    enabled: !app.reading_open_batch
                     visible: app.loaded && app.has_batch
                     place: window.place
                     onPlacePicked: key => window.place = key
@@ -163,6 +166,12 @@ ApplicationWindow {
                         title: Strings.t("workspace.none.title")
                         lead: Strings.t("workspace.none.lead")
                     }
+                }
+
+                LoadingOverlay {
+                    objectName: "loadingOverlay"
+                    anchors.fill: parent
+                    visible: app.reading_open_batch
                 }
             }
 

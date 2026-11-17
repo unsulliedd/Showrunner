@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Collection, Iterable
+from collections.abc import Callable, Collection, Iterable
 from pathlib import Path
 
 from showrunner.app.dependencies.service import check, media_programs
 from showrunner.app.library.cache import CachedReader, load_cache, save_cache
 from showrunner.app.library.library import LibraryLoad
+from showrunner.core.media import MediaItem
 from showrunner.stages.scan import ScanOptions, probe_items, scan
 from showrunner.stages.scan.probing import Progress, Reader
 from showrunner.tools.dependencies.detect import DependencyStatus
@@ -26,18 +27,22 @@ def load_library(
     progress: Progress | None = None,
     cancel: threading.Event | None = None,
     cache: Path | None = None,
+    scanned: Callable[[tuple[MediaItem, ...]], None] | None = None,
 ) -> LibraryLoad:
     """Scan `paths` and probe each video that is not in `known`.
 
     The programs are detected once, here, unless the caller passes them. Without any program to read
     tracks the videos are returned as scanned and nothing is reported as failed. With a `cache` file a video
     unchanged since it was last read is served from it; what was read is saved there, also when cancelled.
+    `scanned` is told which videos are about to be read, once the scan has found them.
     """
     paths = tuple(paths)
     roots = tuple(p for p in paths if p.is_dir())
     result = scan(paths, options)
     skipped = set(known)
     items = tuple(i for i in result.items if i.file.path not in skipped)
+    if scanned is not None:
+        scanned(items)
     fresh = {i.file.path for i in items}
     alternatives = tuple(a for a in result.alternatives if a.video in fresh)
     unpaired = result.unpaired

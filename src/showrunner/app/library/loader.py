@@ -50,9 +50,12 @@ class BackgroundJob(QObject):
 
 
 class LibraryLoader(QObject):
-    """One library load at a time. `progress` counts the videos whose tracks were read; `finished` carries a
-    `LibraryLoad`, which holds what was found so far when the load was cancelled."""
+    """One library load at a time. `scanned` carries the videos about to be read, `file_read` the path of each one
+    as it is done, and `progress` counts them; `finished` carries a `LibraryLoad`, which holds what was found so
+    far when the load was cancelled."""
 
+    scanned = Signal(object)
+    file_read = Signal(object)
     progress = Signal(int, int)
     finished = Signal(object)
     failed = Signal(object)
@@ -82,13 +85,18 @@ class LibraryLoader(QObject):
         paths = tuple(paths)
         self._cancel.clear()
 
+        def on_progress(done: int, total: int, path: Path) -> None:
+            self.file_read.emit(path)
+            self.progress.emit(done, total)
+
         def work() -> LibraryLoad:
             return load_library(
                 paths,
                 known=known,
                 programs=self._programs,
                 read=self._read,
-                progress=lambda done, total, _path: self.progress.emit(done, total),
+                progress=on_progress,
+                scanned=self.scanned.emit,
                 cancel=self._cancel,
                 cache=self._cache,
             )
