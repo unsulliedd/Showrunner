@@ -13,8 +13,10 @@ from showrunner.app.library.library import Library
 from showrunner.core.media import MediaItem
 from showrunner.core.naming import (
     SUGGESTED_TEMPLATES,
+    TOKENS,
     CustomKind,
     CustomToken,
+    EpisodeCodeFormat,
     NamingOptions,
     Problem,
     ProblemKind,
@@ -247,13 +249,48 @@ def test_tokens_are_grouped_with_their_values(library: Library) -> None:
     items = season(library)
     panel = names.tokens(given(items, NamingOptions(custom_tokens=[CustomToken("group", text="GRP")])), "", -1)
     groups = {g["key"]: g for g in panel["groups"]}
-    assert list(groups) == ["item", "video", "track", "custom"]
+    assert list(groups) == ["separator", "item", "video", "track", "custom"]
     show = next(t for t in groups["item"]["tokens"] if t["name"] == "show")
     assert (show["label"], show["value"]) == ("Show", "Show Name")
     assert groups["custom"]["tokens"] == [{"name": "group", "label": "group", "value": "GRP", "index": 0}]
     assert panel["editor"] == {}
     found = names.tokens(given(items, NamingOptions()), "episode t", -1)["groups"]
     assert [t["name"] for g in found for t in g["tokens"]] == ["episode_title"]
+
+
+def test_the_panel_lists_the_separators_as_typed_text_with_a_visible_label(library: Library) -> None:
+    items = season(library)
+    (group,) = [g for g in names.tokens(given(items, NamingOptions()), "", -1)["groups"] if g["key"] == "separator"]
+    assert group["label"] == "Separators"
+    assert [(s["name"], s["text"]) for s in group["tokens"]] == [
+        ("space", " "),
+        ("spaced_dash", " - "),
+        ("dot", "."),
+        ("underscore", "_"),
+        ("dash", "-"),
+    ]
+    assert all(s["label"].strip() and s["tip"] for s in group["tokens"])  # a space is never a blank chip
+    assert group["tokens"][0]["label"] == "space"
+    found = names.tokens(given(items, NamingOptions()), "underscore", -1)["groups"]
+    assert [t["name"] for g in found for t in g["tokens"]] == ["underscore"]
+
+
+def test_separators_dropped_between_tokens_make_the_plain_text_name(library: Library) -> None:
+    items = season(library)
+    template = ""
+    # Tokens go in as chips; a separator, the brackets and the year's own text go in as typed text.
+    for chip in ("show", " ", "(", "year", ")", " - ", "episode_code", " - ", "episode_title"):
+        end = len(names.pieces(parse(template)))
+        is_token = chip in TOKENS
+        template = names.insert_token(template, end, chip) if is_token else names.add_text(template, end, chip)
+    assert template == "{show} ({year}) - {episode_code} - {episode_title}"
+    assert not parse(template).problems
+    assert [p.kind.value for p in names.pieces(parse(template))].count(
+        "text"
+    ) == 3  # neighbouring text merges; no new kind of part
+    naming = NamingOptions(episode_code_format=EpisodeCodeFormat.CROSS, title_template=template)
+    entry = names.named(items, "title_template", naming, TracksOptions())[2]
+    assert entry.after == "Show Name (2020) - 1x03 - Episode Three"
 
 
 def test_the_editor_shows_a_patterns_result_on_the_batch(library: Library) -> None:

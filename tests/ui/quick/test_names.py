@@ -71,6 +71,25 @@ def test_a_drop_onto_the_rail_moves_or_inserts(controller: WindowController, lib
     assert naming(controller).title_template == ""
 
 
+def test_separators_are_added_as_plain_text_between_tokens(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    controller.pick_template("title_template")
+    group = next(g for g in controller.tokens["groups"] if g["key"] == "separator")
+    dash = next(s["text"] for s in group["tokens"] if s["name"] == "spaced_dash")
+    controller.rail_append("show")
+    controller.rail_append_text(dash)  # a click on the chip
+    controller.rail_append("episode_code")
+    controller.rail_add_text(3, dash)  # a drop before the code's slot
+    controller.rail_append("episode_title")
+    assert naming(controller).title_template == "{show} - {episode_code} - {episode_title}"
+    assert controller.names["problems"] == []
+    controller.pick_template("audio_track_template")
+    controller.rail_append_text(".")
+    assert naming(controller).audio_track_template == "."
+
+
 def test_custom_tokens_are_made_edited_renamed_and_removed(
     controller: WindowController, library: Library, qtbot: QtBot
 ) -> None:

@@ -140,10 +140,11 @@ Item {
                 keys: ["token"]
                 onDropped: event => {
                     const name = event.source.tokenName
+                    const text = event.source.tokenText
                     const from = event.source.from
                     const at = place.names.end
                     event.accept()
-                    Qt.callLater(() => from >= 0 ? app.rail_move(from, at) : app.rail_insert(at, name))
+                    Qt.callLater(() => from >= 0 ? app.rail_move(from, at) : text !== "" ? app.rail_add_text(at, text) : app.rail_insert(at, name))
                 }
             }
 

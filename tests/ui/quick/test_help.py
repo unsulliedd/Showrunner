@@ -123,4 +123,5 @@ def test_each_place_shows_its_tips_named_for_a_reader(
     window.setProperty("place", "names")
     qtbot.wait(100)
     assert _evaluate(_visible(root, "replaceValuesTip"), "Accessible.name") == "Help: Replace values"
+    assert _evaluate(_visible(root, "separatorsTip"), "Accessible.name") == "Help: Separators between tokens"
     assert load() == []

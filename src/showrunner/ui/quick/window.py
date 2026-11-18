@@ -1340,6 +1340,12 @@ class WindowController(QObject):
         text = self._template_text()
         self._set_template(rail.insert_token(text, len(pieces(parse(text))), name))
 
+    @Slot(str)
+    def rail_append_text(self, text: str) -> None:
+        """A separator clicked in the panel: typed text at the end of the template."""
+        template = self._template_text()
+        self._set_template(rail.add_text(template, len(pieces(parse(template))), text))
+
     @Slot(int, int)
     def rail_move(self, source: int, target: int) -> None:
         self._set_template(rail.move_token(self._template_text(), source, target))

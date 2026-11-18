@@ -10,6 +10,7 @@ HELP_TOPICS: tuple[str, ...] = (
     "first_kept",
     "exclude",
     "replace_values",
+    "separators",
     "discard",
     "names",
     "language",

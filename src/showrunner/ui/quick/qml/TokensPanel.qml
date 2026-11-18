@@ -72,6 +72,12 @@ Item {
                                 font.capitalization: Font.AllUppercase
                             }
 
+                            HelpTip {
+                                objectName: "separatorsTip"
+                                visible: group.modelData.key === "separator"
+                                topic: "separators"
+                            }
+
                             PlaceMark {
                                 objectName: "customTokensMark"
                                 visible: group.modelData.key === "custom" && text !== ""
@@ -79,8 +85,25 @@ Item {
                             }
                         }
 
+                        // Separators are small and many, so they sit side by side.
+                        Flow {
+                            Layout.fillWidth: true
+                            visible: group.modelData.key === "separator"
+                            spacing: Theme.space_sm
+
+                            Repeater {
+                                model: group.modelData.key === "separator" ? group.modelData.tokens : []
+
+                                delegate: SeparatorChip {
+                                    required property var modelData
+
+                                    separator: modelData
+                                }
+                            }
+                        }
+
                         Repeater {
-                            model: group.modelData.tokens
+                            model: group.modelData.key === "separator" ? [] : group.modelData.tokens
 
                             delegate: TokenRow {
                                 required property var modelData

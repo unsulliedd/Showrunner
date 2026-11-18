@@ -30,11 +30,12 @@ Item {
         keys: ["token"]
         onDropped: event => {
             const name = event.source.tokenName
+            const text = event.source.tokenText
             const from = event.source.from
             const at = part.target(event.x)
             event.accept()
             // Later, so the dragged chip is not rebuilt inside its own drag handler.
-            Qt.callLater(() => from >= 0 ? app.rail_move(from, at) : app.rail_insert(at, name))
+            Qt.callLater(() => from >= 0 ? app.rail_move(from, at) : text !== "" ? app.rail_add_text(at, text) : app.rail_insert(at, name))
         }
     }
 

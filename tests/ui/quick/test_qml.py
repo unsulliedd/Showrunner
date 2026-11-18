@@ -909,6 +909,47 @@ def _centre(item: QQuickItem, x: float = 0.5) -> QPoint:
     return item.mapToScene(QPointF(item.width() * x, item.height() / 2)).toPoint()
 
 
+def test_separators_drag_and_click_in_as_typed_text(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
+    qtbot.waitUntil(lambda: not controller.planning)
+    load.window.setProperty("place", "names")
+    assert load() == []
+    root = load.window.contentItem()
+    controller.start_template("title_template")
+    load()
+
+    def template() -> str:
+        assert controller._key is not None
+        return controller.batches.profile(controller._key).for_stage("naming").title_template
+
+    assert template() == "{file_name}"
+    # A drop on the left half of a chip goes before it; a click goes at the end. Both write plain text.
+    dash = _item(root, "separatorChip_spaced_dash")
+    _drag(load.window, qtbot, _centre(dash), _centre(_item(root, "railChip_file_name"), 0.2))
+    load()
+    assert template() == " - {file_name}"
+    _click(load.window, _item(root, "separatorChip_dot"))
+    load()
+    assert template() == " - {file_name}."
+    # Every separator is a chip of its own, and the chip for a space is not blank.
+    assert (
+        len(
+            [
+                i
+                for k in ("space", "spaced_dash", "dot", "underscore", "dash")
+                for i in _items(root, f"separatorChip_{k}")
+            ]
+        )
+        == 5
+    )
+    assert load() == []
+
+
 def test_names_and_tokens_answer_the_pointer(
     load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
 ) -> None:

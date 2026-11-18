@@ -9,6 +9,7 @@ Item {
 
     property string name
     property string label
+    property string text  // set for a separator, which a drop adds as typed text
     property int from: -1
     readonly property bool active: handler.active
 
@@ -42,6 +43,7 @@ Item {
         id: ghost
 
         readonly property string tokenName: drag.name
+        readonly property string tokenText: drag.text
         readonly property int from: drag.from
 
         visible: handler.active

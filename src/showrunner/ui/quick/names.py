@@ -63,6 +63,9 @@ TRACK_KIND = dict(zip(TRACK_TEMPLATES, (TrackKind.VIDEO, TrackKind.AUDIO, TrackK
 _ICON = {"video_track_template": "video", "audio_track_template": "audio", "subtitle_track_template": "subs"}
 # The token groups of the Tokens panel, in order; custom tokens come last.
 _SCOPES = (Scope.ITEM, Scope.VIDEO, Scope.TRACK)
+# The separators of the Tokens panel: key and the plain text a drop or click puts into the template. A separator is
+# typed text, so the template, the checks and Apply see nothing new.
+SEPARATORS = (("space", " "), ("spaced_dash", " - "), ("dot", "."), ("underscore", "_"), ("dash", "-"))
 _PADDINGS = (0, 2, 3)  # what a click on a number chip's format steps through
 NEW_TOKEN = "token"
 
@@ -712,6 +715,13 @@ def tokens(given: NamesInput, query: str, editing: int, builtin: str = "") -> di
         return preview(f"{{{name}}}", context if mapped else raw).text
 
     groups = []
+    # First, so the few separators are in view without scrolling past the long token list.
+    marks = [
+        {"name": key, "label": tr(f"tokens.sep.{key}.label"), "text": text, "tip": tr(f"tokens.sep.{key}.tip")}
+        for key, text in SEPARATORS
+    ]
+    if found := [m for m in marks if _matches(query, m["name"], m["label"], m["tip"])]:
+        groups.append({"key": "separator", "label": tr("tokens.group.separator"), "tokens": found})
     for scope in _SCOPES:
         entries = [
             {"name": t.name, "label": token_label(t.name), "value": value(t.name, scope), "index": -1}
