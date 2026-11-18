@@ -47,6 +47,7 @@ class JobResult:
     job_id: int
     steps: tuple[StepRecord, ...]
     cancelled: bool = False
+    paused: bool = False  # stopped between two steps by `pause`; the rest waits for the next run
 
 
 def create_job(
@@ -86,8 +87,10 @@ def run_job(
     step_progress: StepProgress | None = None,
     cancel: threading.Event | None = None,
     step_changed: StepChanged | None = None,
+    pause: threading.Event | None = None,
 ) -> JobResult:
-    """Run every step that has not finished. A file whose stamp differs from the preview is not written. A step
+    """Run every step that has not finished; `pause` stops the run before the next step and, unlike `cancel`, lets
+    the running one end. A file whose stamp differs from the preview is not written. A step
     that was running when the app stopped is first given to its stage's `resume`; by default it is checked
     against the file read again: done when the file already shows it, run again when the file is as it was
     planned, stale otherwise."""
@@ -96,7 +99,7 @@ def run_job(
     states = {step.position: (step.state, step.message) for step in job.steps}
     details: dict[int, object] = {}
     written: dict[int, Path] = {}
-    cancelled = False
+    cancelled = paused = False
 
     def record(step: StoredStep, state: StepState, message: str = "") -> None:
         store.set_state(job_id, step.position, state, message)
@@ -150,6 +153,9 @@ def run_job(
         if cancel is not None and cancel.is_set():
             cancelled = True
             break
+        if pause is not None and pause.is_set():
+            paused = True
+            break
         try:
             state, message, result = attempt(step)
         except ProcessCancelledError:
@@ -175,7 +181,7 @@ def run_job(
         )
         for s in job.steps
     )
-    return JobResult(job_id, records, cancelled)
+    return JobResult(job_id, records, cancelled, paused)
 
 
 def _check_stamp(step: StoredStep) -> tuple[StepState | None, str]:

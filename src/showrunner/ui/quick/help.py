@@ -14,6 +14,7 @@ HELP_TOPICS: tuple[str, ...] = (
     "names",
     "language",
     "keep",
+    "queue",
 )
 
 

@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Showrunner
 
-// The drawer under the workspace: the player, the jobs and the log share it.
+// The drawer under the workspace: the player, the jobs, the queue and the log share it.
 Panel {
     id: drawer
 
@@ -25,6 +25,7 @@ Panel {
                 model: [
                     { key: "player", icon: "play", label: Strings.t("drawer.tab.player") },
                     { key: "jobs", icon: "resume", label: Strings.t("drawer.tab.jobs") },
+                    { key: "queue", icon: "list", label: Strings.t("drawer.tab.queue") },
                     { key: "log", icon: "terminal", label: Strings.t("drawer.tab.log") }
                 ]
                 current: drawer.tab
@@ -42,16 +43,27 @@ Panel {
         }
 
         JobsPanel {
+            id: jobsPanel
+
             objectName: "jobsPanel"
             Layout.fillWidth: true
             Layout.fillHeight: true
             visible: drawer.tab === "jobs" && app.jobs.view.title !== undefined
         }
 
+        QueuePanel {
+            id: queuePanel
+
+            objectName: "queuePanel"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: drawer.tab === "queue" && (app.queue.rows.length > 0 || app.queue.note !== "")
+        }
+
         Placeholder {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: drawer.tab !== "jobs" || app.jobs.view.title === undefined
+            visible: !jobsPanel.visible && !queuePanel.visible
             title: Strings.t("drawer.placeholder." + drawer.tab + ".title")
             lead: Strings.t("drawer.placeholder." + drawer.tab + ".lead")
         }

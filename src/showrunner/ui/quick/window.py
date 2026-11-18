@@ -82,6 +82,7 @@ from showrunner.ui.quick.languages import LanguagePicker
 from showrunner.ui.quick.library import LibraryTree
 from showrunner.ui.quick.palette import Entry, search
 from showrunner.ui.quick.plans import LivePlanner
+from showrunner.ui.quick.queue import Queue
 from showrunner.ui.quick.review import FILTERS, ReviewInput, review, totals
 from showrunner.ui.quick.rule_editor import RuleEditor
 from showrunner.ui.quick.settings import SECTIONS, Settings
@@ -150,7 +151,9 @@ class _Applying:
     profiles: dict[Path, Profile]  # each file's options
     stages: tuple[Stage, ...]
     out: frozenset[Path]
-    live: dict[Path, Any]  # each file's plans in the run plan on screen
+    # Each file's plans in the run plan on screen; None for a place added to the queue, which may be queued from the
+    # library's menu before its plan arrived and keeps the plans made now.
+    live: dict[Path, Any] | None
     name: str  # the batch, as the job names it
 
 
@@ -266,6 +269,7 @@ class WindowController(QObject):
         self._job_view = Jobs(jobs or JobStore(jobs_path()), self._job_pipeline, self._names_of, parent=self)
         self._job_view.started.connect(self._on_lock_changed)
         self._job_view.ended.connect(self._on_job_ended)
+        self._queue = Queue(self._job_view, parent=self)
         self._view: BatchView | None = None
         self._shown: dict[str, Any] = {}  # what QML reads about the batch, built once per plan or choice
         # The parts of `_shown` a single place shows, built on first read after a plan or choice.
@@ -339,7 +343,9 @@ class WindowController(QObject):
 
     def stop_jobs(self) -> None:
         """Cancel a running job as the window closes and wait for its program to stop. The mux stage removes its
-        partial file and leaves the original untouched; the job is offered to resume at the next start."""
+        partial file and leaves the original untouched; an Apply's job is offered to resume at the next start, and a
+        queue item waits in the queue, stopped part way."""
+        self._queue.stop()
         if self.jobs.busy:
             self.jobs.cancel()
             QThreadPool.globalInstance().waitForDone(STOP_WAIT_MS)
@@ -713,6 +719,7 @@ class WindowController(QObject):
         ]
         if self._key is not None and self._key.parent is not None:
             actions.insert(1, {"key": "keep", "text": tr("workspace.keep"), "enabled": self.can_keep})
+        actions.append({"key": "queue", "text": tr("queue.add"), "enabled": self.can_queue})
         return actions
 
     @Slot(str)
@@ -723,6 +730,8 @@ class WindowController(QObject):
             self.keep_place()
         elif key in ("exclude", "include"):
             self.exclude_place(key == "exclude")
+        elif key == "queue":
+            self.add_to_queue()
 
     # Keep these files as they are
 
@@ -1687,8 +1696,13 @@ class WindowController(QObject):
         """The job of this window and the offer of unfinished ones; the drawer's Jobs tab reads it."""
         return self._job_view
 
+    @Property(QObject, constant=True)
+    def queue(self) -> Queue:
+        """The places queued to run one after another; the drawer's Queue tab reads it."""
+        return self._queue
+
     def _locked_paths(self) -> set[Path]:
-        return set(self._applying.paths) if self._applying is not None else self.jobs.paths()
+        return (set(self._applying.paths) if self._applying is not None else set()) | self.jobs.paths()
 
     @Property(bool, notify=batch_changed)
     def locked(self) -> bool:
@@ -1726,6 +1740,26 @@ class WindowController(QObject):
         """Plan the batch again with stamps on a pool thread; `_on_stamped` decides whether it may run."""
         if not self.can_apply or self._key is None or self._run_preview is None:
             return
+        self._apply_message = ""
+        self._stamp({f.item.file.path: f.plans for f in self._run_preview.files})
+
+    @Property(bool, notify=batch_changed)
+    def can_queue(self) -> bool:
+        """The selected place can be added to the queue: the programs are known, no Apply or add is getting ready,
+        and its files are not being written. Its plan need not have arrived: the add plans it again anyway."""
+        return self._key is not None and self._statuses is not None and self._applying is None and not self.locked
+
+    @Slot()
+    def add_to_queue(self) -> None:
+        """Queue the selected place with each file's options as they are now, the groups and files this run leaves
+        out included; `_on_stamped` stores its job and hands it to the queue."""
+        if self.can_queue:
+            self._stamp(None)
+
+    def _stamp(self, live: dict[Path, Any] | None) -> None:
+        """Plan the selected place with stamps on a pool thread, for Apply (`live`, the plans on screen) or for the
+        queue (None)."""
+        assert self._key is not None
         stages = tuple(self._make_pipeline(self._statuses or {}))
         items = tuple(self._items)
         # The groups this run leaves out of a file are emptied in its own options, which the job stores.
@@ -1736,7 +1770,7 @@ class WindowController(QObject):
             profiles=profiles,
             stages=stages,
             out=self._files_out() | {i.file.path for i in items if i.file.path in self._excluded_files},
-            live={f.item.file.path: f.plans for f in self._run_preview.files},
+            live=live,
             name=tr("common.list_separator").join((head.over, head.title))
             if self._key.season or self._key.kind in (BatchKind.EXTRAS, BatchKind.EXTRA)
             else head.title,
@@ -1749,7 +1783,6 @@ class WindowController(QObject):
         job = BackgroundJob(work)
         job.finished.connect(self._on_stamped)
         job.failed.connect(self._on_stamp_failed)
-        self._apply_message = ""
         self._on_lock_changed()
         job.start()
 
@@ -1768,13 +1801,21 @@ class WindowController(QObject):
             or f.item.file.modified_ns not in (0, f.stamp.mtime_ns)
         ]
         message = ""
+        refused = "queue.refused" if given.live is None else "review.refused"
         if changed:
-            message = tr_plural("review.refused.changed", len(changed))
+            message = tr_plural(f"{refused}.changed", len(changed))
             self._read_again({path: path for path in changed})
-        elif any(f.plans != given.live.get(f.item.file.path) for f in in_run):
+        elif given.live is not None and any(f.plans != given.live.get(f.item.file.path) for f in in_run):
             message = tr("review.refused.plans")
         elif not any(f.writes for f in in_run):
-            message = tr("review.refused.nothing")
+            message = tr(f"{refused}.nothing")
+        elif given.live is None:
+            paths = [f.item.file.path for f in in_run if f.stamp is not None and f.writes]
+            self._queue.add(
+                given.name,
+                paths,
+                lambda: create_job(self.jobs.store, stamped, given.profiles, given.stages, left_out_files=given.out),
+            )
         else:
             try:
                 job_id = create_job(
@@ -1788,13 +1829,24 @@ class WindowController(QObject):
                 message = tr("review.refused.plans")
             else:
                 self.jobs.start(job_id, given.name)
-        self._set_apply_message(message)
+        if given.live is None:
+            if message:
+                self._queue.refuse(message)
+        else:
+            self._set_apply_message(message)
         self._on_lock_changed()
 
     def _on_stamp_failed(self, error: Exception) -> None:
         _log.error("The preview for Apply failed: %s", error)
-        self._applying = None
-        self._set_apply_message(tr("review.refused.error", error=str(error) or type(error).__name__))
+        given, self._applying = self._applying, None
+        message = tr(
+            "queue.refused.error" if given is not None and given.live is None else "review.refused.error",
+            error=str(error) or type(error).__name__,
+        )
+        if given is not None and given.live is None:
+            self._queue.refuse(message)
+        else:
+            self._set_apply_message(message)
         self._on_lock_changed()
 
     def _on_lock_changed(self) -> None:

@@ -15,8 +15,9 @@ from showrunner.app.library.loader import BackgroundJob
 
 class JobRunner(QObject):
     """One job at a time, started fresh or resumed alike. `progress` counts finished steps; `finished` carries a
-    `JobResult`, whose `cancelled` is set when Cancel stopped it. `step_progress` carries the file, the stage and
-    the fraction done of a long step; `step_changed` a `StepRecord` as a step starts running and as it ends."""
+    `JobResult`, whose `cancelled` is set when Cancel stopped it and `paused` when Pause did. `step_progress` carries
+    the file, the stage and the fraction done of a long step; `step_changed` a `StepRecord` as a step starts running
+    and as it ends."""
 
     progress = Signal(int, int)
     step_progress = Signal(object, str, float)
@@ -30,6 +31,7 @@ class JobRunner(QObject):
         self._stages = tuple(stages)
         self._read = read
         self._cancel = threading.Event()
+        self._pause = threading.Event()
         self._job: BackgroundJob | None = None
 
     @property
@@ -40,6 +42,7 @@ class JobRunner(QObject):
         if self._job is not None:
             raise RuntimeError("a job is already running")
         self._cancel.clear()
+        self._pause.clear()
 
         def work() -> JobResult:
             return run_job(
@@ -51,6 +54,7 @@ class JobRunner(QObject):
                 step_progress=self.step_progress.emit,
                 cancel=self._cancel,
                 step_changed=self.step_changed.emit,
+                pause=self._pause,
             )
 
         job = BackgroundJob(work)
@@ -61,6 +65,10 @@ class JobRunner(QObject):
 
     def cancel(self) -> None:
         self._cancel.set()
+
+    def pause(self) -> None:
+        """Stop once the running step has ended; the job keeps its place and runs on from there next time."""
+        self._pause.set()
 
     def _on_finished(self, result: JobResult) -> None:
         self._job = None

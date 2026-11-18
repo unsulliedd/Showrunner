@@ -109,6 +109,7 @@ class JobProgress:
     files: list[FileRun] = field(default_factory=list)
     result: JobResult | None = None
     failed: str = ""  # the error that stopped the whole job, if one did
+    queued: bool = False  # a queue item, which the queue goes on with rather than the next start's offer
 
     def __post_init__(self) -> None:
         by_path: dict[Path, FileRun] = {}
@@ -201,7 +202,11 @@ class JobProgress:
             failed=states.count("failed"),
             other=sum(s not in ("done", "failed") for s in states),
         )
-        return tr("jobs.summary.cancelled", summary=text) if self.result and self.result.cancelled else text
+        if self.result is not None and self.result.paused:
+            return tr("jobs.summary.paused", summary=text)
+        if self.result is not None and self.result.cancelled:
+            return tr("jobs.summary.cancelled_queued" if self.queued else "jobs.summary.cancelled", summary=text)
+        return text
 
     def _file_state(self, file: FileRun) -> str:
         states = [self.states[p] for p in file.steps]
@@ -339,13 +344,14 @@ class Jobs(QObject):
         """The files of the running job, whose batch is locked while it runs."""
         return {f.path for f in self._progress.files} if self._progress is not None and self.busy else set()
 
-    def start(self, job_id: int, name: str) -> None:
-        """Run a stored job, new or interrupted. Raises `UnresumableJobError` for one that cannot be read back."""
+    def start(self, job_id: int, name: str, *, queued: bool = False) -> None:
+        """Run a stored job, new or interrupted, `queued` when the queue runs it. Raises `UnresumableJobError` for one
+        that cannot be read back."""
         if self._runner is not None:
             raise RuntimeError("a job is already running")
         job = self.store.load(job_id)
         stages, read = self._pipeline()
-        self._progress = JobProgress(job, name, datetime.now(), self._names)
+        self._progress = JobProgress(job, name, datetime.now(), self._names, queued=queued)
         runner = JobRunner(self.store, stages, read, self)
         # Bound methods: the runner emits from the pool thread, and Qt queues each signal to this object's thread.
         runner.step_changed.connect(self._on_step)
@@ -362,6 +368,16 @@ class Jobs(QObject):
     def cancel(self) -> None:
         if self._runner is not None:
             self._runner.cancel()
+
+    def pause(self) -> None:
+        """Stop the running job once its running step has ended."""
+        if self._runner is not None:
+            self._runner.pause()
+
+    @property
+    def failure(self) -> str:
+        """The error that stopped the last job as a whole; empty when none did."""
+        return self._progress.failed if self._progress is not None else ""
 
     def _on_step(self, record: StepRecord) -> None:
         if self._progress is not None:
@@ -418,9 +434,13 @@ class Jobs(QObject):
     # Unfinished jobs from an earlier run
 
     def check_unfinished(self) -> None:
-        """Gather the jobs an earlier run left unfinished, to offer one at a time; never resumed without a yes."""
+        """Gather the jobs an earlier run left unfinished, to offer one at a time; never resumed without a yes. The
+        queue's items are left to the queue, which lists them."""
         offers = []
+        queued = {item.id for item in self.store.queued()}
         for job in self.store.unfinished():
+            if job.id in queued:
+                continue
             try:
                 self.store.load(job.id)
             except UnresumableJobError:

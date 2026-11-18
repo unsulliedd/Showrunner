@@ -104,7 +104,7 @@ def test_keep_these_files_as_they_are_cancels_what_comes_from_above_and_discard_
 ) -> None:
     controller, fourth = setup.controller, setup.season[3]
     _open(setup, qtbot, up=2)
-    assert [a["key"] for a in controller.place_actions] == ["discard", "exclude"]  # nothing above a show
+    assert [a["key"] for a in controller.place_actions] == ["discard", "exclude", "queue"]  # nothing above a show
     _open(setup, qtbot, fourth, up=0)
     every = controller.change_count
     assert every > 0

@@ -46,6 +46,13 @@ CREATE TABLE IF NOT EXISTS finished (
     options_key TEXT NOT NULL,
     PRIMARY KEY (content_hash, options_key)
 );
+CREATE TABLE IF NOT EXISTS queue (
+    job INTEGER PRIMARY KEY REFERENCES jobs (id),
+    name TEXT NOT NULL,
+    paths TEXT NOT NULL,
+    mark TEXT NOT NULL DEFAULT 'queued',
+    message TEXT NOT NULL DEFAULT ''
+);
 """
 
 
@@ -59,6 +66,29 @@ class StepState(StrEnum):
 
 
 FINAL = frozenset({StepState.DONE, StepState.FAILED, StepState.STALE, StepState.SKIPPED})
+
+
+class QueueMark(StrEnum):
+    """What a queue item's steps cannot tell: the user cancelled it, or the job could not run as a whole."""
+
+    QUEUED = "queued"
+    CANCELLED = "cancelled"
+    FAILED = "failed"  # the run stopped on an error outside any step
+    UNREADABLE = "unreadable"  # stored by another version, or no longer readable: it can only be removed
+
+
+@dataclass(frozen=True, slots=True)
+class QueuedJob:
+    """A queue item as the queue lists it, read without unpickling its steps, so an item a later version cannot
+    resume is still listed."""
+
+    id: int
+    name: str
+    paths: tuple[Path, ...]  # the files the item writes
+    mark: QueueMark
+    message: str
+    states: tuple[StepState, ...]  # of its steps, in order
+    reason: str = ""  # the message of its first failed step
 
 
 class UnresumableJobError(Exception):
@@ -229,8 +259,61 @@ class JobStore:
     def discard(self, job_id: int) -> None:
         """Forget a job, finished or not; for one the user does not want resumed or one that cannot be read."""
         with self._connect() as connection:
+            connection.execute("DELETE FROM queue WHERE job = ?", (job_id,))
             connection.execute("DELETE FROM steps WHERE job = ?", (job_id,))
             connection.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+
+    # The queue: stored jobs that run one after another, in the order they were added
+
+    def enqueue(self, job_id: int, name: str, paths: Sequence[Path]) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO queue (job, name, paths) VALUES (?, ?, ?)",
+                (job_id, name, json.dumps([str(p) for p in paths])),
+            )
+
+    def queued(self) -> list[QueuedJob]:
+        """Every queue item, oldest first."""
+        with self._connect() as connection:
+            items = connection.execute("SELECT job, name, paths, mark, message FROM queue ORDER BY job").fetchall()
+            steps = connection.execute(
+                "SELECT job, state, message FROM steps WHERE job IN (SELECT job FROM queue) ORDER BY job, position"
+            ).fetchall()
+        states: dict[int, list[StepState]] = {}
+        reasons: dict[int, str] = {}
+        for job, state, message in steps:
+            states.setdefault(job, []).append(StepState(state))
+            if state == StepState.FAILED and job not in reasons:
+                reasons[job] = message
+        return [
+            QueuedJob(
+                job,
+                name,
+                tuple(Path(p) for p in json.loads(paths)),
+                QueueMark(mark),
+                message,
+                tuple(states.get(job, ())),
+                reasons.get(job, ""),
+            )
+            for job, name, paths, mark, message in items
+        ]
+
+    def set_mark(self, job_id: int, mark: QueueMark, message: str = "") -> None:
+        with self._connect() as connection:
+            connection.execute("UPDATE queue SET mark = ?, message = ? WHERE job = ?", (mark.value, message, job_id))
+
+    def retry(self, job_id: int) -> None:
+        """Make a queue item's failed steps, and those skipped after them, wait again, and clear its mark. A step that
+        was running keeps its state, so the run settles what it wrote first; a step that found its file changed stays
+        stale, since its plan no longer fits the file."""
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE steps SET state = ?, message = '' WHERE job = ? AND state IN (?, ?)",
+                (StepState.PENDING.value, job_id, StepState.FAILED.value, StepState.SKIPPED.value),
+            )
+            connection.execute(
+                "UPDATE queue SET mark = ?, message = '' WHERE job = ?", (QueueMark.QUEUED.value, job_id)
+            )
 
     def mark_finished(self, content_hash: str, options_key: str) -> None:
         """Remember a file's content after its last step, so a renamed or moved copy is recognized as done."""

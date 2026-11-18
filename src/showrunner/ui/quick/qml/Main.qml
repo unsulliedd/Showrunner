@@ -197,12 +197,23 @@ ApplicationWindow {
         }
     }
 
-    // The drawer opens on its Jobs tab when a job starts.
+    // The drawer opens on its Jobs tab when a job starts, unless it shows the queue, whose items start one by one.
     Connections {
         target: app.jobs
 
         function onStarted() {
-            drawer.tab = "jobs"
+            if (!window.drawerOpen || drawer.tab !== "queue")
+                drawer.tab = "jobs"
+            window.drawerOpen = true
+        }
+    }
+
+    // And on its Queue tab when a place is added to the queue, or why it was not.
+    Connections {
+        target: app.queue
+
+        function onNoted() {
+            drawer.tab = "queue"
             window.drawerOpen = true
         }
     }
