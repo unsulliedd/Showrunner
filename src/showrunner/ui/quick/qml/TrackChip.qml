@@ -4,12 +4,13 @@ import QtQuick.Layouts
 import Showrunner
 
 // One track signature of a batch on Overview: a click on its header keeps or drops the track in every file (adds a
-// paired file), the star and F set the flags, and the ▾ (the header's last control) folds the chip open to list each
-// file's name for the track, then the files that lack it. `chip` is a header from the controller; `namesOpen`, `rows`
-// and `missing` say whether the place has it open and what it lists. An open chip grows inside its own frame: wider,
-// when its names need it, up to the width its parent gives it, and taller up to `names_height`, where the list scrolls.
-// Where the tracks carry several names, each name is a line of its own that a click keeps or drops (a rule by name
-// ahead of the chip's choice); the list is one tab stop, Up and Down move along it and Space or Return acts.
+// paired file), D and F set the flags, and the button under the header folds the chip open to list each file's name for
+// the track, then the files that lack it. `chip` is a header from the controller; `namesOpen`, `rows` and `missing`
+// say whether the place has it open and what it lists. An open chip grows taller inside its own frame, up to
+// `names_height` where the list scrolls, and never wider: a long line is cut short.
+// A track without a name has a line per file that a click keeps or drops in that file alone (the file's own choice);
+// where the tracks carry several names, each name is a line of its own that a click keeps or drops (a rule by name
+// ahead of the chip's choice). The list is one tab stop, Up and Down move along it and Space or Return acts.
 Item {
     id: control
 
@@ -22,22 +23,13 @@ Item {
     readonly property bool dropped: chip.state === "dropped"
     readonly property bool paired: chip.paired
     readonly property bool clickable: rows.some(row => row.clickable)
-    // Room the list's text needs, from the longest line (the names are set in a fixed-width face).
-    readonly property real listWidth: metrics.advanceWidth + 2 * Theme.space_md + Theme.scroll_thumb + 2 * Theme.space_sm
 
     signal namesToggled
 
     objectName: "chip" + chip.id
-    implicitWidth: namesOpen ? Math.max(header.implicitWidth, listWidth) : header.implicitWidth
-    implicitHeight: header.height + (namesOpen ? foldout.height + Theme.space_md : 0)
-
-    TextMetrics {
-        id: metrics
-
-        font.family: Theme.mono
-        font.pixelSize: Theme.text_sm
-        text: control.namesOpen ? control.rows.reduce((a, b) => b.text.length > a.length ? b.text : a, "") : ""
-    }
+    implicitWidth: header.implicitWidth
+    implicitHeight: header.height + (expand.visible ? Theme.space_sm + expand.height : 0)
+                    + (namesOpen ? Theme.space_sm + foldout.height + Theme.space_md : 0)
 
     Rectangle {
         anchors.fill: parent
@@ -156,26 +148,29 @@ Item {
                 onClicked: app.toggle_flag(control.chip.id, "forced")
             }
 
-            // Where a chip widened for its names keeps its arrow at the end, as a chip at its own width has it.
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredWidth: 0
-                visible: control.namesOpen
-            }
-
-            IconButton {
-                objectName: "namesButton"
-                visible: control.chip.names
-                implicitWidth: Theme.row_sm
-                implicitHeight: Theme.row_sm
-                iconName: "down"
-                // The arrow turns up while its list is open.
-                rotation: control.namesOpen ? 180 : 0
-                label: Strings.t(control.namesOpen ? "tracks.names.close" : "tracks.names.open")
-                active: control.namesOpen
-                onClicked: control.namesToggled()
-            }
         }
+    }
+
+    // A button of its own across the chip, so folding the list out cannot be taken for keeping or dropping the tracks.
+    ActionButton {
+        id: expand
+
+        objectName: "namesButton"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: header.bottom
+        anchors.leftMargin: Theme.space_sm
+        anchors.rightMargin: Theme.space_sm
+        anchors.topMargin: Theme.space_sm
+        visible: control.chip.names
+        kind: "outline"
+        size: Theme.row_sm
+        iconName: control.namesOpen ? "up" : "down"
+        text: Strings.t(control.namesOpen ? "tracks.names.collapse" : "tracks.names.expand")
+        Accessible.name: Strings.t(control.namesOpen ? "tracks.names.close" : "tracks.names.open")
+        ToolTip.visible: hovered
+        ToolTip.text: Accessible.name
+        onClicked: control.namesToggled()
     }
 
     Item {
@@ -183,7 +178,8 @@ Item {
 
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: header.bottom
+        anchors.top: expand.visible ? expand.bottom : header.bottom
+        anchors.topMargin: Theme.space_sm
         anchors.leftMargin: Theme.space_md
         anchors.rightMargin: Theme.space_md
         visible: control.namesOpen
@@ -205,10 +201,17 @@ Item {
             Keys.onReturnPressed: toggleCurrent()
             Keys.onEnterPressed: toggleCurrent()
 
+            function toggleRow(row) {
+                if (row.file !== "")
+                    app.toggle_file_track(control.chip.id, row.file)
+                else
+                    app.toggle_name(control.chip.id, row.name)
+            }
+
             function toggleCurrent() {
                 const row = control.rows[currentIndex]
                 if (row && row.clickable)
-                    app.toggle_name(control.chip.id, row.name)
+                    toggleRow(row)
             }
 
             // The wheel over a list that scrolls moves only the list, also at its ends; the tracks box behind it
@@ -226,7 +229,7 @@ Item {
                 id: line
 
                 required property int index
-                readonly property var row: control.rows[index] ?? ({"text": "", "name": "", "clickable": false, "dropped": false, "from": "", "over": "", "short": "", "label": ""})
+                readonly property var row: control.rows[index] ?? ({"text": "", "name": "", "file": "", "clickable": false, "dropped": false, "from": "", "over": "", "short": "", "label": ""})
                 readonly property bool current: ListView.isCurrentItem && list.activeFocus && row.clickable
 
                 objectName: "chipNameRow"
@@ -260,7 +263,16 @@ Item {
 
                     PlaceMark {
                         objectName: "nameMark"
+                        Layout.maximumWidth: implicitWidth
                         choice: line.row
+                    }
+
+                    // The line's own keep or drop control: what a click on the line does next.
+                    Icon {
+                        visible: line.row.clickable
+                        name: line.row.dropped ? "x" : "check"
+                        size: Theme.icon_sm
+                        color: line.row.dropped ? Theme.drop : Theme.faint
                     }
                 }
 
@@ -275,7 +287,7 @@ Item {
                     enabled: line.row.clickable
                     onTapped: {
                         list.currentIndex = line.index
-                        app.toggle_name(control.chip.id, line.row.name)
+                        list.toggleRow(line.row)
                     }
                 }
             }

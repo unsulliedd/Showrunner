@@ -204,6 +204,8 @@ class BatchView:
     # Why a file's tracks could not be read, by path; those files show it instead of a plan.
     failures: Mapping[str, str] = field(default_factory=dict, compare=False)
     received: Received = field(default_factory=Received)
+    # The track rules each file's own place holds, by path, to mark a line whose file made its own choice.
+    file_rules: Mapping[str, Sequence[TrackRule]] = field(default_factory=dict, compare=False)
     # Each file's cells, built on first use: the headers, the rows and the Inspector all read them.
     _cells: dict[str, list[dict[str, object]]] = field(default_factory=dict, compare=False, repr=False)
     # Each signature's track names, file by file, built on first use.
@@ -217,12 +219,15 @@ class BatchView:
         files: Sequence[FilePreview],
         failures: Mapping[str, str] | None = None,
         received: Received | None = None,
+        file_rules: Mapping[str, Sequence[TrackRule]] | None = None,
     ) -> BatchView:
         groups = TrackGroups.of(items, options.flags_from_names)
         cols = columns(items, groups, options)
         by_path = {str(f.item.file.path): f for f in files}
         firsts = _first_defaults(options, cols)
-        return cls(items, options, by_path, cols, groups, firsts, failures or {}, received or Received())
+        return cls(
+            items, options, by_path, cols, groups, firsts, failures or {}, received or Received(), file_rules or {}
+        )
 
     def file(self, item: MediaItem) -> FilePreview | None:
         return self.files.get(str(item.file.path))
@@ -318,23 +323,33 @@ class BatchView:
         return rows
 
     def name_rows(self, index: int) -> list[dict[str, object]]:
-        """The lines of a chip's ▾ list. Where the chip's tracks carry two or more names, one line per name, with the
-        files that use it, and the line is `clickable`: a click keeps or drops the tracks with that name (a rule ahead
-        of the chip's own choice). Else one line per file, as `names` has them, which no click acts on (one name is the
-        chip's own choice, and a chip told apart by name has only that name). Names differing in case are one name,
-        as the rule's name test ignores case."""
+        """The lines of a chip's ▾ list. A track without a name has a line of its own per file, `clickable`: a click
+        keeps or drops that file's track, as the file's own choice (see `file`). Where the chip's tracks carry two or
+        more names, one line per name, with the files that use it, also `clickable`: a click keeps or drops the tracks
+        with that name (a rule ahead of the chip's own choice). Else one line per file, as `names` has them, which no
+        click acts on (one name is the chip's own choice, and a chip told apart by name has only that name). Names
+        differing in case are one name, as the rule's name test ignores case."""
         if not 0 <= index < len(self.cols) or self.cols[index].paired is not None:
             return []
         column, one_season = self.cols[index], self._one_season()
+        entries = self._named().get(column.signature, [])
         groups: dict[str, tuple[str, list[MediaItem]]] = {}
-        for item, name in self._named().get(column.signature, []):
+        for item, name in entries:
             groups.setdefault(name.casefold(), (name, []))[1].append(item)
         if len(groups) < 2 or column.signature.name is not None:
-            return [_name_row(text) for text in self.names(index)]
+            return [
+                self._file_row(index, item, one_season)
+                if not name
+                else _name_row(tr("tracks.names.row", number=file_label(item, one_season), name=name))
+                for item, name in entries
+            ]
         options = self.options
         active = [(n, rule) for n, rule in enumerate(options.rules) if rule.enabled]
         rows = []
         for key, (name, items) in groups.items():
+            if not name:
+                rows += [self._file_row(index, item, one_season) for item in items]
+                continue
             number = tr("common.list_separator").join(file_label(i, one_season) for i in items)
             text = tr("tracks.names.row" if name else "tracks.names.none", number=number, name=name)
             signature = named(column.signature, name)
@@ -353,6 +368,23 @@ class BatchView:
             label = f"{text} {state} {mark['from'] or mark['over']}".strip()
             rows.append(_name_row(text, clickable=True, name=name, dropped=dropped, mark=mark, label=label))
         return rows
+
+    def _file_row(self, index: int, item: MediaItem, one_season: bool) -> dict[str, object]:
+        """The line of one file's track without a name: a click makes that file's own choice. It is marked when the
+        file's own place holds a choice on the chip, which is not the case where the file is the open place itself."""
+        text = tr("tracks.names.none", number=file_label(item, one_season))
+        dropped = self.cells(item)[index]["state"] == "dropped"
+        own = choice_index(list(self.file_rules.get(str(item.file.path), ())), self.cols[index].signature) is not None
+        mark = tr("tracks.names.own") if own else ""
+        state = tr(f"tracks.state.{'dropped' if dropped else 'kept'}")
+        return _name_row(
+            text,
+            clickable=True,
+            dropped=dropped,
+            mark={"from": "", "over": mark, "short": mark},
+            label=f"{text} {state} {mark}".strip(),
+            file=str(item.file.path),
+        )
 
     def _one_season(self) -> bool:
         return len({(i.identity.show, i.identity.season) for i in self.items if isinstance(i.identity, Episode)}) <= 1
@@ -808,11 +840,14 @@ def _name_row(
     dropped: bool = False,
     mark: Mapping[str, str] | None = None,
     label: str = "",
+    file: str = "",
 ) -> dict[str, object]:
-    """One line of a chip's list; `label` is what a screen reader says."""
+    """One line of a chip's list; `label` is what a screen reader says, `file` the path of the file whose own track a
+    line stands for (empty for a line of a name or one nothing acts on)."""
     return {
         "text": text,
         "name": name,
+        "file": file,
         "clickable": clickable,
         "dropped": dropped,
         **(mark or {"from": "", "over": "", "short": ""}),
@@ -921,7 +956,7 @@ def _what_changes(
                     )
             if moved:
                 text = tr(f"inspector.flag.{flag}", tracks=tr("common.list_separator").join(moved))
-                changes.append({"icon": "star" if flag == "default" else "subs", "text": text, "detail": ""})
+                changes.append({"icon": flag if flag == "default" else "subs", "text": text, "detail": ""})
     metadata = _metadata(file)
     if metadata is not None:
         titled = any(c.prop is Property.TITLE for c in metadata.changes)

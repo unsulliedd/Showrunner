@@ -1,7 +1,7 @@
 import QtQuick
 import Showrunner
 
-// One track of one file in an episode row: its code with the star or F it ends with; struck when dropped, dashed
+// One track of one file in an episode row: its code with the D or F it ends with; struck when dropped, dashed
 // mint when a paired file is added.
 Item {
     id: pill
@@ -49,12 +49,13 @@ Item {
             font.strikeout: pill.track.state === "dropped"
         }
 
-        Icon {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             visible: pill.track.default
-            name: "star_on"
-            size: Theme.icon_sm - Theme.space_xs
-            color: Theme.change
+            text: Strings.t("tracks.default_mark")
+            color: Theme.muted
+            font.pixelSize: Theme.text_xs
+            font.weight: Font.Bold
         }
 
         UiText {

@@ -71,7 +71,7 @@ from showrunner.core.naming import (
 )
 from showrunner.stages.mux import MuxResult, Original
 from showrunner.stages.scan.extensions import SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS
-from showrunner.stages.tracks import NO_LANGUAGE, TracksOptions, Verdict
+from showrunner.stages.tracks import NO_LANGUAGE, TrackRule, TracksOptions, Verdict
 from showrunner.tools.dependencies.detect import DependencyStatus, State
 from showrunner.tools.dependencies.specs import SPEC_BY_ID
 from showrunner.tools.probe import probe
@@ -940,11 +940,12 @@ class WindowController(QObject):
         """Set the batch's own track options; `options.rules` are its own rules (`_own_tracks`)."""
         self._set_options("tracks", options)
 
-    def _set_options(self, stage_id: str, options: Any) -> None:
+    def _set_options(self, stage_id: str, options: Any, key: BatchKey | None = None) -> None:
+        """Set the options of one stage of the open place, or of `key`, a place inside it."""
         assert self._key is not None
         if self.locked:
             return
-        self.batches.set_options(self._key, stage_id, options)
+        self.batches.set_options(key or self._key, stage_id, options)
         self._copy_changed()
 
     def _column(self, column: int) -> tuple[Column, dict[str, Any]] | None:
@@ -981,6 +982,33 @@ class WindowController(QObject):
         else:
             verdict = Verdict.KEEP if row["dropped"] else Verdict.DROP
         self._set_tracks(self.batches.with_choice(self._key, signature, TrackChoice(verdict), lead=True))
+
+    @Slot(int, str)
+    def toggle_file_track(self, column: int, path: str) -> None:
+        """A click on the line of one file's track in a chip's list: drop that file's track, keep it when it is
+        dropped, and give the choice back to the place above when the file's own choice was the drop. The choice is
+        made at the file's own place and overrides what the file receives, so the other files stay as they are."""
+        found = self._column(column)
+        item = next((i for i in self._items if str(i.file.path) == path), None)
+        if found is None or self._view is None or self._key is None or item is None:
+            return
+        col, _header = found
+        key = BatchKey.file(item).in_show(self._key)
+        signature = col.signature
+        choice = choice_of(self.batches.profile(key).for_stage("tracks"), signature)
+        received = self.batches.received_choice(key, signature)
+        if choice.verdict is Verdict.DROP:
+            # Undoing a drop: what the place above says, or a keep where that is a drop as well.
+            chosen = (
+                TrackChoice(Verdict.KEEP, language=choice.language) if received.verdict is Verdict.DROP else received
+            )
+        elif self._view.cells(item)[column]["state"] == "dropped":
+            chosen = TrackChoice(
+                Verdict.KEEP, choice.default, choice.forced, choice.language
+            )  # a written rule drops it
+        else:
+            chosen = TrackChoice(Verdict.DROP, language=choice.language)
+        self._set_options("tracks", self.batches.with_choice(key, signature, chosen), key)
 
     @Slot(int, result=str)
     def track_missing(self, column: int) -> str:
@@ -1019,7 +1047,7 @@ class WindowController(QObject):
 
     @Slot(int, str)
     def toggle_flag(self, column: int, flag: str) -> None:
-        """The star (default) or F (forced) of a chip, card or column; a flag on a paired file adds the file."""
+        """The D (default) or F (forced) of a chip, card or column; a flag on a paired file adds the file."""
         found = self._column(column)
         if found is None or flag not in ("default", "forced"):
             return
@@ -1556,7 +1584,9 @@ class WindowController(QObject):
             files = self._current_files()
             profile = self.batches.profile(self._key)
             tracks = profile.for_stage("tracks")
-            self._view = BatchView.build(self._items, tracks, files, self._failures(), self._received())
+            self._view = BatchView.build(
+                self._items, tracks, files, self._failures(), self._received(), self._file_rules()
+            )
             counts = dict.fromkeys(ChangeGroup, 0)
             for file in files:
                 if file.item.file.path not in self._excluded_files:
@@ -1592,6 +1622,14 @@ class WindowController(QObject):
             paired_from=paired.kind.value if paired is not None and paired != key else "",
             paired_over=over.kind.value if over is not None else "",
         )
+
+    def _file_rules(self) -> dict[str, list[TrackRule]]:
+        """The track rules of each file's own place, to mark the lines whose file made its own choice; none where the
+        open place is a file, which then holds them as its own."""
+        assert self._key is not None
+        if self._key.kind in (BatchKind.EPISODE, BatchKind.EXTRA, BatchKind.MOVIE):
+            return {}
+        return {str(path): rules for path, rules in self.batches.file_own_rules(self._items, self._key).items()}
 
     def _failures(self) -> dict[str, str]:
         """Why each file of the batch whose tracks could not be read was not read."""

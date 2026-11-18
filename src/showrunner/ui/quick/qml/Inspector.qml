@@ -110,9 +110,17 @@ ScrollPane {
 
                             Icon {
                                 anchors.centerIn: parent
-                                name: modelData.icon
+                                visible: modelData.icon !== "default"
+                                name: visible ? modelData.icon : ""
                                 size: Theme.icon_sm
                                 color: Theme.change
+                            }
+
+                            FlagMark {
+                                anchors.centerIn: parent
+                                visible: modelData.icon === "default"
+                                flag: "default"
+                                tone: Theme.change
                             }
                         }
 
@@ -289,27 +297,14 @@ ScrollPane {
                     }
                 }
 
-                Icon {
+                FlagMark {
                     visible: track.modelData.default
-                    name: "star_on"
-                    size: Theme.icon_sm
-                    color: Theme.change
+                    flag: "default"
                 }
 
-                Rectangle {
+                FlagMark {
                     visible: track.modelData.forced
-                    width: Theme.icon_md
-                    height: Theme.icon_md
-                    radius: Theme.radius_sm
-                    color: Theme.ink
-
-                    UiText {
-                        anchors.centerIn: parent
-                        text: Strings.t("tracks.forced_mark")
-                        color: Theme.ground
-                        font.pixelSize: Theme.text_xs
-                        font.weight: Font.Bold
-                    }
+                    flag: "forced"
                 }
             }
         }

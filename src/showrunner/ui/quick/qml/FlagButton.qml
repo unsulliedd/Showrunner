@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import Showrunner
 
-// The star (default) or F (forced) toggle of a track. `on` is the choice; `held` shows that the file has the flag
+// The D (default) or F (forced) toggle of a track. `on` is the choice; `held` shows that the file has the flag
 // without a choice making it so.
 AbstractButton {
     id: control
@@ -19,6 +19,8 @@ AbstractButton {
     Accessible.role: Accessible.CheckBox
     Accessible.checked: on
     Accessible.name: Strings.t("tracks.flag_tip." + flag)
+    ToolTip.visible: hovered
+    ToolTip.text: Accessible.name
 
     background: Rectangle {
         radius: Theme.radius_sm
@@ -28,31 +30,11 @@ AbstractButton {
     }
 
     contentItem: Item {
-        Icon {
+        FlagMark {
             anchors.centerIn: parent
-            visible: control.flag === "default"
-            name: control.on || control.held ? "star_on" : "star"
-            size: Theme.icon_sm
-            color: control.on ? Theme.change : control.held ? Theme.muted : Theme.faint
-        }
-
-        Rectangle {
-            anchors.centerIn: parent
-            visible: control.flag === "forced"
-            width: Theme.icon_md
-            height: Theme.icon_md
-            radius: Theme.radius_sm
-            color: control.on ? Theme.ink : control.held ? Theme.muted : "transparent"
-            border.width: control.on ? 0 : Theme.stroke
-            border.color: Theme.faint
-
-            UiText {
-                anchors.centerIn: parent
-                text: Strings.t("tracks.forced_mark")
-                color: control.on || control.held ? Theme.ground : Theme.faint
-                font.pixelSize: Theme.text_xs
-                font.weight: Font.Bold
-            }
+            flag: control.flag
+            on: control.on
+            held: control.held
         }
     }
 }

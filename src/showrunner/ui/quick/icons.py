@@ -24,6 +24,7 @@ ICONS: dict[str, str] = {
     "tv": '<rect x="3" y="6.5" width="18" height="12.5" rx="2.5"/><path d="M8.5 3l3.5 3.5L15.5 3"/>',
     "search": '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
     "down": '<path d="M6.5 9.5l5.5 5.5 5.5-5.5"/>',
+    "up": '<path d="M6.5 14.5l5.5-5.5 5.5 5.5"/>',
     "right": '<path d="M9.5 6.5l5.5 5.5-5.5 5.5"/>',
     "check": '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
     "x": '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',

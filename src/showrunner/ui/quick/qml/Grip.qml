@@ -36,11 +36,17 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        visible: grip.activeFocus
+        visible: grip.activeFocus || hover.hovered || grip.active
         radius: Theme.radius_sm
-        color: "transparent"
-        border.width: Theme.stroke
+        color: grip.activeFocus ? "transparent" : Theme.panel_3
+        border.width: grip.activeFocus ? Theme.stroke : 0
         border.color: Theme.control
+    }
+
+    HoverHandler {
+        id: hover
+
+        cursorShape: grip.active ? Qt.ClosedHandCursor : Qt.OpenHandCursor
     }
 
     Icon {

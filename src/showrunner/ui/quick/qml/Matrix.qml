@@ -5,8 +5,8 @@ import Showrunner
 
 // The track matrix of the Tracks place: files down, track signatures across, audio then subtitles. A column's
 // header keeps or drops it in every file and sets its flags; a cell shows what the plans leave in that file. The
-// columns stand in the order of the tracks in the new files: a column's grip drags it, or moves it with Ctrl+Left and
-// Ctrl+Right, among the columns of its kind.
+// columns stand in the order of the tracks in the new files: a column's grip, the strip down its left edge, drags it,
+// or moves it with Ctrl+Left and Ctrl+Right, among the columns of its kind.
 Item {
     id: matrix
 
@@ -89,29 +89,16 @@ Item {
                 color: Theme.add
             }
 
-            Icon {
+            FlagMark {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: cell.value.default
-                name: "star_on"
-                size: Theme.icon_sm
-                color: Theme.change
+                flag: "default"
             }
 
-            Rectangle {
+            FlagMark {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: cell.value.forced
-                width: Theme.icon_md
-                height: Theme.icon_md
-                radius: Theme.radius_sm
-                color: Theme.ink
-
-                UiText {
-                    anchors.centerIn: parent
-                    text: Strings.t("tracks.forced_mark")
-                    color: Theme.ground
-                    font.pixelSize: Theme.text_xs
-                    font.weight: Font.Bold
-                }
+                flag: "forced"
             }
 
             UiText {
@@ -138,11 +125,10 @@ Item {
                 anchors.centerIn: parent
                 spacing: Theme.space_xs
 
-                Icon {
+                FlagMark {
                     anchors.verticalCenter: parent.verticalCenter
-                    name: "star_on"
-                    size: Theme.icon_sm - Theme.space_xs
-                    color: Theme.change
+                    flag: "default"
+                    tone: Theme.change
                 }
 
                 UiText {
@@ -182,36 +168,37 @@ Item {
             border.color: Theme.control
         }
 
+        Grip {
+            id: grip
+
+            objectName: "columnGrip"
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.margins: Theme.space_xs
+            width: Theme.icon_md
+            visible: head.column.movable
+            step: matrix.columnWidth
+            label: Strings.f("tracks.order.column", {"track": head.column.code + " " + head.column.title})
+            onActiveChanged: {
+                matrix.dragFrom = active ? head.column.id : -1
+                matrix.dragPlaces = 0
+            }
+            onPlacesChanged: if (active) matrix.dragPlaces = places
+            onMoved: places => head.moveBy(places)
+        }
+
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: Theme.space_sm
+            // Clear of the grip, which has the left edge for itself.
+            anchors.leftMargin: grip.visible ? grip.width + Theme.space_xs : Theme.space_sm
             spacing: Theme.space_xs
 
-            Row {
+            CodeBadge {
                 Layout.alignment: Qt.AlignHCenter
-                spacing: Theme.space_xs
-
-                Grip {
-                    id: grip
-
-                    objectName: "columnGrip"
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: head.column.movable
-                    step: matrix.columnWidth
-                    label: Strings.f("tracks.order.column", {"track": head.column.code + " " + head.column.title})
-                    onActiveChanged: {
-                        matrix.dragFrom = active ? head.column.id : -1
-                        matrix.dragPlaces = 0
-                    }
-                    onPlacesChanged: if (active) matrix.dragPlaces = places
-                    onMoved: places => head.moveBy(places)
-                }
-
-                CodeBadge {
-                    anchors.verticalCenter: parent.verticalCenter
-                    code: head.column.code
-                    look: head.column.state
-                }
+                code: head.column.code
+                look: head.column.state
             }
 
             UiText {
@@ -508,10 +495,12 @@ Item {
                         border.width: line.marked ? Theme.stroke : 0
                         border.color: Theme.control
 
+                        // Not under the selected row, whose fill then runs the row's whole height.
                         Rectangle {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
+                            visible: !line.focused
                             height: Theme.stroke
                             color: Theme.line
                         }
@@ -519,8 +508,8 @@ Item {
 
                     contentItem: Item {
                         RowLayout {
-                            x: matrix.scrolled
-                            width: matrix.nameWidth - Theme.space_md
+                            x: matrix.scrolled + Theme.space_md
+                            width: matrix.nameWidth - 2 * Theme.space_md
                             height: Theme.list_row
                             spacing: Theme.space_md
 
@@ -619,21 +608,24 @@ Item {
 
             Flow {
                 Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
                 spacing: Theme.space_xl
 
                 Repeater {
-                    model: ["kept", "dropped", "added", "default", "forced", "missing", "fallback"]
+                    model: ["kept", "dropped", "added", "default", "forced", "missing"]
 
                     delegate: Row {
                         required property string modelData
 
+                        objectName: "legendItem"
+                        // One height for every item, so each is centred on the same line.
+                        height: Theme.row_sm
                         spacing: Theme.space_sm
 
                         Cell {
                             anchors.verticalCenter: parent.verticalCenter
                             width: Theme.icon_md + Theme.space_md
                             height: Theme.pill
-                            visible: modelData !== "fallback"
                             value: ({
                                 "state": modelData === "kept" || modelData === "dropped" || modelData === "added"
                                          || modelData === "missing" ? modelData : "kept",
@@ -653,14 +645,8 @@ Item {
                 }
             }
 
-            HelpTip {
-                objectName: "firstKeptTip"
-                Layout.alignment: Qt.AlignTop
-                topic: "first_kept"
-            }
-
             UiText {
-                Layout.alignment: Qt.AlignTop
+                Layout.alignment: Qt.AlignVCenter
                 Layout.preferredHeight: Theme.row_sm
                 verticalAlignment: Text.AlignVCenter
                 visible: matrix.headers.some(h => h.movable)
@@ -671,7 +657,7 @@ Item {
 
             PlaceMark {
                 objectName: "orderMark"
-                Layout.alignment: Qt.AlignTop
+                Layout.alignment: Qt.AlignVCenter
                 Layout.preferredHeight: Theme.row_sm
                 verticalAlignment: Text.AlignVCenter
                 choice: app.field_marks["tracks.order"] || ({})
@@ -680,7 +666,7 @@ Item {
             // A name such as Forced or SDH already counts as the flag when rules match; this writes the flag itself.
             ActionButton {
                 objectName: "writeImpliedFlags"
-                Layout.alignment: Qt.AlignTop
+                Layout.alignment: Qt.AlignVCenter
                 kind: "outline"
                 size: Theme.row_sm
                 checkable: true
@@ -693,11 +679,25 @@ Item {
 
             PlaceMark {
                 objectName: "impliedFlagsMark"
-                Layout.alignment: Qt.AlignTop
+                Layout.alignment: Qt.AlignVCenter
                 Layout.preferredHeight: Theme.row_sm
                 verticalAlignment: Text.AlignVCenter
                 choice: app.field_marks["metadata.write_implied_flags"] || ({})
             }
+
+            HelpTip {
+                objectName: "firstKeptTip"
+                Layout.alignment: Qt.AlignVCenter
+                topic: "first_kept"
+            }
+        }
+
+        UiText {
+            objectName: "legendFallback"
+            Layout.fillWidth: true
+            text: Strings.t("matrix.legend.fallback")
+            color: Theme.muted
+            font.pixelSize: Theme.text_sm
         }
     }
 }

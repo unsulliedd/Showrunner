@@ -262,6 +262,7 @@ def _named_show(load: Any, controller: WindowController, qtbot: QtBot, episodes:
 
     show = long_show(1, episodes, named_per_episode=True)
     load()
+    load.window.setHeight(1100)  # the chips' buttons make the rows taller: room for both rows of chips
     controller.start()
     controller.model.set_library(show)
     controller.select(controller.tree.index_of(str(show.items[2].file.path)).parent())
@@ -290,7 +291,7 @@ def test_a_chip_s_arrow_folds_the_chip_open_and_leaves_the_chip_alone(
     assert _top(rows) >= _bottom(_item(chip, "chipHeader"))
     assert _contains(chip, rows)
     assert chip.height() > closed[1]
-    assert closed[0] <= chip.width() <= _item(root, "chipGroups").width()
+    assert chip.width() == closed[0]  # an open chip never gets wider
     # The chips around it are as they were, and no chip lies over another where the Flow placed them again.
     assert _item(root, "chip0").height() == closed[1]
     chips = [_item(root, f"chip{i}") for i in range(8)]
@@ -351,7 +352,7 @@ def test_a_long_list_is_capped_inside_the_chip_and_scrolls(
     assert rows.property("count") == 39
     assert rows.height() == SIZES["names_height"]
     assert rows.property("contentHeight") > SIZES["names_height"]
-    assert chip.height() == closed + SIZES["names_height"] + SIZES["space_md"]
+    assert chip.height() == closed + SIZES["space_sm"] + SIZES["names_height"] + SIZES["space_md"]
     assert _contains(chip, rows)
     # Scrolled to its end the list shows the line for the files without the track.
     assert rows.property("atYEnd") is False
@@ -383,7 +384,7 @@ def test_a_matrix_header_s_arrow_still_opens_the_popup(
     assert qt_warnings() == []
 
 
-def test_a_chip_keeps_even_room_on_both_sides_in_every_state_and_ends_with_its_arrow(
+def test_a_chip_keeps_even_room_on_both_sides_in_every_state_and_its_button_spans_it(
     load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
 ) -> None:
     load()
@@ -408,15 +409,14 @@ def test_a_chip_keeps_even_room_on_both_sides_in_every_state_and_ends_with_its_a
             assert header.width() - content.x() - content.width() == room, index
             assert header.width() == chip.width(), index
             for part in content.childItems():
-                if part.isVisible() and part.height() > 0:  # not the spacer before the arrow
+                if part.isVisible() and part.height() > 0:
                     assert part.x() >= 0, (index, part)
                     assert part.x() + part.width() <= content.width() + 0.5, (index, part)
             arrows = [b for b in _items(chip, "namesButton") if b.isVisible()]
             if arrows:
-                # Both are children of the header's row; the arrow turns up when open, so measure by position.
-                flags = [f for f in _items(chip, "defaultFlag") if f.isVisible()]
-                assert all(f.x() < arrows[0].x() for f in flags)
-                assert header.width() - (content.x() + arrows[0].x() + arrows[0].width()) == room, index
+                # The expand button lies under the header and spans the chip, a little inside its frame.
+                assert arrows[0].y() >= header.height(), index
+                assert arrows[0].width() == chip.width() - 2 * SIZES["space_sm"], index
         return found
 
     assert check() == 8
@@ -431,7 +431,7 @@ def test_a_chip_keeps_even_room_on_both_sides_in_every_state_and_ends_with_its_a
     qtbot.waitUntil(lambda: load.window.width() == 1024)
     qtbot.wait(300)
     assert check() == 8
-    # An open chip has widened for its names; its arrow still ends it, with the same room.
+    # An open chip is no wider, and its header keeps the same room.
     _click(load.window, _item(_item(root, "chip1"), "namesButton"))
     load()
     assert check() == 8

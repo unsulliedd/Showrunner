@@ -48,7 +48,7 @@ from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME, ProfileStore
 from showrunner.app.profiles.working import WorkingCopy
 from showrunner.core.media import Episode, Extra, MediaItem
 from showrunner.core.options.registry import REGISTRY
-from showrunner.stages.tracks import TracksOptions
+from showrunner.stages.tracks import TrackRule, TracksOptions
 
 
 class BatchKind(StrEnum):
@@ -231,6 +231,11 @@ class Batches:
         nothing of their own share their parent's object, so a planner can plan them as one group."""
         cache: dict[BatchKey, Profile] = {}
         return {item.file.path: self._combined(BatchKey.file(item).in_show(under), cache) for item in items}
+
+    def file_own_rules(self, items: Sequence[MediaItem], under: BatchKey) -> dict[Path, list[TrackRule]]:
+        """The track rules each file's own place holds, the files lying in place `under`; none for a file that chose
+        nothing."""
+        return {item.file.path: own_rules(self.own(BatchKey.file(item).in_show(under))) for item in items}
 
     def own(self, key: BatchKey) -> Layer:
         """The fields a season, an episode, an extra or a movie set itself; empty for a root, whose choices are its

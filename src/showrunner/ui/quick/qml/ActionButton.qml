@@ -24,6 +24,7 @@ AbstractButton {
     background: Rectangle {
         radius: Theme.radius_md
         color: control.kind === "primary" ? (control.enabled ? Theme.control : Theme.panel_3)
+             : control.down && control.enabled ? Theme.line
              : control.hovered && control.enabled ? Theme.panel_3
              : control.kind === "outline" ? Theme.panel_2 : "transparent"
         border.width: control.kind === "outline" || control.visualFocus ? Theme.stroke : 0
