@@ -12,7 +12,7 @@ from showrunner.app.profiles import registered  # noqa: F401
 from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME, ProfileStore
 from showrunner.core.media import Episode, MediaFile, MediaItem
 from showrunner.core.naming import EpisodeCodeFormat, NamingOptions, SpaceStyle
-from showrunner.stages.tracks import KindTest, TrackMatch, TracksOptions
+from showrunner.stages.tracks import KindTest, TrackMatch, TrackRule, TracksOptions
 
 SEASON = BatchKey(BatchKind.SEASON, Media.EPISODES, "Show Name", 2020, 1)
 
@@ -129,3 +129,24 @@ def test_the_space_choice_passes_from_show_to_season_to_episode_and_the_nearest_
 
     batches.set_options(episode, "naming", NamingOptions(audio_track_space=SpaceStyle.SPACE))
     assert [space(k) for k in (show, SEASON, episode)] == [SpaceStyle.DOT, SpaceStyle.DASH, SpaceStyle.SPACE]
+
+
+def test_a_language_choice_survives_a_restart_and_a_workspace_without_one_still_loads(
+    tmp_path: Path, store: ProfileStore
+) -> None:
+    path = tmp_path / "workspace.json"
+    batches = load_batches(store, path)
+    copy = batches.copy(SEASON)
+    rules = [TrackRule(match=TrackMatch(kind=KindTest.AUDIO, languages=["en"]), language="es-419", from_choice=True)]
+    copy.set_options("tracks", replace(copy.profile.options["tracks"], rules=rules))
+    save_batches(batches, path)
+    assert load_batches(store, path).copy(SEASON).profile.for_stage("tracks").rules == rules
+
+    # A file saved before rules had a language holds the rule without that key.
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for place in data["batches"]["batches"]:
+        for rule in place["options"]["stages"]["tracks"]["rules"]:
+            del rule["language"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    (old,) = load_batches(store, path).copy(SEASON).profile.for_stage("tracks").rules
+    assert (old.language, old.from_choice, old.match.languages) == ("", True, ["en"])

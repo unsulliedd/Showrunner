@@ -75,7 +75,7 @@ def build_arguments(path: Path, edits: Sequence[Edit]) -> list[str]:
                 # The legacy element first: changing it also resets the IETF element to the same code.
                 language = Language.parse(str(edit.value))
                 assert language is not None  # checked when the edit was made
-                arguments += ["--set", f"language={language.alpha3}", "--set", f"language-ietf={edit.value}"]
+                arguments += ["--set", f"language={language.alpha3}", "--set", f"language-ietf={language.ietf}"]
                 continue
             value = ("1" if edit.value else "0") if isinstance(edit.value, bool) else edit.value
             arguments += ["--set", f"{edit.prop.value}={value}"]

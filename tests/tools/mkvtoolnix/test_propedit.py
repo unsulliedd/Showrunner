@@ -25,6 +25,18 @@ def test_the_selector_is_the_mkvmerge_id_counted_from_one() -> None:
             Edit(Property.LANGUAGE, "pt-BR", 1),
             ["--edit", "track:2", "--set", "language=por", "--set", "language-ietf=pt-BR"],
         ),
+        (
+            Edit(Property.LANGUAGE, "es-419", 1),
+            ["--edit", "track:2", "--set", "language=spa", "--set", "language-ietf=es-419"],
+        ),
+        (
+            Edit(Property.LANGUAGE, "sr-latn-rs", 1),
+            ["--edit", "track:2", "--set", "language=srp", "--set", "language-ietf=sr-Latn-RS"],
+        ),
+        (
+            Edit(Property.LANGUAGE, "cmn", 1),
+            ["--edit", "track:2", "--set", "language=cmn", "--set", "language-ietf=cmn"],
+        ),
         (Edit(Property.FLAG_DEFAULT, True, 0), ["--edit", "track:1", "--set", "flag-default=1"]),
         (Edit(Property.FLAG_FORCED, False, 0), ["--edit", "track:1", "--set", "flag-forced=0"]),
         (Edit(Property.FLAG_HEARING_IMPAIRED, True, 4), ["--edit", "track:5", "--set", "flag-hearing-impaired=1"]),

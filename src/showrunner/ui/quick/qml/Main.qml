@@ -229,6 +229,8 @@ ApplicationWindow {
         }
     }
 
+    LanguageDialog {}
+
     SettingsDialog {
         id: settings
     }

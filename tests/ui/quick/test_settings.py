@@ -238,9 +238,10 @@ def test_the_untagged_language_is_set_and_its_problem_shown(
     controller: WindowController, library: Library, qtbot: QtBot
 ) -> None:
     open_season(controller, library, qtbot)
-    assert controller.untagged == {"value": "", "problem": ""}
+    assert controller.untagged == {"value": "", "label": "as is", "problem": ""}
     controller.set_untagged_language(" tr ")
     assert controller.untagged["value"] == "tr"
+    assert controller.untagged["label"] == "Turkish (tr)"
     assert controller.batches.own(controller._key)  # type: ignore[arg-type]
     controller.set_untagged_language("not a language")
     assert "not a language" in controller.untagged["problem"]

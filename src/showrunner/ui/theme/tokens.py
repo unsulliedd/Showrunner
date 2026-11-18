@@ -363,6 +363,9 @@ SIZES: dict[str, int] = {
     "palette_width": 560,  # the command palette
     "names_width": 420,  # the list of each file's name for a track, under a chip's ▾
     "names_height": 320,
+    "language_dialog_width": 780,  # the language picker
+    "language_list_height": 304,  # its list of languages
+    "language_side_height": 120,  # each of its short lists, regions and scripts
     "tracks_min_height": 160,  # the least Overview's tracks box keeps when its separator is dragged up
     "rows_min_height": 120,  # the least Overview's file list keeps when the separator is dragged down
     "separator_step": 24,  # what an arrow key moves Overview's separator

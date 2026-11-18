@@ -21,7 +21,7 @@ from showrunner.core.naming import (
     parse,
     preview,
 )
-from showrunner.stages.tracks import TracksOptions
+from showrunner.stages.tracks import KindTest, TrackMatch, TrackRule, TracksOptions
 from showrunner.ui.quick import names
 from showrunner.ui.quick.names import NamesInput
 
@@ -290,3 +290,13 @@ def test_a_part_left_out_is_noted_only_where_a_file_differs(library: Library) ->
         )
     )["rows"]
     assert all(r["note"] == "" for r in audio)
+
+
+def test_a_name_reads_the_language_the_plan_gives_the_track(library: Library) -> None:
+    items = season(library)[:1]
+    naming = replace(NamingOptions(), audio_track_template="{language_code}")
+    rule = TrackRule(match=TrackMatch(kind=KindTest.AUDIO, languages=["tr"]), language="az", from_choice=True)
+    tracks = TracksOptions(rules=[rule])
+    shown = [e.after for e in names.named(items, "audio_track_template", naming, tracks)]
+    assert shown == ["en", "az", "en"]  # English, Turkish (now Azerbaijani) and the commentary
+    assert [e.after for e in names.named(items, "audio_track_template", naming, TracksOptions())] == ["en", "tr", "en"]

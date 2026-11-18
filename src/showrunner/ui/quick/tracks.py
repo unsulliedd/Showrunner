@@ -88,11 +88,23 @@ class Seen:
 
 
 def code(language: Language | None) -> str:
-    return language.alpha3.upper() if language is not None else NO_LANGUAGE.upper()
+    """The badge's text: the 3-letter code, then the script and the region when the tag has them (`POR-BR`)."""
+    if language is None:
+        return NO_LANGUAGE.upper()
+    return "-".join(part for part in (language.alpha3, language.script, language.region) if part).upper()
+
+
+def _tag_code(tag: str) -> str:
+    return code(Language.parse(tag)) if tag != NO_LANGUAGE else NO_LANGUAGE.upper()
 
 
 def _signature_code(signature: TrackSignature) -> str:
-    return code(Language.parse(signature.language)) if signature.language != NO_LANGUAGE else NO_LANGUAGE.upper()
+    return _tag_code(signature.language)
+
+
+def _shown_code(signature: TrackSignature, choice: TrackChoice) -> str:
+    """The badge of a chip, card or column: the language the choice gives the tracks, else the one they have."""
+    return _tag_code(choice.language or signature.language)
 
 
 def _codec(signature: TrackSignature) -> str:
@@ -408,7 +420,11 @@ class BatchView:
                 {
                     "id": index,
                     "kind": signature.kind.value,
-                    "code": _signature_code(signature),
+                    "code": _shown_code(signature, choice),
+                    # The language the tracks have and the tag the choice gives them (empty when it gives none), for
+                    # the picker and for a badge that says it was changed.
+                    "language": signature.language,
+                    "language_set": choice.language,
                     "title": tr("tracks.paired_file", format=column.paired.format)
                     if column.paired
                     else _codec(signature),
@@ -454,8 +470,8 @@ class BatchView:
         for item in self.items:
             cells = self.cells(item)
             pills = [
-                {**c, "code": _signature_code(col.signature), "added": col.paired is not None}
-                for c, col in zip(cells, self.cols, strict=True)
+                {**c, "code": _shown_code(col.signature, self.choice(index)), "added": col.paired is not None}
+                for index, (c, col) in enumerate(zip(cells, self.cols, strict=True))
                 if c["state"] not in ("missing", "paired")
             ]
             changes = self.changes(item)
@@ -552,7 +568,9 @@ class BatchView:
                 {
                     "id": index,
                     "kind": column.signature.kind.value,
-                    "code": _signature_code(column.signature),
+                    "code": _shown_code(column.signature, choice),
+                    "language": column.signature.language,
+                    "language_set": choice.language,
                     "title": tr("tracks.paired_file", format=column.paired.format)
                     if column.paired
                     else _codec(column.signature),
@@ -685,7 +703,12 @@ def rule_parts(
     "Keep audio in TUR · default", "Keep audio in ENG · default if none above", "Drop subtitles flagged SDH"."""
     match = rule.match
     # A choice of nothing, which a nearer place makes to take back a choice it receives.
-    blank = rule.from_choice and rule.verdict is Verdict.PASS and FlagShape.FIRST not in (rule.default, rule.forced)
+    blank = (
+        rule.from_choice
+        and rule.verdict is Verdict.PASS
+        and not rule.language
+        and FlagShape.FIRST not in (rule.default, rule.forced)
+    )
     verb = "leave" if blank else rule.verdict.value
     parts = [_part(tr(f"tracks.rule.verb.{verb}")), _part(tr(f"tracks.rule.kind.{match.kind.value}"))]
     if signature is not None:
@@ -723,6 +746,8 @@ def rule_parts(
                 for r in above
             )
             parts.append(_part(tr(f"tracks.rule.{flag}_fallback" if fallback else f"tracks.rule.{flag}")))
+    if rule.language:
+        parts += [_part(tr("tracks.rule.language")), _part(_tag_code(rule.language), True)]
     if blank:
         parts.append(_part(tr("tracks.rule.as_it_is")))
     return parts

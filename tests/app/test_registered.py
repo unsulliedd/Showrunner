@@ -9,7 +9,7 @@ from showrunner.app.profiles.profile import Profile, profile_from_json, profile_
 from showrunner.core.naming import NamingOptions
 from showrunner.core.options.registry import REGISTRY
 from showrunner.stages.metadata import MetadataOptions
-from showrunner.stages.tracks import TracksOptions
+from showrunner.stages.tracks import TrackRule, TracksOptions
 
 
 def test_every_stage_is_registered_once_the_module_is_imported() -> None:
@@ -67,3 +67,19 @@ def test_the_command_line_registers_every_stage_at_import() -> None:
     )
     out = subprocess.run([sys.executable, "-c", code], check=True, capture_output=True, text=True)
     assert {"naming", "tracks", "metadata"} <= set(out.stdout.split())
+
+
+def test_a_saved_rule_without_a_language_loads_and_one_with_a_language_keeps_it() -> None:
+    old = {"format": 1, "stages": {"tracks": {"rules": [{"verdict": "drop", "from_choice": True}]}}}
+    loaded = profile_from_json("old", old)
+    assert loaded.warnings == []
+    (rule,) = loaded.value.for_stage("tracks").rules
+    assert (rule.verdict.value, rule.language) == ("drop", "")
+
+    chosen = TrackRule(language="es-419", from_choice=True)
+    profile = Profile.defaults("custom").with_options("tracks", TracksOptions(rules=[chosen]))
+    stored = profile_to_json(profile)
+    assert stored["stages"]["tracks"]["rules"][0]["language"] == "es-419"
+    again = profile_from_json("custom", stored)
+    assert again.warnings == []
+    assert again.value == profile

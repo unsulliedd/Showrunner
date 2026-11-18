@@ -94,8 +94,12 @@ Item {
             }
 
             CodeBadge {
+                objectName: "chipBadge"
                 code: control.chip.code
                 look: control.chip.state
+                changed: control.chip.language_set !== ""
+                pickable: true
+                onPicked: app.pick_language(control.chip.id)
             }
 
             UiText {

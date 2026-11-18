@@ -47,14 +47,12 @@ Item {
                 font.pixelSize: Theme.text_sm
             }
 
-            InputField {
+            ActionButton {
                 objectName: "untaggedLanguage"
-                Layout.preferredWidth: Theme.swatch_width
-                mono: true
-                label: Strings.t("names.untagged")
-                placeholderText: Strings.t("names.untagged_none")
-                text: app.untagged.value
-                onEditingFinished: if (text !== app.untagged.value) app.set_untagged_language(text)
+                kind: "outline"
+                text: app.untagged.label
+                Accessible.name: Strings.t("names.untagged") + " " + app.untagged.label
+                onClicked: app.pick_untagged_language()
             }
 
             UiText {

@@ -98,6 +98,9 @@ class TrackRule:
     verdict: Verdict = Verdict.PASS
     default: FlagShape = FlagShape.LEAVE
     forced: FlagShape = FlagShape.LEAVE
+    # An IETF tag (`pt-BR`, `es-419`) the rule gives every track it fits, whatever the verdict says; empty leaves the
+    # language as it is. Of the rules that fit a track, the first with a language decides it.
+    language: str = ""
     # Written by a choice made directly on a track (a chip, a card or a column of the track matrix) rather than by
     # hand. It matches like any other rule; the mark tells the views which rule a choice owns.
     from_choice: bool = False

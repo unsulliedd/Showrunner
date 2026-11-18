@@ -62,6 +62,8 @@ def rich_file(path: Path) -> MediaFile:
             subtitle=SubtitleProperties(text_based=False),
         ),
         Track(23, TrackKind.SUBTITLE, "S_TEXT/UTF8", subtitle=SubtitleProperties()),
+        Track(24, TrackKind.AUDIO, "A_AAC", Language("spa", "419"), "Español", audio=AudioProperties()),
+        Track(25, TrackKind.AUDIO, "A_AAC", Language("deu", "CH", rest="1996"), "Deutsch", audio=AudioProperties()),
     )
     return MediaFile(
         path,
@@ -123,6 +125,13 @@ def test_a_probed_file_survives_the_round_trip_unchanged(tmp_path: Path) -> None
     assert media_from_json(file.path, json.loads(json.dumps(media_to_json(MediaFile(file.path, "")))))
 
 
+def test_a_language_stored_before_the_tag_had_a_rest_still_builds() -> None:
+    track = Track(0, TrackKind.AUDIO, "A_AAC", Language("por", "BR"))
+    stored = media_to_json(MediaFile(Path("x.mkv"), "", tracks=(track,)))
+    stored["tracks"][0]["language"] = {"alpha3": "por", "region": "BR", "script": None}
+    assert media_from_json(Path("x.mkv"), stored).tracks[0].language == Language("por", "BR")
+
+
 def test_the_stored_shape_is_the_one_the_format_version_was_set_for() -> None:
     # A field added to a stored type would be read back as its default from older entries: raise FORMAT_VERSION
     # in the cache module, then update this list.
@@ -141,7 +150,7 @@ def test_the_stored_shape_is_the_one_the_format_version_was_set_for() -> None:
             Language,
         )
     }
-    assert FORMAT_VERSION == 1
+    assert FORMAT_VERSION == 2
     assert shape == {
         "MediaFile": [
             "path",
@@ -163,7 +172,7 @@ def test_the_stored_shape_is_the_one_the_format_version_was_set_for() -> None:
         "Chapter": ["start", "end", "names"],
         "ChapterName": ["language", "text"],
         "Attachment": ["id", "file_name", "mime_type", "size", "description"],
-        "Language": ["alpha3", "region", "script"],
+        "Language": ["alpha3", "region", "script", "rest"],
     }
 
 

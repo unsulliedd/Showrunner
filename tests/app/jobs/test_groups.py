@@ -103,6 +103,23 @@ def test_leaving_tracks_out_means_no_new_file_and_the_names_go_in_place(tmp_path
     assert Property.FLAG_DEFAULT not in props(run.plan_for("metadata"))
 
 
+def test_a_language_a_rule_gives_goes_with_the_names_not_with_the_track_choices(
+    tmp_path: Path, profile: Profile
+) -> None:
+    canadian = TrackRule(match=TrackMatch(kind=KindTest.AUDIO, languages=["fr"]), language="fr-CA", from_choice=True)
+    both = with_rules(profile, DROP_FRENCH, canadian)
+    languages = replace(canadian, verdict=Verdict.PASS)
+    # The French track is dropped, so the language has no track to go to; keep it and it is a names change.
+    keeping = with_rules(profile, languages)
+    (full,) = preview([movie(tmp_path)], keeping, STAGES).files
+    assert Property.LANGUAGE in props(full.plan_for("metadata"))
+    (no_names,) = preview([movie(tmp_path)], keeping, STAGES, left_out={ChangeGroup.NAMES}).files
+    assert Property.LANGUAGE not in props(no_names.plan_for("metadata"))
+    (no_tracks,) = preview([movie(tmp_path)], both, STAGES, left_out={ChangeGroup.TRACKS}).files
+    assert props(no_tracks.plan_for("metadata")) >= {Property.LANGUAGE}
+    assert no_tracks.plan_for("tracks").state is PlanState.UNCHANGED  # type: ignore[union-attr]
+
+
 def test_leaving_every_group_out_changes_nothing(tmp_path: Path, profile: Profile) -> None:
     drops = with_rules(profile, DROP_FRENCH)
     (run,) = preview([movie(tmp_path)], drops, STAGES, left_out=set(ChangeGroup)).files
@@ -187,6 +204,22 @@ def test_leaving_out_the_track_choices_leaves_out_the_track_order() -> None:
     order = [TrackMatch(kind=KindTest.AUDIO, languages=["fr"])]
     profile = Profile("p", {"tracks": TracksOptions(rules=[DROP_FRENCH], order=order)})
     assert without(profile, ChangeGroup.TRACKS).for_stage("tracks") == TracksOptions()
+
+
+def test_a_rule_s_language_is_a_names_change_and_leaves_with_that_group() -> None:
+    gives = TrackRule(
+        match=TrackMatch(kind=KindTest.AUDIO, languages=["fr"]),
+        verdict=Verdict.DROP,
+        language="fr-CA",
+        from_choice=True,
+    )
+    profile = Profile.defaults("p").with_options("tracks", TracksOptions(rules=[gives, ENGLISH_DEFAULT]))
+    # Without the track choices the language stays, asking for nothing else.
+    (kept,) = without(profile, ChangeGroup.TRACKS).for_stage("tracks").rules
+    assert (kept.language, kept.verdict, kept.match) == ("fr-CA", Verdict.PASS, gives.match)
+    # Without the names the choices stay and the language goes.
+    rules = without(profile, ChangeGroup.NAMES).for_stage("tracks").rules
+    assert [(r.language, r.verdict) for r in rules] == [("", Verdict.DROP), ("", Verdict.PASS)]
 
 
 def test_an_order_alone_changes_the_options_key() -> None:

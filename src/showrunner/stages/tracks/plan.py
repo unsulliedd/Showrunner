@@ -170,6 +170,19 @@ def deciding(active: list[tuple[int, TrackRule]], track: Track, from_names: bool
     )
 
 
+def language_given(rules: Sequence[TrackRule], track: Track, from_names: bool) -> str:
+    """The tag the first switched-on rule that sets a language and fits `track` gives it; empty when none does. A rule
+    sets the language whatever its verdict is, so a track the rules keep, drop or leave alone gets it all the same."""
+    return next(
+        (
+            rule.language
+            for rule in rules
+            if rule.enabled and rule.language and matches(rule.match, track, flags_from_name=from_names)
+        ),
+        "",
+    )
+
+
 def _in_order(
     kept: list[tuple[Track, SubtitleFile | None]], order: list[TrackMatch], from_names: bool
 ) -> list[tuple[Track, SubtitleFile | None]]:

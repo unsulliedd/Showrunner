@@ -9,9 +9,18 @@ from pathlib import Path
 from showrunner.core.language import Language
 from showrunner.core.media import MediaItem
 from showrunner.core.naming import NamingContext, NamingOptions, Problem, preview
-from showrunner.core.track import TrackKind, flags_with_name
+from showrunner.core.track import Track, TrackKind, flags_with_name
 from showrunner.stages.metadata.options import MetadataOptions
-from showrunner.stages.tracks import FlagShape, PlannedTrack, PlanRefused, TrackPlan, TracksOptions, plan_tracks
+from showrunner.stages.tracks import (
+    FlagShape,
+    PlannedTrack,
+    PlanRefused,
+    TrackPlan,
+    TrackRule,
+    TracksOptions,
+    language_given,
+    plan_tracks,
+)
 from showrunner.tools.mkvtoolnix.propedit import Edit, Property
 
 # The flag properties and the `TrackFlags` field each one reads.
@@ -98,11 +107,19 @@ def named_tracks(item: MediaItem, tracks: TracksOptions) -> tuple[TrackPlan, Tra
 
 
 def naming_context(
-    item: MediaItem, naming: NamingOptions, tracks: TracksOptions, track: PlannedTrack | None, source: str = ""
+    item: MediaItem,
+    naming: NamingOptions,
+    tracks: TracksOptions,
+    track: PlannedTrack | None,
+    source: str = "",
+    language: str = "",
 ) -> NamingContext:
-    """What a template reads for the file's title (`track` None) or for one kept track."""
-    # The flags after the rules, so `{flags}` names what the track will be.
+    """What a template reads for the file's title (`track` None) or for one kept track. `language` is the tag the
+    track gets when it changes (`language_after`)."""
+    # The flags and the language after the rules, so `{flags}` and `{language}` name what the track will be.
     named = replace(track.track, flags=track.flags) if track else None
+    if named and language and (after := Language.parse(language)) is not None:
+        named = replace(named, language=after)
     template = _TEMPLATES[named.kind] if named else "title_template"
     return NamingContext(
         item,
@@ -132,14 +149,18 @@ def plan_metadata(
     # mkvpropedit edits Matroska and WebM files only.
     if file.container.casefold() not in {"matroska", "webm"}:
         refusals.append(MetadataProblem(MetadataProblemKind.NOT_MATROSKA, detail=file.container))
+    # The rules that give a language are read from the options as they were made: a file whose tracks the rules
+    # refuse to change still gets the languages they give.
+    language_rules, from_names = tracks.rules, tracks.flags_from_names
     track_plan, tracks = named_tracks(item, tracks)
     invalid: list[MetadataProblem] = []  # a problem of the options, which refuses every file
     language = _language(options.untagged_language, invalid)
+    given: dict[str, str] = {}  # the tag a rule gives, as the rule writes it, to the tag it comes to
 
     found: dict[str, dict[Problem, None]] = {}  # template option -> its problems, without repeats
 
-    def render(template: str, track: PlannedTrack | None) -> str:
-        result = preview(getattr(naming, template), naming_context(item, naming, tracks, track, source))
+    def render(template: str, track: PlannedTrack | None, tag: str = "") -> str:
+        result = preview(getattr(naming, template), naming_context(item, naming, tracks, track, source, tag))
         found.setdefault(template, {}).update(dict.fromkeys(result.problems))
         return result.text
 
@@ -155,11 +176,14 @@ def plan_metadata(
     # those changes go into the remux and never to mkvpropedit.
     for planned in track_plan.kept:
         track = planned.track
-        name = render(_TEMPLATES[track.kind], planned)
+        is_video = track.kind is TrackKind.VIDEO
+        wanted = "" if is_video else _wanted_language(track, language, language_rules, from_names, given, invalid)
+        name = render(_TEMPLATES[track.kind], planned, wanted)
         if name and name != track.name:
             changes.append(HeaderChange(Property.NAME, track.name, name, track.id))
-        if language and track.language is None and track.kind is not TrackKind.VIDEO:
-            changes.append(HeaderChange(Property.LANGUAGE, "", language, track.id))
+        if wanted:
+            was = track.language.ietf if track.language else ""
+            changes.append(HeaderChange(Property.LANGUAGE, was, wanted, track.id))
         changes += _flag_changes(planned, track_plan.needs_remux, options.write_implied_flags, ruled)
 
     problems = [
@@ -175,11 +199,38 @@ def plan_metadata(
     return MetadataPlan(file.path, tuple(changes), track_plan.needs_remux)
 
 
+def language_after(track: Track, rules: list[TrackRule], from_names: bool, untagged: str = "") -> str:
+    """The tag the plan gives `track` (a rule's, else the one for untagged tracks), empty when it keeps its language."""
+    if track.kind is TrackKind.VIDEO:
+        return ""
+    return _wanted_language(track, _language(untagged, []), rules, from_names, {}, [])
+
+
+def _wanted_language(
+    track: Track,
+    untagged: str,
+    rules: list[TrackRule],
+    from_names: bool,
+    given: dict[str, str],
+    refusals: list[MetadataProblem],
+) -> str:
+    """The tag the track gets, empty when it keeps its language: the one a rule gives it, else the one for untagged
+    tracks when it has none."""
+    if tag := language_given(rules, track, from_names):
+        if tag not in given:
+            given[tag] = _language(tag, refusals)
+        wanted = given[tag]
+    else:
+        wanted = untagged if track.language is None else ""
+    return "" if track.language is not None and wanted == track.language.ietf else wanted
+
+
 def _language(tag: str, refusals: list[MetadataProblem]) -> str:
     if not tag:
         return ""
     if (language := Language.parse(tag)) is None:
-        refusals.append(MetadataProblem(MetadataProblemKind.INVALID_LANGUAGE, detail=tag))
+        if not any(r.detail == tag for r in refusals):
+            refusals.append(MetadataProblem(MetadataProblemKind.INVALID_LANGUAGE, detail=tag))
         return ""
     return language.ietf
 

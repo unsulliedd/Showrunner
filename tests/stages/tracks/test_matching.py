@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from showrunner.core.language import Language, add_languages
 from showrunner.core.track import ObjectAudio
 from showrunner.stages.tracks import FlagTest, KindTest, SourceTest, TrackMatch, matches, stand_in
 
@@ -32,6 +33,33 @@ def test_a_tag_without_region_fits_every_region_but_a_region_must_agree(b: Simpl
     assert matches(TrackMatch(languages=["pt-BR"]), track)
     assert not matches(TrackMatch(languages=["pt-PT"]), track)
     assert not matches(TrackMatch(languages=["pt-BR"]), b.audio(2, language=b.en))
+
+
+def test_a_tag_is_matched_by_language_then_region_then_script_then_the_rest(b: SimpleNamespace) -> None:
+    # Decided: what a rule leaves out it does not test, so `eng` fits `en-US`; what it names must agree, so `pt-BR`
+    # does not fit a bare `pt` track and `es-419` fits only that area.
+    latin = b.audio(1, language=Language.parse("es-419"))
+    assert matches(TrackMatch(languages=["es"]), latin)
+    assert matches(TrackMatch(languages=["spa"]), latin)
+    assert matches(TrackMatch(languages=["es-419"]), latin)
+    assert not matches(TrackMatch(languages=["es-ES"]), latin)
+    assert not matches(TrackMatch(languages=["es-419"]), b.audio(2, language=Language.parse("es")))
+    serbian = b.audio(3, language=Language.parse("sr-Latn-RS"))
+    assert matches(TrackMatch(languages=["sr", "sr-Latn", "sr-RS", "sr-Latn-RS"]), serbian)
+    assert not matches(TrackMatch(languages=["sr-Cyrl"]), serbian)
+    swiss = b.audio(4, language=Language.parse("de-CH-1996"))
+    assert matches(TrackMatch(languages=["de", "de-CH", "de-CH-1996"]), swiss)
+    assert not matches(TrackMatch(languages=["de-CH-1901"]), swiss)
+    assert not matches(TrackMatch(languages=["de-CH-1996"]), b.audio(5, language=Language.parse("de-CH")))
+
+
+def test_a_collective_code_matches_once_a_program_has_added_it(b: SimpleNamespace) -> None:
+    assert not matches(TrackMatch(languages=["roa"]), b.audio(1))
+    add_languages({"roa": "Romance languages"})
+    try:
+        assert matches(TrackMatch(languages=["roa"]), b.audio(1, language=Language.parse("roa")))
+    finally:
+        add_languages({})
 
 
 def test_no_language(b: SimpleNamespace) -> None:

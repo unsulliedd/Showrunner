@@ -34,7 +34,7 @@ from showrunner.tools.probe import Programs
 _log = logging.getLogger(__name__)
 
 # Raised whenever the stored shape of a media file changes, so no entry is read back into a shape it was not made for.
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 type Entries = dict[str, Any]  # by the file's resolved path
 

@@ -47,6 +47,7 @@ from showrunner.stages.metadata import (
     MetadataPlan,
     MetadataProblemKind,
     MetadataRefused,
+    language_after,
     named_tracks,
     naming_context,
 )
@@ -257,8 +258,11 @@ class Named:
     after: str  # empty when the template gives nothing, which leaves the name as it is
 
 
-def named(items: Sequence[MediaItem], template: str, naming: NamingOptions, tracks: TracksOptions) -> list[Named]:
-    """The batch's titles, or the names of the kept tracks of the template's kind, in file order."""
+def named(
+    items: Sequence[MediaItem], template: str, naming: NamingOptions, tracks: TracksOptions, untagged: str = ""
+) -> list[Named]:
+    """The batch's titles, or the names of the kept tracks of the template's kind, in file order. `untagged` is the
+    language given to tracks without one, which a name reads as the plan does."""
     found = []
     for item in items:
         plan, options = named_tracks(item, tracks)
@@ -266,7 +270,8 @@ def named(items: Sequence[MediaItem], template: str, naming: NamingOptions, trac
             [None] if template == TITLE_TEMPLATE else [p for p in plan.kept if p.track.kind is TRACK_KIND[template]]
         )
         for track in entries:
-            context = naming_context(item, naming, options, track)
+            tag = language_after(track.track, tracks.rules, tracks.flags_from_names, untagged) if track else ""
+            context = naming_context(item, naming, options, track, language=tag)
             now = item.file.title if track is None else track.track.name
             found.append(Named(item, track, context, now, preview(getattr(naming, template), context).text))
     return found
@@ -471,6 +476,7 @@ class NamesInput:
     files: Sequence[FilePreview]  # the live plan, when it is current
     block: StageBlock | None  # why the metadata stage is not planned
     batch_title: str
+    untagged: str = ""  # the language given to tracks without one
 
 
 def _file_label(item: MediaItem) -> str:
@@ -486,12 +492,16 @@ def place(given: NamesInput) -> dict[str, object]:
     text = getattr(naming, template)
     counts = card_counts(given.files)
     focus = given.focus or (given.items[0] if given.items else None)
-    entries = named(given.items, template, naming, given.tracks) if given.items else []
+    entries = named(given.items, template, naming, given.tracks, given.untagged) if given.items else []
     focused = next((e for e in entries if e.item is focus), None)
     cards = []
     for name in TEMPLATES:
         own = getattr(naming, name)
-        sample = next((e for e in named([focus], name, naming, given.tracks) if e.after), None) if focus else None
+        sample = (
+            next((e for e in named([focus], name, naming, given.tracks, given.untagged) if e.after), None)
+            if focus
+            else None
+        )
         cards.append(
             {
                 "key": name,
@@ -626,8 +636,8 @@ def _panel_context(given: NamesInput) -> tuple[NamingContext | None, NamingConte
     focus = given.focus or (given.items[0] if given.items else None)
     if focus is None:
         return None, None
-    entries = named([focus], given.template, given.naming, given.tracks)
-    title = named([focus], TITLE_TEMPLATE, given.naming, given.tracks)[0].context
+    entries = named([focus], given.template, given.naming, given.tracks, given.untagged)
+    title = named([focus], TITLE_TEMPLATE, given.naming, given.tracks, given.untagged)[0].context
     track = entries[0].context if entries and given.template != TITLE_TEMPLATE else None
     return title, track
 
@@ -733,7 +743,9 @@ def _code_formats(naming: NamingOptions, focus: MediaItem | None) -> dict[str, o
 def _editor(given: NamesInput, token: CustomToken, index: int, problems: list[TokenProblem]) -> dict[str, object]:
     first = next((i for i, t in enumerate(given.naming.custom_tokens) if t.name == token.name), index)
     own = [p for p in problems if p.name == token.name] if first == index else []
-    contexts = [named([item], TITLE_TEMPLATE, given.naming, given.tracks)[0].context for item in given.items]
+    contexts = [
+        named([item], TITLE_TEMPLATE, given.naming, given.tracks, given.untagged)[0].context for item in given.items
+    ]
     values = [preview(f"{{{token.name}}}", c).text for c in contexts]
     focus = given.focus or (given.items[0] if given.items else None)
     on_focus = next((v for item, v in zip(given.items, values, strict=True) if item is focus), "")

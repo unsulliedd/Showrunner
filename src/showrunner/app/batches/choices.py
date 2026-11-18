@@ -141,11 +141,13 @@ class TrackGroups:
 @dataclass(frozen=True, slots=True)
 class TrackChoice:
     """`verdict` keeps or drops the tracks; `pass` leaves that to the other rules. `default` and `forced` give the
-    flag to the first such track of its kind; a dropped track takes no flag."""
+    flag to the first such track of its kind; a dropped track takes no flag. `language` is the IETF tag the tracks get,
+    empty to leave theirs; it is kept when a drop is undone, since the track may come back."""
 
     verdict: Verdict = Verdict.PASS
     default: bool = False
     forced: bool = False
+    language: str = ""
 
 
 NO_CHOICE = TrackChoice()
@@ -158,7 +160,7 @@ def choice_of(options: TracksOptions, signature: TrackSignature) -> TrackChoice:
     if index is None or not options.rules[index].enabled:
         return NO_CHOICE
     rule = options.rules[index]
-    return TrackChoice(rule.verdict, rule.default is FlagShape.FIRST, rule.forced is FlagShape.FIRST)
+    return TrackChoice(rule.verdict, rule.default is FlagShape.FIRST, rule.forced is FlagShape.FIRST, rule.language)
 
 
 def choose(
@@ -176,7 +178,7 @@ def choose(
     English"). With `lead`, a new rule goes first of all: the choice on one name of a chip (`named`) has to be tried
     before the chip's own choice, which fits every name."""
     if choice.verdict is Verdict.DROP:
-        choice = TrackChoice(Verdict.DROP)
+        choice = TrackChoice(Verdict.DROP, language=choice.language)
     rules = list(options.rules)
     index = choice_index(rules, signature)
     if index is not None:
@@ -191,6 +193,7 @@ def choose(
                 verdict=choice.verdict,
                 default=FlagShape.FIRST if choice.default else FlagShape.LEAVE,
                 forced=FlagShape.FIRST if choice.forced else FlagShape.LEAVE,
+                language=choice.language,
                 from_choice=True,
             ),
         )

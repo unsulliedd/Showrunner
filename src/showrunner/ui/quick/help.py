@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from showrunner.ui.i18n.catalog import tr
 
-HELP_TOPICS: tuple[str, ...] = ("rules", "first_kept", "exclude", "replace_values", "discard", "names")
+HELP_TOPICS: tuple[str, ...] = ("rules", "first_kept", "exclude", "replace_values", "discard", "names", "language")
 
 
 def help_topic(topic: str) -> dict[str, str]:

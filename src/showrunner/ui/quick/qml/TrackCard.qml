@@ -88,8 +88,12 @@ Item {
         spacing: Theme.space_lg
 
         CodeBadge {
+            objectName: "cardBadge"
             code: card.track.code
             look: card.track.state
+            changed: card.track.language_set !== ""
+            pickable: true
+            onPicked: app.pick_language(card.track.id)
         }
 
         ColumnLayout {

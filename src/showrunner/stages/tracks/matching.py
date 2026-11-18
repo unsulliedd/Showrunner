@@ -41,11 +41,6 @@ def matches(match: TrackMatch, track: Track, *, flags_from_name: bool = True) ->
     )
 
 
-@lru_cache(maxsize=256)
-def _parse(tag: str) -> Language | None:
-    return Language.parse(tag)
-
-
 def _language_fits(tags: list[str], language: Language | None) -> bool:
     if not tags:
         return True
@@ -54,13 +49,14 @@ def _language_fits(tags: list[str], language: Language | None) -> bool:
             if language is None:
                 return True
             continue
-        wanted = _parse(tag)
+        wanted = Language.parse(tag)
         if wanted is None or language is None:
             continue
         if (
             wanted.alpha3 == language.alpha3
             and wanted.region in (None, language.region)
             and wanted.script in (None, language.script)
+            and wanted.rest in ("", language.rest)
         ):
             return True
     return False

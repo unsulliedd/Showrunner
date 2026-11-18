@@ -28,6 +28,7 @@ from showrunner.app.batches.batch import Batches, BatchKey, BatchKind, Media
 from showrunner.app.batches.choices import (
     NO_CHOICE,
     TrackChoice,
+    TrackSignature,
     add_paired,
     choice_of,
     move_rule,
@@ -45,6 +46,7 @@ from showrunner.app.jobs.preview import FileOutcome, FilePreview, Preview, previ
 from showrunner.app.jobs.run import JobResult, Read, StalePreviewError, create_job
 from showrunner.app.jobs.stages import Stage, pipeline
 from showrunner.app.jobs.store import JobStore, StepState
+from showrunner.app.languages import read_languages, use_languages
 from showrunner.app.library.library import Library, LibraryLoad
 from showrunner.app.library.loader import BackgroundJob, LibraryLoader
 from showrunner.app.profiles.errors import ProfileError, ProfileExistsError
@@ -52,6 +54,7 @@ from showrunner.app.profiles.profile import Profile
 from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME, ProfileStore
 from showrunner.app.settings.app_settings import Startup, load_settings, save_settings, with_recent
 from showrunner.app.storage.paths import jobs_path, read_cache_path
+from showrunner.core.language import Language
 from showrunner.core.media import MediaFile, MediaItem
 from showrunner.core.naming import (
     SUGGESTED_TEMPLATES,
@@ -67,7 +70,7 @@ from showrunner.core.naming import (
 )
 from showrunner.stages.mux import MuxResult, Original
 from showrunner.stages.scan.extensions import SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS
-from showrunner.stages.tracks import TracksOptions, Verdict
+from showrunner.stages.tracks import NO_LANGUAGE, TracksOptions, Verdict
 from showrunner.tools.dependencies.detect import DependencyStatus, State
 from showrunner.tools.dependencies.specs import SPEC_BY_ID
 from showrunner.ui.i18n.catalog import tr, tr_plural
@@ -75,6 +78,7 @@ from showrunner.ui.library.model import Kind, LibraryModel
 from showrunner.ui.quick import names as rail
 from showrunner.ui.quick.facts import heading, video_summary, when
 from showrunner.ui.quick.jobs import Jobs
+from showrunner.ui.quick.languages import LanguagePicker
 from showrunner.ui.quick.library import LibraryTree
 from showrunner.ui.quick.palette import Entry, search
 from showrunner.ui.quick.plans import LivePlanner
@@ -266,6 +270,11 @@ class WindowController(QObject):
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(SAVE_DELAY_MS)
         self._save_timer.timeout.connect(self._save_batches)
+        self._known_codes: frozenset[str] | None = None  # the codes MKVToolNix accepts; None without it
+        self._languages_from: Path | None = None  # the mkvmerge whose list of languages was asked for
+        self._picking: TrackSignature | None = None  # the chip the language picker is open for
+        self._language_picker = LanguagePicker(lambda: self._known_codes, parent=self)
+        self._language_picker.applied.connect(self._on_language_picked)
         self._rule_editor = RuleEditor(
             lambda: self._own_tracks() if self._key is not None else None,
             self._set_tracks,
@@ -912,7 +921,7 @@ class WindowController(QObject):
             verdict = Verdict.KEEP  # a hand-written rule drops it
         else:
             verdict = Verdict.DROP
-        chosen = TrackChoice(verdict, choice.default, choice.forced)
+        chosen = TrackChoice(verdict, choice.default, choice.forced, choice.language)
         self._set_tracks(self.batches.with_choice(self._key, col.signature, chosen))
 
     @Slot(int, str)
@@ -932,7 +941,9 @@ class WindowController(QObject):
             verdict = Verdict.PASS  # a keep that only carried the flag goes with it
         else:
             verdict = choice.verdict
-        options = self.batches.with_choice(self._key, col.signature, TrackChoice(verdict, **flags))
+        options = self.batches.with_choice(
+            self._key, col.signature, TrackChoice(verdict, **flags, language=choice.language)
+        )
         if col.paired is not None and header["state"] != "added":
             options = add_paired(options, col.paired, True)
         self._set_tracks(options)
@@ -993,16 +1004,65 @@ class WindowController(QObject):
         if 0 <= index < len(own.rules) and not own.rules[index].from_choice:
             self._set_tracks(replace(own, rules=own.rules[:index] + own.rules[index + 1 :]))
 
+    @Property(QObject, constant=True)
+    def language_picker(self) -> LanguagePicker:
+        """The picker a chip's badge and the Names place open."""
+        return self._language_picker
+
+    def _batch_languages(self) -> set[str]:
+        """The 3-letter codes of the languages the selected batch's tracks have, which the picker lists first."""
+        found = (Language.parse(c.signature.language) for c in (self._view.cols if self._view else ()))
+        return {language.alpha3 for language in found if language is not None}
+
+    @Slot(int)
+    def pick_language(self, column: int) -> None:
+        """Open the language picker for a chip, card or column: the language its tracks get, as a rule like the
+        other choices on it."""
+        found = self._column(column)
+        if found is None or self._view is None or self.locked:
+            return
+        col, header = found
+        choice = choice_of(self._tracks(), col.signature)
+        tag = choice.language or (col.signature.language if col.signature.language != NO_LANGUAGE else "")
+        self._picking = col.signature
+        what = f"{header['code']} {header['title']}".strip()
+        title = tr("language.title.chip", what=what)
+        self._language_picker.begin("chip", title, tag, self._batch_languages(), clearable=bool(choice.language))
+
+    @Slot()
+    def pick_untagged_language(self) -> None:
+        """Open the language picker for the tracks that have no language, as the Names place asks."""
+        if self._key is None or self.locked:
+            return
+        tag = self.batches.profile(self._key).for_stage("metadata").untagged_language
+        self._picking = None
+        self._language_picker.begin("untagged", tr("names.untagged"), tag, self._batch_languages(), clearable=bool(tag))
+
+    def _on_language_picked(self, target: str, tag: str) -> None:
+        if target == "untagged":
+            self.set_untagged_language(tag)
+        elif target == "chip" and self._picking is not None and self._key is not None and not self.locked:
+            choice = choice_of(self._tracks(), self._picking)
+            self._set_tracks(self.batches.with_choice(self._key, self._picking, replace(choice, language=tag)))
+
     @Property("QVariantMap", notify=batch_changed)
     def untagged(self) -> dict[str, str]:
         """The language given to tracks that have none, in the selected batch, and why it cannot be used."""
         if self._key is None:
-            return {"value": "", "problem": ""}
+            return {"value": "", "label": tr("names.untagged_none"), "problem": ""}
         profile = self.batches.profile(self._key)
         block = blocked_stages(profile).get("metadata")
         bad = block.language if block is not None else ""
+        value = profile.for_stage("metadata").untagged_language
+        language = Language.parse(value) if value else None
+        label = (
+            tr("language.untagged_value", name=language.display, tag=language.ietf)
+            if language is not None
+            else value or tr("names.untagged_none")
+        )
         return {
-            "value": profile.for_stage("metadata").untagged_language,
+            "value": value,
+            "label": label,
             "problem": tr("names.blocked.language", language=bad) if bad else "",
         }
 
@@ -1298,6 +1358,7 @@ class WindowController(QObject):
                 files=self._current_files(),
                 block=blocked_stages(profile).get("metadata"),
                 batch_title=heading(self._key, self._items).title,
+                untagged=profile.for_stage("metadata").untagged_language,
             )
             built = {
                 "place": rail.place(given),
@@ -1690,12 +1751,30 @@ class WindowController(QObject):
 
     def _set_statuses(self, statuses: Statuses) -> None:
         self._statuses = statuses
+        self._load_languages(programs_from(statuses).mkvmerge)
         self.programs_changed.emit()
         self._replan()  # which stages plan depends on the programs found
         if not self._offered:
             # Jobs are offered once the programs are known, since resuming one runs them.
             self._offered = True
             self.jobs.check_unfinished()
+
+    def _load_languages(self, mkvmerge: Path | None) -> None:
+        """Read MKVToolNix's list of languages once per program: the picker works without it, and with it gains the
+        codes babelfish lacks and the check of a typed tag. Asked in the background, taken here, where languages are
+        read."""
+        if self._languages_from == mkvmerge and (mkvmerge is None or self._known_codes is not None):
+            return
+        self._languages_from = mkvmerge
+        job = BackgroundJob(partial(read_languages, mkvmerge))
+        job.finished.connect(self._on_languages_read)
+        job.failed.connect(self._on_languages_read)
+        job.start()
+
+    def _on_languages_read(self, rows: object) -> None:
+        self._known_codes = use_languages(rows) if isinstance(rows, tuple) else use_languages(None)
+        self._language_picker.refresh_languages()
+        self._replan()  # a saved choice of a code that only MKVToolNix lists can now be read
 
     @Property(list, notify=programs_changed)
     def programs(self) -> list[dict[str, Any]]:

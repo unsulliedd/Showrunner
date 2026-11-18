@@ -14,6 +14,7 @@ from showrunner.stages.metadata import (
     MetadataPlan,
     MetadataProblemKind,
     MetadataRefused,
+    language_after,
     plan_metadata,
 )
 from showrunner.stages.tracks import FlagShape, KindTest, PairedFile, TrackMatch, TrackRule, TracksOptions, Verdict
@@ -120,6 +121,72 @@ def test_a_language_is_written_to_audio_and_subtitle_tracks_without_one(b: Simpl
         (Property.LANGUAGE, 1, "", "pt-BR"),
         (Property.LANGUAGE, 3, "", "pt-BR"),
     ]
+
+
+def language_rule(tag: str, **match) -> TrackRule:
+    return TrackRule(match=TrackMatch(**match), language=tag, from_choice=True)
+
+
+def test_a_rule_gives_its_tag_to_the_tracks_it_fits_and_to_no_others(b: SimpleNamespace) -> None:
+    item = b.item(b.video(0), b.audio(1, language="eng"), b.audio(2, language="tur"), b.subtitle(3, language="eng"))
+    tracks = rules(language_rule("es-419", kind=KindTest.AUDIO, languages=["en"]))
+    assert changes(plan(item, MetadataOptions(), NO_NAMES, tracks)) == [(Property.LANGUAGE, 1, "en", "es-419")]
+
+
+def test_a_rule_also_gives_a_language_to_a_track_without_one_and_wins_over_the_untagged_choice(
+    b: SimpleNamespace,
+) -> None:
+    item = b.item(b.audio(0, language=None), b.audio(1, "Special", language=None))
+    tracks = rules(language_rule("sr-Latn-RS", name="Special"))
+    result = plan(item, MetadataOptions(untagged_language="pt-BR"), NO_NAMES, tracks)
+    assert changes(result) == [(Property.LANGUAGE, 0, "", "pt-BR"), (Property.LANGUAGE, 1, "", "sr-Latn-RS")]
+
+
+def test_a_rule_that_gives_what_the_track_has_changes_nothing(b: SimpleNamespace) -> None:
+    item = b.item(b.audio(0, language="por"))
+    assert changes(plan(item, MetadataOptions(), NO_NAMES, rules(language_rule("pt")))) == []
+    assert changes(plan(item, MetadataOptions(), NO_NAMES, rules(language_rule("pt-BR")))) == [
+        (Property.LANGUAGE, 0, "pt", "pt-BR")
+    ]
+
+
+def test_the_first_rule_that_sets_a_language_decides_and_a_paused_one_does_not(b: SimpleNamespace) -> None:
+    item = b.item(b.audio(0, language="eng"))
+    paused = replace(language_rule("fr"), enabled=False)
+    tracks = rules(paused, language_rule("de"), language_rule("es"))
+    assert changes(plan(item, MetadataOptions(), NO_NAMES, tracks)) == [(Property.LANGUAGE, 0, "en", "de")]
+
+
+def test_a_rule_sets_the_language_whatever_it_decides_about_keeping(b: SimpleNamespace) -> None:
+    item = b.item(b.audio(0, language="eng"), b.audio(1, language="tur"))
+    kept = TrackRule(match=TrackMatch(languages=["tur"]), verdict=Verdict.KEEP, language="de")
+    dropping = TrackRule(match=TrackMatch(languages=["eng"]), verdict=Verdict.DROP, language="fr")
+    result = plan(item, MetadataOptions(), NO_NAMES, rules(kept, dropping))
+    # The dropped track is not in the new file, so it gets nothing.
+    assert changes(result) == [(Property.LANGUAGE, 1, "tr", "de")]
+
+
+def test_a_rule_that_is_not_a_language_refuses_the_plan(b: SimpleNamespace) -> None:
+    item = b.item(b.audio(0, language="eng"), b.audio(1, language="eng"))
+    result = plan(item, MetadataOptions(), NO_NAMES, rules(language_rule("xx-1")))
+    assert isinstance(result, MetadataRefused)
+    assert [(p.kind, p.detail) for p in result.problems] == [(MetadataProblemKind.INVALID_LANGUAGE, "xx-1")]
+
+
+def test_a_rule_for_en_reaches_the_en_us_tracks_too(b: SimpleNamespace) -> None:
+    # A known limit of a chip's rule: a tag without a region fits every region of the language.
+    item = b.item(b.audio(0, language="eng"), b.audio(1, language="en-US"))
+    result = plan(item, MetadataOptions(), NO_NAMES, rules(language_rule("de", languages=["en"])))
+    assert changes(result) == [(Property.LANGUAGE, 0, "en", "de"), (Property.LANGUAGE, 1, "en-US", "de")]
+    # A rule for the region alone reaches that region alone.
+    result = plan(item, MetadataOptions(), NO_NAMES, rules(language_rule("de", languages=["en-US"])))
+    assert changes(result) == [(Property.LANGUAGE, 1, "en-US", "de")]
+
+
+def test_a_refused_track_plan_still_gets_the_languages(b: SimpleNamespace) -> None:
+    item = b.item(b.video(0), b.audio(1, language="eng"))
+    tracks = rules(drop(kind=KindTest.AUDIO), language_rule("de"))
+    assert changes(plan(item, MetadataOptions(), NO_NAMES, tracks)) == [(Property.LANGUAGE, 1, "en", "de")]
 
 
 def test_no_language_is_written_unless_one_is_chosen(b: SimpleNamespace) -> None:
@@ -271,3 +338,28 @@ def test_every_problem_is_listed(b: SimpleNamespace) -> None:
 def test_a_change_gives_the_edit_the_adapter_needs() -> None:
     edit = HeaderChange(Property.FLAG_FORCED, False, True, 4).edit
     assert (edit.prop, edit.value, edit.track_id) == (Property.FLAG_FORCED, True, 4)
+
+
+def test_a_template_names_the_language_the_track_gets_not_the_one_it_has(b: SimpleNamespace) -> None:
+    naming = replace(NO_NAMES, audio_track_template="{language} ({language_code})")
+    item = b.item(b.audio(0, language="eng"), b.audio(1, language=None))
+    tracks = rules(language_rule("de", languages=["en"]))
+    result = plan(item, MetadataOptions(untagged_language="pt-BR"), naming, tracks)
+    assert changes(result) == [
+        (Property.NAME, 0, "", "German (de)"),
+        (Property.LANGUAGE, 0, "en", "de"),
+        (Property.NAME, 1, "", "Portuguese (pt-BR)"),
+        (Property.LANGUAGE, 1, "", "pt-BR"),
+    ]
+    # With nothing to change the track's own language is named.
+    assert changes(plan(item, MetadataOptions(), naming, NO_RULES)) == [(Property.NAME, 0, "", "English (en)")]
+
+
+def test_the_language_a_plan_gives_is_what_the_names_place_reads(b: SimpleNamespace) -> None:
+    audio, untagged, video = b.audio(0, language="eng"), b.audio(1, language=None), b.video(2)
+    rule = [language_rule("de", languages=["en"])]
+    assert language_after(audio, rule, True) == "de"
+    assert language_after(untagged, rule, True) == ""
+    assert language_after(untagged, rule, True, "pt-BR") == "pt-BR"
+    assert language_after(audio, [], True, "pt-BR") == ""  # it has a language: the untagged choice does not apply
+    assert language_after(video, rule, True, "pt-BR") == ""

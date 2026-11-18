@@ -51,6 +51,19 @@ def test_arguments_select_tracks_per_source_and_set_every_value() -> None:
     assert arguments[-2:] == ["--track-order", "0:0,0:2,1:0"]
 
 
+def test_a_language_is_passed_as_its_tag_with_the_region_and_script() -> None:
+    def tag(language: str) -> list[str]:
+        track = OutputTrack(0, 1, TrackKind.AUDIO, "", Language.parse(language), TrackFlags())
+        arguments = build_arguments(Merge(Path("out.mkv"), (Path("video.mkv"),), (track,), ""))
+        return [arguments[i + 1] for i, a in enumerate(arguments) if a == "--language"]
+
+    assert tag("pt-BR") == ["1:pt-BR"]
+    assert tag("es-419") == ["1:es-419"]
+    assert tag("sr-Latn-RS") == ["1:sr-Latn-RS"]
+    assert tag("cmn") == ["1:cmn"]
+    assert tag("de-CH-1996") == ["1:de-CH-1996"]
+
+
 def test_every_flag_is_passed_with_its_value() -> None:
     # mkvmerge would otherwise make an added subtitle a default track.
     arguments = build_arguments(SPEC)

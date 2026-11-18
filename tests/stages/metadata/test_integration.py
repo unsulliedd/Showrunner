@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from showrunner.core.language import Language
+from showrunner.app.languages import load_known_codes
+from showrunner.core.language import Language, add_languages
 from showrunner.core.media import Episode, MediaItem
 from showrunner.core.naming import SUGGESTED_TEMPLATES, NamingOptions
 from showrunner.stages.metadata import MetadataOptions, MetadataPlan, apply_metadata, plan_metadata
@@ -86,3 +87,36 @@ def test_a_plan_is_applied_to_a_real_file_and_found_there_afterwards(episode: Me
     assert (subtitle.language, subtitle.flags.hearing_impaired) == (Language.parse("eng"), True)
     # The rule moves the default from the second audio track to the first.
     assert (first.flags.default, second.flags.default) == (True, False)
+
+
+def test_rules_give_a_real_file_tags_with_a_region_script_and_collective_code(episode: MediaItem) -> None:
+    known = load_known_codes(MKVMERGE)
+    try:
+        assert known is not None
+        rules = [
+            TrackRule(
+                match=TrackMatch(kind=KindTest.AUDIO, languages=["und"], name="^$", name_is_regex=True),
+                language="es-419",
+            ),
+            TrackRule(match=TrackMatch(kind=KindTest.SUBTITLE, languages=["eng"]), language="roa"),
+        ]
+        tracks = TracksOptions(rules=rules)
+        plan = plan_metadata(episode, MetadataOptions(), NamingOptions(), tracks)
+        assert isinstance(plan, MetadataPlan)
+        assert not plan.needs_remux
+        assert sorted((c.track_id, c.old, c.new) for c in plan.changes) == [
+            (1, "", "es-419"),
+            (2, "", "es-419"),
+            (3, "en", "roa"),
+        ]
+        result = apply_metadata(plan, MKVPROPEDIT, Programs(mkvmerge=MKVMERGE))
+        assert result.ok, result
+        raw = subprocess.run([str(MKVMERGE), "-J", str(episode.file.path)], check=True, capture_output=True, text=True)
+        written = [
+            (p["properties"]["language"], p["properties"]["language_ietf"]) for p in json.loads(raw.stdout)["tracks"]
+        ]
+        assert written[1:] == [("spa", "es-419"), ("spa", "es-419"), ("roa", "roa")]
+        after = probe(episode.file.path, Programs(mkvmerge=MKVMERGE))
+        assert [t.language for t in after.tracks[1:]] == [Language.parse("es-419")] * 2 + [Language.parse("roa")]
+    finally:
+        add_languages({})
