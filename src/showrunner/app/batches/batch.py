@@ -199,11 +199,13 @@ class Batches:
         received = self.received(key)
         return choice_of(received.for_stage("tracks"), signature) if received is not None else NO_CHOICE
 
-    def with_choice(self, key: BatchKey, signature: TrackSignature, choice: TrackChoice) -> TracksOptions:
+    def with_choice(
+        self, key: BatchKey, signature: TrackSignature, choice: TrackChoice, lead: bool = False
+    ) -> TracksOptions:
         """The place's own track options (`own_tracks`) with `choice` as its choice on `signature`. A choice equal to
         the one received leaves the place following its parent there; another one, no choice included, overrides it
-        for this place."""
-        return choose(self.own_tracks(key), signature, choice, self.received_choice(key, signature))
+        for this place. `lead` puts a new rule ahead of every other (see `choose`)."""
+        return choose(self.own_tracks(key), signature, choice, self.received_choice(key, signature), lead)
 
     def set_options(self, key: BatchKey, stage_id: str, options: Any) -> None:
         """Set a place's options of one stage. A root's go into its working copy. A nearer place keeps the fields that

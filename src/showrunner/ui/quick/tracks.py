@@ -18,6 +18,8 @@ from showrunner.app.batches.choices import (
     choice_index,
     choice_of,
     in_order,
+    name_of_rule,
+    named,
     signature_of,
 )
 from showrunner.app.jobs.counts import count_changes
@@ -40,6 +42,7 @@ from showrunner.stages.tracks import (
     TrackRule,
     TracksOptions,
     Verdict,
+    deciding,
     matches,
     stand_in,
 )
@@ -238,7 +241,10 @@ class BatchView:
         """Where a column's choice comes from: `from` names the place above that made it, `over` the place whose
         choice the batch's own one overrides, `short` either of them for a narrow column; all empty when the choice
         is the batch's own and nothing came from above, or when there is none."""
-        signature, received = self.cols[index].signature, self.received
+        return self._mark(self.cols[index].signature)
+
+    def _mark(self, signature: TrackSignature) -> dict[str, str]:
+        received = self.received
         at = choice_index(self.options.rules, signature)
         origin = received.origins[at] if at is not None and at < len(received.origins) else ""
         if origin:
@@ -282,6 +288,43 @@ class BatchView:
             )
         return rows
 
+    def name_rows(self, index: int) -> list[dict[str, object]]:
+        """The lines of a chip's ▾ list. Where the chip's tracks carry two or more names, one line per name, with the
+        files that use it, and the line is `clickable`: a click keeps or drops the tracks with that name (a rule ahead
+        of the chip's own choice). Else one line per file, as `names` has them, which no click acts on (one name is the
+        chip's own choice, and a chip told apart by name has only that name). Names differing in case are one name,
+        as the rule's name test ignores case."""
+        if not 0 <= index < len(self.cols) or self.cols[index].paired is not None:
+            return []
+        column, one_season = self.cols[index], self._one_season()
+        groups: dict[str, tuple[str, list[MediaItem]]] = {}
+        for item, name in self._named().get(column.signature, []):
+            groups.setdefault(name.casefold(), (name, []))[1].append(item)
+        if len(groups) < 2 or column.signature.name is not None:
+            return [_name_row(text) for text in self.names(index)]
+        options = self.options
+        active = [(n, rule) for n, rule in enumerate(options.rules) if rule.enabled]
+        rows = []
+        for key, (name, items) in groups.items():
+            number = tr("common.list_separator").join(file_label(i, one_season) for i in items)
+            text = tr("tracks.names.row" if name else "tracks.names.none", number=number, name=name)
+            signature = named(column.signature, name)
+            tracks = [
+                t
+                for i in items
+                for t in i.file.tracks
+                if self.grouping.signature(t) == column.signature and t.name.casefold() == key
+            ]
+            decided = [deciding(active, t, options.flags_from_names) for t in tracks]
+            dropped = bool(decided) and all(d is not None and d[1].verdict is Verdict.DROP for d in decided)
+            # The place's mark shows only where this name's own rule decides.
+            owned = decided and decided[0] is not None and decided[0][0] == choice_index(options.rules, signature)
+            mark = self._mark(signature) if owned else {"from": "", "over": "", "short": ""}
+            state = tr(f"tracks.state.{'dropped' if dropped else 'kept'}")
+            label = f"{text} {state} {mark['from'] or mark['over']}".strip()
+            rows.append(_name_row(text, clickable=True, name=name, dropped=dropped, mark=mark, label=label))
+        return rows
+
     def _one_season(self) -> bool:
         return len({(i.identity.show, i.identity.season) for i in self.items if isinstance(i.identity, Episode)}) <= 1
 
@@ -303,8 +346,24 @@ class BatchView:
         return [
             item
             for item in self.items
-            if self.was_read(item) and self.file(item) is not None and self.cells(item)[index]["state"] == "kept"
+            if self.was_read(item)
+            and self.file(item) is not None
+            and self.cells(item)[index]["state"] == "kept"
+            and not self.kept_by_name(item, index)
         ]
+
+    def kept_by_name(self, item: MediaItem, index: int) -> bool:
+        """Whether a rule for one name of the column keeps the file's track on purpose, though the chip drops the rest:
+        such a track is not one the plan holds back."""
+        signature = self.cols[index].signature
+        active = [(n, rule) for n, rule in enumerate(self.options.rules) if rule.enabled]
+        for track in item.file.tracks:
+            if self.grouping.signature(track) != signature:
+                continue
+            decided = deciding(active, track, self.options.flags_from_names)
+            if decided is not None and decided[1].verdict is Verdict.KEEP and name_of_rule(decided[1], [signature]):
+                return True
+        return False
 
     def missing(self, index: int) -> str:
         """The line under a column's names that says which files lack the track; empty when none does."""
@@ -332,12 +391,6 @@ class BatchView:
         grid = [self.cells(item) for item in self.items]
         # Rows of files that were read: an unread file counts neither as having a track nor as lacking it.
         read = [row for item, row in zip(self.items, grid, strict=True) if self.was_read(item)]
-        # Of those, the rows whose plan has arrived; the same files `held` looks at.
-        planned = [
-            row
-            for item, row in zip(self.items, grid, strict=True)
-            if self.was_read(item) and self.file(item) is not None
-        ]
         headers = []
         for index, column in enumerate(self.cols):
             states = [row[index]["state"] for row in grid if row[index]["state"] != "missing"]
@@ -349,11 +402,7 @@ class BatchView:
                 dropped = choice.verdict is Verdict.DROP or (bool(states) and all(s == "dropped" for s in states))
                 state = "dropped" if dropped else "kept"
             lacking = sum(1 for row in read if row[index]["state"] == "missing")
-            held = (
-                sum(1 for row in planned if row[index]["state"] == "kept")
-                if column.paired is None and choice.verdict is Verdict.DROP
-                else 0
-            )
+            held = len(self.held(index))
             signature = column.signature
             headers.append(
                 {
@@ -561,9 +610,19 @@ class BatchView:
                     "inherited": bool(origin),
                     "from": tr(f"place.from.{origin}") if origin else "",
                     "label": rule.label,
-                    "parts": rule_parts(rule, signature_of(rule, signatures), self.options.rules[:index]),
+                    "parts": rule_parts(
+                        rule,
+                        signature_of(rule, signatures) or name_of_rule(rule, signatures),
+                        self.options.rules[:index],
+                    ),
                     "fits": tr_plural("tracks.rule.fits", fits),
-                    "source": tr("tracks.rule.from_matrix") if rule.from_choice else tr("tracks.rule.written"),
+                    "source": tr(
+                        "tracks.rule.written"
+                        if not rule.from_choice
+                        else "tracks.rule.from_name"
+                        if name_of_rule(rule, signatures)
+                        else "tracks.rule.from_matrix"
+                    ),
                 }
             )
         return rules
@@ -697,6 +756,26 @@ def _all(item: MediaItem, options: TracksOptions) -> list[Track]:
 
 def item_number(item: MediaItem) -> str:
     return f"{item.identity.episode:02d}" if isinstance(item.identity, Episode) else ""
+
+
+def _name_row(
+    text: str,
+    *,
+    clickable: bool = False,
+    name: str = "",
+    dropped: bool = False,
+    mark: Mapping[str, str] | None = None,
+    label: str = "",
+) -> dict[str, object]:
+    """One line of a chip's list; `label` is what a screen reader says."""
+    return {
+        "text": text,
+        "name": name,
+        "clickable": clickable,
+        "dropped": dropped,
+        **(mark or {"from": "", "over": "", "short": ""}),
+        "label": label or text,
+    }
 
 
 def file_label(item: MediaItem, one_season: bool) -> str:

@@ -125,14 +125,7 @@ def plan_tracks(item: MediaItem, options: TracksOptions) -> TrackPlan | PlanRefu
     kept: list[tuple[Track, SubtitleFile | None]] = []
     dropped: list[DroppedTrack] = []
     for track, external in entries:
-        decider = next(
-            (
-                (i, rule)
-                for i, rule in active
-                if rule.verdict is not Verdict.PASS and matches(rule.match, track, flags_from_name=from_names)
-            ),
-            None,
-        )
+        decider = deciding(active, track, from_names)
         if decider and decider[1].verdict is Verdict.DROP:
             dropped.append(DroppedTrack(track, external, *decider))
         else:
@@ -162,6 +155,19 @@ def plan_tracks(item: MediaItem, options: TracksOptions) -> TrackPlan | PlanRefu
         for n, (track, external) in enumerate(kept)
     )
     return TrackPlan(planned, tuple(dropped), kept != in_file_order)
+
+
+def deciding(active: list[tuple[int, TrackRule]], track: Track, from_names: bool) -> tuple[int, TrackRule] | None:
+    """The first switched-on rule that keeps or drops `track`, with its place in the rule list: the one that decides
+    its fate. `active` holds the switched-on rules with their places."""
+    return next(
+        (
+            (i, rule)
+            for i, rule in active
+            if rule.verdict is not Verdict.PASS and matches(rule.match, track, flags_from_name=from_names)
+        ),
+        None,
+    )
 
 
 def _in_order(

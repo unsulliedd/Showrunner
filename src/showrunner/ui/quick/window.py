@@ -32,6 +32,7 @@ from showrunner.app.batches.choices import (
     choice_of,
     move_rule,
     move_track,
+    named,
     pause_rule,
 )
 from showrunner.app.batches.leave_out import LeftOut
@@ -853,6 +854,31 @@ class WindowController(QObject):
     def track_names(self, column: int) -> list[str]:
         """The ▾ list of a chip or matrix column: each file's name for its track, built when the list opens."""
         return self._view.names(column) if self._view is not None else []
+
+    @Slot(int, result="QVariantList")
+    def track_name_rows(self, column: int) -> list[dict[str, Any]]:
+        """The lines of a chip's ▾ list, a clickable one per name where the chip's tracks carry several (see
+        `BatchView.name_rows`), built when the list opens and again with each plan."""
+        return self._view.name_rows(column) if self._view is not None else []
+
+    @Slot(int, str)
+    def toggle_name(self, column: int, name: str) -> None:
+        """A click on one name of a chip's list: drop the tracks with that name, keep them when they are dropped, and
+        take the choice back when it is already a drop, as for the chip. It is a rule ahead of the chip's own choice,
+        so the chip's other names stay as the chip has them."""
+        found = self._column(column)
+        if found is None or self._view is None or self._key is None:
+            return
+        col, _header = found
+        row = next((r for r in self._view.name_rows(column) if r["clickable"] and r["name"] == name), None)
+        if row is None:
+            return
+        signature = named(col.signature, name)
+        if choice_of(self._tracks(), signature).verdict is Verdict.DROP:
+            verdict = Verdict.PASS
+        else:
+            verdict = Verdict.KEEP if row["dropped"] else Verdict.DROP
+        self._set_tracks(self.batches.with_choice(self._key, signature, TrackChoice(verdict), lead=True))
 
     @Slot(int, result=str)
     def track_missing(self, column: int) -> str:

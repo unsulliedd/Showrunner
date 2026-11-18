@@ -19,7 +19,7 @@ Item {
     // Read again with each new view: the controller builds them when asked.
     readonly property var openNames: {
         overview.view
-        return openColumn < 0 ? [] : app.track_names(openColumn)
+        return openColumn < 0 ? [] : app.track_name_rows(openColumn)
     }
     readonly property string openMissing: {
         overview.view

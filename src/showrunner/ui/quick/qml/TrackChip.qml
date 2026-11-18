@@ -8,6 +8,8 @@ import Showrunner
 // file's name for the track, then the files that lack it. `chip` is a header from the controller; `namesOpen`, `rows`
 // and `missing` say whether the place has it open and what it lists. An open chip grows inside its own frame: wider,
 // when its names need it, up to the width its parent gives it, and taller up to `names_height`, where the list scrolls.
+// Where the tracks carry several names, each name is a line of its own that a click keeps or drops (a rule by name
+// ahead of the chip's choice); the list is one tab stop, Up and Down move along it and Space or Return acts.
 Item {
     id: control
 
@@ -19,6 +21,7 @@ Item {
     property string held: ""
     readonly property bool dropped: chip.state === "dropped"
     readonly property bool paired: chip.paired
+    readonly property bool clickable: rows.some(row => row.clickable)
     // Room the list's text needs, from the longest line (the names are set in a fixed-width face).
     readonly property real listWidth: metrics.advanceWidth + 2 * Theme.space_md + Theme.scroll_thumb + 2 * Theme.space_sm
 
@@ -33,7 +36,7 @@ Item {
 
         font.family: Theme.mono
         font.pixelSize: Theme.text_sm
-        text: control.namesOpen ? control.rows.reduce((a, b) => b.length > a.length ? b : a, "") : ""
+        text: control.namesOpen ? control.rows.reduce((a, b) => b.text.length > a.length ? b.text : a, "") : ""
     }
 
     Rectangle {
@@ -193,6 +196,16 @@ Item {
             model: control.namesOpen ? control.rows.length : 0
             ScrollBar.vertical: Scroller {}
             Accessible.role: Accessible.List
+            activeFocusOnTab: control.clickable
+            Keys.onSpacePressed: toggleCurrent()
+            Keys.onReturnPressed: toggleCurrent()
+            Keys.onEnterPressed: toggleCurrent()
+
+            function toggleCurrent() {
+                const row = control.rows[currentIndex]
+                if (row && row.clickable)
+                    app.toggle_name(control.chip.id, row.name)
+            }
 
             // The wheel over a list that scrolls moves only the list, also at its ends; the tracks box behind it
             // scrolls with the wheel anywhere else, and over a list that fits.
@@ -205,25 +218,95 @@ Item {
             }
             Accessible.name: Strings.t("tracks.names.open")
 
-            delegate: UiText {
-                required property int index
+            delegate: Item {
+                id: line
 
+                required property int index
+                readonly property var row: control.rows[index] ?? ({"text": "", "name": "", "clickable": false, "dropped": false, "from": "", "over": "", "short": "", "label": ""})
+                readonly property bool current: ListView.isCurrentItem && list.activeFocus && row.clickable
+
+                objectName: "chipNameRow"
                 width: list.width - Theme.scroll_thumb - Theme.space_sm
                 height: Theme.row_sm
-                text: control.rows[index]
-                mono: true
+                Accessible.role: row.clickable ? Accessible.Button : Accessible.StaticText
+                Accessible.name: row.label
+
+                Rectangle {
+                    anchors.fill: parent
+                    visible: row.clickable && (hover.hovered || line.current)
+                    radius: Theme.radius_sm
+                    color: hover.hovered ? Theme.panel_3 : "transparent"
+                    border.width: line.current ? Theme.stroke : 0
+                    border.color: Theme.control
+                }
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: Theme.space_sm
+                    anchors.rightMargin: Theme.space_sm
+                    spacing: Theme.space_md
+
+                    UiText {
+                        Layout.fillWidth: true
+                        text: line.row.text
+                        mono: true
+                        color: line.row.dropped ? Theme.drop : Theme.ink
+                        font.strikeout: line.row.dropped
+                    }
+
+                    PlaceMark {
+                        objectName: "nameMark"
+                        choice: line.row
+                    }
+                }
+
+                HoverHandler {
+                    id: hover
+
+                    enabled: line.row.clickable
+                    cursorShape: Qt.PointingHandCursor
+                }
+
+                TapHandler {
+                    enabled: line.row.clickable
+                    onTapped: {
+                        list.currentIndex = line.index
+                        app.toggle_name(control.chip.id, line.row.name)
+                    }
+                }
             }
 
             header: Item {
                 width: list.width - Theme.scroll_thumb - Theme.space_sm
-                height: control.held !== "" ? reason.implicitHeight + Theme.space_sm : 0
+                // Sized by binding, not by a layout, so the list starts below nothing when the reason is the first thing.
+                readonly property real hintHeight: control.clickable ? hint.height + Theme.space_sm : 0
+                height: hintHeight + (control.held !== "" ? reason.implicitHeight + Theme.space_sm : 0)
+
+                Row {
+                    id: hint
+
+                    visible: control.clickable
+                    spacing: Theme.space_md
+
+                    UiText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: Strings.t("tracks.names.hint")
+                        color: Theme.muted
+                        font.pixelSize: Theme.text_sm
+                    }
+
+                    HelpTip {
+                        anchors.verticalCenter: parent.verticalCenter
+                        topic: "names"
+                    }
+                }
 
                 UiText {
                     id: reason
 
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    anchors.top: parent.top
+                    y: parent.hintHeight
                     visible: control.held !== ""
                     text: control.held
                     color: Theme.change

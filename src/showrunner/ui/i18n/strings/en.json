@@ -644,6 +644,7 @@
   "tracks.names.missing": "Missing in {files}",
   "tracks.names.held": "Not dropped in {files}. {why}",
   "tracks.names.close": "Hide the track names",
+  "tracks.names.hint": "Click a name to keep or drop its tracks",
   "tracks.warning.refused": "Tracks stay as they are: the choices would leave {what}",
   "tracks.warning.and": " and ",
   "tracks.warning.no-video-left": "no video",
@@ -680,6 +681,7 @@
   "tracks.rule.fits.one": "fits 1 file",
   "tracks.rule.fits.other": "fits {count} files",
   "tracks.rule.from_matrix": "from the matrix",
+  "tracks.rule.from_name": "from a name",
   "tracks.rule.written": "written",
   "inspector.stays": "File name, chapters and attachments stay",
   "inspector.dropped_by": "· dropped by {rule}",
@@ -1279,5 +1281,8 @@
   "help.replace_values.example": "The row Dolby Digital Plus → DDP changes a file whose token reads Dolby Digital Plus to DDP in its name. A file that reads DTS is not touched.",
   "help.discard.title": "Discard changes",
   "help.discard.explanation": "Discard changes removes the choices made on this place and on the places inside it, so each follows the place above it again. Nothing is written to a file, and the places stay in the runs; Exclude is the way to leave one out. It asks first, naming what goes, and cannot be undone.",
-  "help.discard.example": "Season 1 drops the commentary tracks, and one of its episodes sets its own default subtitle. Discard changes on Season 1 removes both, and every episode follows the show's choices again. The show and its other seasons keep theirs."
+  "help.discard.example": "Season 1 drops the commentary tracks, and one of its episodes sets its own default subtitle. Discard changes on Season 1 removes both, and every episode follows the show's choices again. The show and its other seasons keep theirs.",
+  "help.names.title": "Names under a chip",
+  "help.names.explanation": "A chip groups tracks that are alike, and their names can still differ. When they do, each name is listed with the files that use it. A click on a name keeps or drops the tracks with that name and leaves the rest of the chip as it is; another click goes back, and the name follows the chip again.\n\nThe choice is a rule in the Rules panel, placed ahead of the chip's own choice, so it decides for that name only. Discard changes removes it with the place's other choices.",
+  "help.names.example": "The Dolby Digital 2.0 chip holds Commentary with the director and Commentary with the cast. Drop the chip and both go. Click Commentary with the director to keep it, and it stays while the other commentary is dropped."
 }

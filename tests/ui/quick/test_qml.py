@@ -283,7 +283,7 @@ def test_a_chip_s_arrow_folds_the_chip_open_and_leaves_the_chip_alone(
     (rows,) = _open_lists(root)
     assert chip.property("namesOpen") is True
     assert rows.property("count") == 9  # Episode Seven has no Turkish audio
-    assert chip.property("rows")[0] == "01 · Long Show - 1x01 - Episode One (Turkish)"
+    assert chip.property("rows")[0]["text"] == "01 · Long Show - 1x01 - Episode One (Turkish)"
     assert chip.property("missing") == "Missing in 07"
     assert controller.rules == []  # only the arrow answered, not the chip
     # The list is inside the chip's own frame, under its header, and the frame has grown for it.

@@ -162,14 +162,19 @@ def choice_of(options: TracksOptions, signature: TrackSignature) -> TrackChoice:
 
 
 def choose(
-    options: TracksOptions, signature: TrackSignature, choice: TrackChoice, inherited: TrackChoice = NO_CHOICE
+    options: TracksOptions,
+    signature: TrackSignature,
+    choice: TrackChoice,
+    inherited: TrackChoice = NO_CHOICE,
+    lead: bool = False,
 ) -> TracksOptions:
     """The options with `choice` as the rule for `signature`: a new rule, the old one changed in its place, or the
     old one removed when `choice` is what the place receives from above (`inherited`; nothing for a place without a
     parent), so it follows its parent again. Any other choice is written, `NO_CHOICE` too, as a rule that decides
     nothing and hides the parent's choice (see `layered_rules`). A new choice goes after the choices that lead the
     list and before every other rule, so a second star becomes the fallback of the first ("default Turkish, else
-    English")."""
+    English"). With `lead`, a new rule goes first of all: the choice on one name of a chip (`named`) has to be tried
+    before the chip's own choice, which fits every name."""
     if choice.verdict is Verdict.DROP:
         choice = TrackChoice(Verdict.DROP)
     rules = list(options.rules)
@@ -178,7 +183,7 @@ def choose(
         del rules[index]
     if choice != inherited:
         if index is None:
-            index = next((n for n, rule in enumerate(rules) if not rule.from_choice), len(rules))
+            index = 0 if lead else next((n for n, rule in enumerate(rules) if not rule.from_choice), len(rules))
         rules.insert(
             index,
             TrackRule(
@@ -190,6 +195,23 @@ def choose(
             ),
         )
     return replace(options, rules=rules)
+
+
+def named(signature: TrackSignature, name: str) -> TrackSignature:
+    """The signature of one name of a chip's tracks, which `choose` writes as a narrow rule: the chip's match with
+    the whole name, so the rule fits no other name and decides first when placed ahead of the chip's own rule."""
+    return replace(signature, name=name)
+
+
+def name_of_rule(rule: TrackRule, signatures: Iterable[TrackSignature]) -> TrackSignature | None:
+    """The named signature (see `named`) among the chips of `signatures` whose choice `rule` is, if it is one: a
+    rule written for one name of a chip."""
+    pattern = rule.match.name
+    if not (rule.from_choice and rule.match.name_is_regex and pattern.startswith("^") and pattern.endswith("$")):
+        return None
+    name = re.sub(r"\\(.)", r"\1", pattern[1:-1])  # undoes `re.escape`
+    found = (named(s, name) for s in signatures if s.name is None)
+    return next((n for n in found if rule.match in _forms(n)), None)
 
 
 def add_paired(options: TracksOptions, paired: PairedFile, add: bool) -> TracksOptions:
