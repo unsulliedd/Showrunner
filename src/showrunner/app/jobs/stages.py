@@ -219,6 +219,13 @@ def _mux_step(plan: MuxPlan, result: MuxResult) -> StepResult:
     return StepResult(result.ok, message, result, moved)
 
 
+def renamed_to(plan: StagePlan) -> Path | None:
+    """The new name a finished step gave its file, from the stored plan: a run that resumes a job does not hold the
+    result of the steps an earlier run finished."""
+    mux = plan.plan
+    return mux.output if isinstance(mux, MuxPlan) and mux.output != mux.source else None
+
+
 def pipeline(programs: Programs, mkvpropedit: Path | None, *, source: str = "") -> tuple[Stage, ...]:
     """The stages in the order they run. A stage whose program is missing is left out, so its features are off
     and nothing else; a new stage is one more entry here. On a file Mux remuxes it writes the header as well and

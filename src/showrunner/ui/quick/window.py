@@ -49,6 +49,7 @@ from showrunner.app.jobs.store import JobStore, StepState
 from showrunner.app.languages import read_languages, use_languages
 from showrunner.app.library.library import Library, LibraryLoad
 from showrunner.app.library.loader import BackgroundJob, LibraryLoader
+from showrunner.app.library.service import read_again
 from showrunner.app.profiles.errors import ProfileError, ProfileExistsError
 from showrunner.app.profiles.profile import Profile
 from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME, ProfileStore
@@ -73,6 +74,7 @@ from showrunner.stages.scan.extensions import SUBTITLE_EXTENSIONS, VIDEO_EXTENSI
 from showrunner.stages.tracks import NO_LANGUAGE, TracksOptions, Verdict
 from showrunner.tools.dependencies.detect import DependencyStatus, State
 from showrunner.tools.dependencies.specs import SPEC_BY_ID
+from showrunner.tools.probe import probe
 from showrunner.ui.i18n.catalog import tr, tr_plural
 from showrunner.ui.library.model import Kind, LibraryModel
 from showrunner.ui.quick import names as rail
@@ -264,6 +266,7 @@ class WindowController(QObject):
         self._make_pipeline = make_pipeline
         self._read_file = read
         self._applying: _Applying | None = None  # an Apply whose stamped preview is being made
+        self._reading: set[Path] = set()  # files a job wrote, being read again: they are as they were until then
         self._apply_message = ""
         self._offered = False  # unfinished jobs are offered once, when the programs are first known
         self._job_view = Jobs(jobs or JobStore(jobs_path()), self._job_pipeline, self._names_of, parent=self)
@@ -1702,11 +1705,12 @@ class WindowController(QObject):
         return self._queue
 
     def _locked_paths(self) -> set[Path]:
-        return (set(self._applying.paths) if self._applying is not None else set()) | self.jobs.paths()
+        return (set(self._applying.paths) if self._applying is not None else set()) | self.jobs.paths() | self._reading
 
     @Property(bool, notify=batch_changed)
     def locked(self) -> bool:
-        """The selected batch has a file in the job being applied: its choices wait until the job ends."""
+        """The selected batch has a file in the job being applied or being read again after it: its choices wait
+        until the files are as they are on disk."""
         locked = self._locked_paths()
         return bool(locked) and any(i.file.path in locked for i in self._items)
 
@@ -1720,6 +1724,7 @@ class WindowController(QObject):
         return (
             self._key is not None
             and not self.applying
+            and not self.locked
             and not self._planner.busy
             and self._statuses is not None
             and bool(self._current_files(self._run_preview))
@@ -1870,43 +1875,43 @@ class WindowController(QObject):
 
     def _on_job_ended(self, result: JobResult | None) -> None:
         """Read the written files again, so the window shows them as they are now, and unlock the batch."""
-        self._on_lock_changed()
-        if result is None:
-            return
         written: dict[Path, Path] = {}
         gone: list[Path] = []
-        for record in result.steps:
-            if record.state is StepState.DONE:
-                written[record.path] = record.written or written.get(record.path, record.path)
-            if isinstance(record.detail, MuxResult):
-                gone += record.detail.taken
+        if result is None:  # the job failed as a whole: any of its files may have been written
+            written = {path: path for path in self.jobs.files()}
+        else:
+            for record in result.steps:
+                # A step that stopped (failed, or cancelled while it ran) may have written before it did.
+                if record.state in (StepState.DONE, StepState.FAILED, StepState.RUNNING):
+                    written[record.path] = record.written or written.get(record.path, record.path)
+                if isinstance(record.detail, MuxResult):
+                    gone += record.detail.taken
         self._read_again(written, gone)
+        self._on_lock_changed()
 
     def _read_again(self, paths: dict[Path, Path], gone: Sequence[Path] = ()) -> None:
-        """Read files again on a pool thread, keyed by the path the library knows them by; a file that cannot be read
-        keeps what was read before until the next load."""
+        """Read files again on a pool thread through the read cache, keyed by the path the library knows them by; a
+        file that cannot be read keeps what was read before until the next load. The files stay locked until then."""
         known = {i.file.path for i in self.model.library.items}
         targets = {old: new for old, new in paths.items() if old in known}
         if not targets and not gone:
             return
-        read = self._reader()
+        programs = programs_from(self._statuses or {})
+        injected, cache = self._read_file, read_cache_path()
+        reader = probe if injected is None else lambda path, _programs, *, cancel: injected(path)
 
-        def work() -> tuple[dict[Path, MediaFile], tuple[Path, ...]]:
-            files = {}
-            for old, new in targets.items():
-                try:
-                    files[old] = read(new)
-                except Exception:  # one unreadable file does not keep the others from the window
-                    _log.exception("Could not read %s again", new)
-            return files, tuple(gone)
+        def work() -> tuple[dict[Path, MediaFile], tuple[Path, ...], frozenset[Path]]:
+            return read_again(targets, programs, read=reader, cache=cache), tuple(gone), frozenset(targets)
 
+        self._reading |= targets.keys()
         job = BackgroundJob(work)
         job.finished.connect(self._on_read_again)
         job.failed.connect(self._on_read_again_failed)
         job.start()
 
-    def _on_read_again(self, result: tuple[dict[Path, MediaFile], tuple[Path, ...]]) -> None:
-        files, gone = result
+    def _on_read_again(self, result: tuple[dict[Path, MediaFile], tuple[Path, ...], frozenset[Path]]) -> None:
+        files, gone, targets = result
+        self._reading -= targets
         self.model.replace_files(files, gone)
         # The batch is selected again, so it holds the files as read now; a file with a new name opens its season.
         index = self.tree.index_of(self._selected) if self._selected else QModelIndex()
@@ -1914,9 +1919,12 @@ class WindowController(QObject):
             self.select(index)
         else:
             self._select_first()
+        self._on_lock_changed()
 
     def _on_read_again_failed(self, error: Exception) -> None:
         _log.error("Reading files again failed: %s", error)
+        self._reading.clear()
+        self._on_lock_changed()
 
     # Programs
 

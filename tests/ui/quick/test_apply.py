@@ -17,7 +17,10 @@ from pytestqt.qtbot import QtBot
 
 from showrunner.app.jobs.stages import MuxStage, StagePlan, StepResult, TracksStage
 from showrunner.app.jobs.store import JobStore
+from showrunner.app.library.cache import load_cache
 from showrunner.app.library.library import Library
+from showrunner.app.library.service import read_again
+from showrunner.app.storage.paths import read_cache_path
 from showrunner.core.media import MediaFile
 from showrunner.stages.mux import Failure, MuxPlan, MuxResult, VerifyProblem
 from showrunner.tools.dependencies.detect import DependencyStatus, State
@@ -332,6 +335,8 @@ def test_a_real_file_is_remuxed_checked_and_its_original_kept(
     )
     controller = WindowController(statuses=real_statuses(real_episode.mkvmerge), jobs=JobStore(tmp_path / "j.db"))
     controller.model.add(LibraryLoad(items=(item,), roots=(real_episode.video.parent,)))
+    # As after a load: the cache holds the file as it was read, under the name it has before the remux.
+    read_again({real_episode.video: real_episode.video}, programs, cache=read_cache_path())
     controller.start()
     qtbot.waitUntil(lambda: controller.programs[0]["state"] != "checking")
     copy = controller.batches.copy(BatchKey.of(item))
@@ -356,14 +361,18 @@ def test_a_real_file_is_remuxed_checked_and_its_original_kept(
     after = probe(output, programs)
     assert [t.language.alpha3 for t in after.tracks if t.language] == ["eng", "tur"]
 
-    def read_again() -> bool:
+    def window_reads_again() -> bool:
         found = controller.model.library.item(output)
         return found is not None and [t.language.alpha3 for t in found.file.tracks if t.language] == ["eng", "tur"]
 
-    qtbot.waitUntil(read_again, timeout=10_000)
+    qtbot.waitUntil(window_reads_again, timeout=10_000)
     read = controller.model.library.item(output)
     assert read is not None
     assert read.subtitles == ()
+    # The read cache follows the file: the new name is stored, and the old one only where it is still the file's.
+    entries = load_cache(read_cache_path())
+    assert str(output.resolve()) in entries
+    assert (str(real_episode.video.resolve()) in entries) == (suffix == "")
     qtbot.waitUntil(lambda: not controller.planning)
     assert controller.change_count == 0
     controller.deleteLater()

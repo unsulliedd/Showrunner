@@ -745,6 +745,7 @@ def test_the_job_list_shrinks_and_clears_without_warnings(
     with qtbot.waitSignal(controller.jobs.ended, timeout=10_000):
         controller.apply()
     qtbot.waitUntil(lambda: _item(root, "jobRows").property("count") == 10)
+    qtbot.waitUntil(lambda: not controller.locked)  # the files are read again first
     for path in made.season[3:]:
         controller.set_file_in_run(str(path), False)
     qtbot.waitUntil(lambda: not controller.planning and controller.can_apply)

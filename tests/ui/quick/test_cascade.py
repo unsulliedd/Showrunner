@@ -196,6 +196,7 @@ def test_a_group_left_out_on_a_season_stays_out_in_its_episodes_unless_one_puts_
     with qtbot.waitSignal(controller.jobs.ended, timeout=10_000):
         controller.apply()
     assert [p.name for p in setup.bin.iterdir()] == [fourth.name]
+    qtbot.waitUntil(lambda: not controller.locked)  # the written file is read again first
     # Putting it back on the season makes the episode's equal value go.
     controller.set_in_run("tracks", True)
     assert controller.left_out.empty

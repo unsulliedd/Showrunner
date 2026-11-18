@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from showrunner.app.library.cache import FORMAT_VERSION, media_from_json, media_to_json
-from showrunner.app.library.service import load_library
+from showrunner.app.library.service import load_library, read_again
 from showrunner.core.language import Language
 from showrunner.core.media import Attachment, Chapter, ChapterName, MediaFile
 from showrunner.core.track import (
@@ -327,3 +327,39 @@ def test_saving_fails_quietly(show: Path, tmp_path: Path, caplog: pytest.LogCapt
 def test_without_a_cache_file_nothing_is_stored(show: Path, tmp_path: Path) -> None:
     load_library([show], programs=PROGRAMS, read=Counted())
     assert not list(tmp_path.glob("**/*.json"))
+
+
+def test_files_read_again_after_a_write_renew_their_entries_and_a_renamed_file_leaves_its_old_one(
+    show: Path, cache: Path
+) -> None:
+    read = Counted()
+    load_library([show], programs=PROGRAMS, read=read, cache=cache)
+    first, second = sorted(show.iterdir())
+    first.write_bytes(b"written by a job")  # edited where it lies
+    renamed = second.with_name("Show S01E02 [remux].mkv")  # remuxed to a new name; the original is gone
+    renamed.write_bytes(b"remuxed")
+    second.unlink()
+    read.calls.clear()
+    files = read_again({first: first, second: renamed}, PROGRAMS, read=read, cache=cache)
+    assert sorted(f.name for f in files) == ["Show S01E01.mkv", "Show S01E02.mkv"]  # keyed by the library's paths
+    assert names(read.calls) == ["Show S01E01.mkv", "Show S01E02 [remux].mkv"]
+    entries = json.loads(cache.read_text(encoding="utf-8"))["entries"]
+    assert sorted(Path(k).name for k in entries) == ["Show S01E01.mkv", "Show S01E02 [remux].mkv"]
+    # The next load serves both from the cache: nothing is read again.
+    read.calls.clear()
+    load_library([show], programs=PROGRAMS, read=read, cache=cache)
+    assert read.calls == []
+
+
+def test_a_file_that_cannot_be_read_again_is_left_out_and_the_rest_are_read(show: Path, cache: Path) -> None:
+    read = Counted()
+    first, second = sorted(show.iterdir())
+    read.fail = {first.name}
+    files = read_again({first: first, second: second}, PROGRAMS, read=read, cache=cache)
+    assert [f.name for f in files] == ["Show S01E02.mkv"]
+
+
+def test_files_are_read_again_without_a_cache_file(show: Path, tmp_path: Path) -> None:
+    first = sorted(show.iterdir())[0]
+    assert list(read_again({first: first}, PROGRAMS, read=Counted(), cache=None)) == [first]
+    assert list(tmp_path.glob("*.json")) == []

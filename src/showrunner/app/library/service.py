@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
+import logging
 import threading
-from collections.abc import Callable, Collection, Iterable
+from collections.abc import Callable, Collection, Iterable, Mapping
 from pathlib import Path
 
 from showrunner.app.dependencies.service import check, media_programs
 from showrunner.app.library.cache import CachedReader, load_cache, save_cache
 from showrunner.app.library.library import LibraryLoad
-from showrunner.core.media import MediaItem
+from showrunner.core.media import MediaFile, MediaItem
 from showrunner.stages.scan import ScanOptions, probe_items, scan
 from showrunner.stages.scan.probing import Progress, Reader
 from showrunner.tools.dependencies.detect import DependencyStatus
 from showrunner.tools.dependencies.specs import SPEC_BY_ID
 from showrunner.tools.probe import Programs, probe
+
+_log = logging.getLogger(__name__)
 
 
 def load_library(
@@ -63,6 +66,34 @@ def load_library(
         if cached.changed:
             save_cache(cache, cached.entries)
     return LibraryLoad(batch.items, alternatives, unpaired, batch.failures, batch.cancelled, roots)
+
+
+def read_again(
+    paths: Mapping[Path, Path],
+    programs: Programs,
+    *,
+    read: Reader = probe,
+    cache: Path | None = None,
+) -> dict[Path, MediaFile]:
+    """Read the files a job wrote again. `paths` maps the path the library knows a file by to where the file is now,
+    which differs after a remux to a new name; the result is keyed by the first. A file that cannot be read is left
+    out, so the library keeps what it read before.
+
+    With a `cache` file the entries of what was read are renewed, and the entry of a path a file left is dropped, so
+    the next start does not serve the file as it was before the write."""
+    cached = CachedReader(read, load_cache(cache) if cache is not None else {})
+    files: dict[Path, MediaFile] = {}
+    for old, new in paths.items():
+        try:
+            files[old] = cached(new, programs, cancel=None)
+        except Exception:  # one unreadable file does not keep the others from the window
+            _log.exception("Could not read %s again", new)
+            continue
+        if new != old:
+            cached.forget(old)
+    if cache is not None and cached.changed:
+        save_cache(cache, cached.entries)
+    return files
 
 
 def reading_statuses(cancel: threading.Event | None = None) -> dict[str, DependencyStatus]:

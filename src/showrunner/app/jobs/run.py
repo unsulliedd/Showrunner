@@ -11,7 +11,7 @@ from pathlib import Path
 from showrunner.app.jobs.groups import ChangeGroup
 from showrunner.app.jobs.hashing import stamp
 from showrunner.app.jobs.preview import Preview
-from showrunner.app.jobs.stages import PlanState, Recovery, Stage, StepResult
+from showrunner.app.jobs.stages import PlanState, Recovery, Stage, StepResult, renamed_to
 from showrunner.app.jobs.store import FINAL, JobStore, StepState, StoredStep
 from showrunner.app.profiles.profile import Profile
 from showrunner.core.media import MediaFile
@@ -98,7 +98,11 @@ def run_job(
     by_id = {stage.id: stage for stage in stages}
     states = {step.position: (step.state, step.message) for step in job.steps}
     details: dict[int, object] = {}
-    written: dict[int, Path] = {}
+    written: dict[int, Path] = {
+        step.position: moved
+        for step in job.steps
+        if step.state is StepState.DONE and (moved := renamed_to(step.plan)) is not None
+    }
     cancelled = paused = False
 
     def record(step: StoredStep, state: StepState, message: str = "") -> None:

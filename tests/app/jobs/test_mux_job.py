@@ -123,6 +123,18 @@ def test_a_new_name_is_reported_and_marked_finished(setup: Any, tmp_path: Path) 
     assert store.is_finished(stamp(written).content_hash, planned.options_key)
 
 
+def test_a_run_that_finds_the_remux_finished_still_reports_the_new_name(setup: Any, tmp_path: Path) -> None:
+    # A job resumed after the app stopped holds no result of the steps the earlier run finished, and the original
+    # of a remux with a suffix is gone: the window reads the new file only if the run names it.
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    profile = setup.profile.with_options("mux", MuxOptions(suffix=" [remux]"))
+    job = create_job(store, preview([setup.item], profile, setup.stages), profile, setup.stages)
+    first = run_job(store, job, setup.stages, read=setup.read)
+    again = run_job(store, job, setup.stages, read=setup.read)
+    assert first.steps[0].written is not None
+    assert again.steps[0].written == first.steps[0].written
+
+
 class Killed(BaseException):
     """Stands in for the app dying between two steps of a remux."""
 

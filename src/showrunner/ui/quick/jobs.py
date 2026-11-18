@@ -342,7 +342,11 @@ class Jobs(QObject):
 
     def paths(self) -> set[Path]:
         """The files of the running job, whose batch is locked while it runs."""
-        return {f.path for f in self._progress.files} if self._progress is not None and self.busy else set()
+        return self.files() if self.busy else set()
+
+    def files(self) -> set[Path]:
+        """The files of the last job, running or ended."""
+        return {f.path for f in self._progress.files} if self._progress is not None else set()
 
     def start(self, job_id: int, name: str, *, queued: bool = False) -> None:
         """Run a stored job, new or interrupted, `queued` when the queue runs it. Raises `UnresumableJobError` for one

@@ -81,6 +81,10 @@ class CachedReader:
             del self.entries[key]
         self.changed |= bool(gone)
 
+    def forget(self, path: Path) -> None:
+        """Drop the entry of a path a file has left, such as a video remuxed to a new name."""
+        self.changed |= self.entries.pop(str(path.resolve()), None) is not None
+
     def __call__(self, path: Path, programs: Programs, *, cancel: threading.Event | None) -> MediaFile:
         key = str(path.resolve())
         # Taken before the read, so a write while it runs leaves a stamp that no longer matches the file.
