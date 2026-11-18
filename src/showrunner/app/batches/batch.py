@@ -18,6 +18,7 @@ reach it either; `forget` removes it like any other own choice.
 
 Whether a place is excluded from every run is a value per place too, kept apart from the choices (`Exclusions`): a
 show's excludes its seasons, episodes and extras unless one of them holds its own value, and Discard leaves it alone.
+The videos taken out of the library's list (`removed`) are kept beside them, by path.
 """
 
 from __future__ import annotations
@@ -175,6 +176,9 @@ class Batches:
         self._layers: dict[BatchKey, Layer] = {}  # a season's, an episode's, an extra's or a movie's own choices
         self._kept: set[BatchKey] = set()  # nearer places that keep their files as they are
         self.exclusions = Exclusions()
+        # Videos taken out of the library's list, by path. A place's own choices and exclusion stay where they are, so
+        # they are there when the video is listed again.
+        self.removed: set[Path] = set()
         self.last_used: dict[Media, str] = dict(last_used or {})  # media -> the profile a new root starts from
 
     def copy(self, key: BatchKey) -> WorkingCopy:
@@ -403,6 +407,7 @@ class Batches:
             "places": [{"key": _key_json(key), "own": layer_to_json(layer)} for key, layer in self._layers.items()],
             "kept": [_key_json(key) for key in self._kept],
             "excluded": [{"key": _key_json(key), "value": value} for key, value in self.exclusions.values.items()],
+            "removed": sorted(str(path) for path in self.removed),
         }
 
     @classmethod
@@ -473,6 +478,10 @@ class Batches:
                 continue
             if type(value) is bool:
                 batches.exclusions.values[key] = value
+        removed = data.get("removed")
+        for path in removed if isinstance(removed, list) else ():
+            if isinstance(path, str) and path:
+                batches.removed.add(Path(path))
         return batches
 
     def _combined(self, key: BatchKey, cache: dict[BatchKey, Profile]) -> Profile:

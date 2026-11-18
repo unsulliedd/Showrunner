@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication
 from showrunner.app.batches.batch import BatchKey
 from showrunner.app.library.library import Library
 from showrunner.ui.quick.facts import duration, heading, video_summary, when
-from showrunner.ui.quick.icons import ICONS, IconProvider, svg_for
+from showrunner.ui.quick.icons import DRAWINGS, ICONS, STROKE_WIDTH, IconProvider, svg_for
 from showrunner.ui.quick.strings import Strings
 from showrunner.ui.quick.theme import Theme
 from showrunner.ui.theme.tokens import QUICK_ROLES, SIZES, Base, ThemeColors, with_base
@@ -59,6 +59,19 @@ def test_every_icon_draws_something(qapp: QApplication, name: str) -> None:
     image = IconProvider().requestImage(f"{name}/ffffff", QSize(), QSize(24, 24))
     assert image.width() == 24
     assert any(image.pixelColor(x, y).alpha() for x in range(24) for y in range(24))
+
+
+@pytest.mark.parametrize("name", sorted(DRAWINGS))
+def test_every_drawing_is_a_line_drawing_in_the_icons_style_in_the_color_asked_for(
+    qapp: QApplication, name: str
+) -> None:
+    svg = svg_for(f"{name}/7e8894") or ""
+    assert 'stroke="#7e8894"' in svg
+    assert f'stroke-width="{STROKE_WIDTH}"' in svg
+    assert 'stroke-linecap="round" stroke-linejoin="round"' in svg
+    assert 'fill="none"' in svg
+    image = IconProvider().requestImage(f"{name}/ffffff", QSize(), QSize(160, 160))
+    assert any(image.pixelColor(x, y).alpha() for x in range(160) for y in range(160))
 
 
 def test_season_heading(library: Library) -> None:

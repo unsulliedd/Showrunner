@@ -145,20 +145,20 @@ ApplicationWindow {
 
                     anchors.fill: parent
                     enabled: !app.reading_open_batch
-                    visible: !app.loaded
+                    visible: app.home_shown
                 }
 
                 Workspace {
                     anchors.fill: parent
                     enabled: !app.reading_open_batch
-                    visible: app.loaded && app.has_batch
+                    visible: !app.home_shown && app.has_batch
                     place: window.place
                     onPlacePicked: key => window.place = key
                 }
 
                 Panel {
                     anchors.fill: parent
-                    visible: app.loaded && !app.has_batch
+                    visible: !app.home_shown && !app.has_batch
 
                     Placeholder {
                         anchors.fill: parent

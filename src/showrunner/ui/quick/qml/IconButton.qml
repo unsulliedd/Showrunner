@@ -9,6 +9,8 @@ AbstractButton {
     property string iconName
     property string label
     property bool active: false
+    // Said under the button on hover; empty for a button whose label says it all.
+    property string tip
 
     implicitWidth: Theme.row_md
     implicitHeight: Theme.row_md
@@ -16,12 +18,19 @@ AbstractButton {
     focusPolicy: Qt.StrongFocus
     Accessible.role: Accessible.Button
     Accessible.name: label
+    Accessible.description: tip
 
     background: Rectangle {
         radius: Theme.radius_md
         color: control.active ? Theme.control_soft : control.hovered && control.enabled ? Theme.panel_3 : "transparent"
         border.width: control.visualFocus ? Theme.stroke : 0
         border.color: Theme.control
+    }
+
+    Tip {
+        objectName: "iconTip"
+        visible: control.hovered && control.tip !== ""
+        text: control.tip
     }
 
     contentItem: Item {

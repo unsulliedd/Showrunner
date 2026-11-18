@@ -43,11 +43,12 @@ def test_nothing_to_discard_on_a_place_that_follows_its_parent(
 ) -> None:
     open_season(controller, library, qtbot)
     assert not controller.can_discard
-    assert controller.place_actions == [
-        {"key": "discard", "text": "Discard changes", "enabled": False},
-        {"key": "keep", "text": "Keep these files as they are", "enabled": False},
-        {"key": "exclude", "text": "Exclude", "enabled": True},
-        {"key": "queue", "text": "Add to queue", "enabled": True},
+    assert [(a["key"], a["text"], a["enabled"]) for a in controller.place_actions] == [
+        ("discard", "Discard changes", False),
+        ("keep", "Keep these files as they are", False),
+        ("exclude", "Exclude", True),
+        ("queue", "Add to queue", True),
+        ("remove", "Remove from list", True),
     ]
     asked: list[bool] = []
     controller.discard_asked.connect(lambda: asked.append(True))

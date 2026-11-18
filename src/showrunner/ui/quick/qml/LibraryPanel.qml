@@ -49,7 +49,7 @@ Panel {
                 visible: app.loaded
                 enabled: !app.busy && !app.applying
                 iconName: "x"
-                label: Strings.t("library.close")
+                label: Strings.t("library.close_all")
                 ToolTip.visible: hovered
                 ToolTip.text: label
                 onClicked: app.close_folder()

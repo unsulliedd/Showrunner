@@ -69,13 +69,24 @@ ICONS: dict[str, str] = {
     "no_entry": '<circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/>',
     "pause": '<path d="M8 5.5v13M16 5.5v13"/>',
     "video": '<rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="M16 10.5l5-3v9l-5-3"/>',
+    "home": '<path d="M4 11l8-6.5 8 6.5M6 9.5v10h4.5v-5h3v5H18v-10"/>',
 }  # fmt: skip
+
+# Drawings made to be shown large, on a 96 px grid with the icons' stroke width and corner style: a line that is an
+# icon's at 20 px stays a thin one at 160 px. The folder is the "folder" icon's outline at four times the size.
+DRAWINGS: dict[str, str] = {
+    "drop": (
+        '<path d="M12 30A10 10 0 0 1 22 20H36l8 8h30A10 10 0 0 1 84 38v28A10 10 0 0 1 74 76H22A10 10 0 0 1 12 66z"/>'
+        '<path d="M48 38v26M36 52l12 12 12-12"/>'
+    ),
+}
 
 
 def icon_svg(name: str, color: str) -> str:
+    grid, body = (96, DRAWINGS[name]) if name in DRAWINGS else (24, ICONS[name])
     return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{color}" color="{color}" '
-        f'stroke-width="{STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round">{ICONS[name]}</svg>'
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {grid} {grid}" fill="none" stroke="{color}" '
+        f'color="{color}" stroke-width="{STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round">{body}</svg>'
     )
 
 
@@ -97,7 +108,7 @@ def svg_for(image_id: str) -> str | None:
     hexes = [f"#{c}" for c in colors]
     if name == "logo" and len(hexes) == 2:
         return logo_svg(*hexes)
-    return icon_svg(name, hexes[0]) if name in ICONS and len(hexes) == 1 else None
+    return icon_svg(name, hexes[0]) if (name in ICONS or name in DRAWINGS) and len(hexes) == 1 else None
 
 
 class IconProvider(QQuickImageProvider):

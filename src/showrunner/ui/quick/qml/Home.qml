@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
@@ -30,7 +31,8 @@ Panel {
                 HomeArt {
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(Theme.home_art_width, home.width / 4)
-                    height: width / 2
+                    height: width
+                    active: home.dropping
                 }
 
                 Column {
@@ -82,6 +84,22 @@ Panel {
                             anchors.verticalCenter: parent.verticalCenter
                             text: Strings.t("home.or_drop")
                             color: Theme.faint
+                        }
+                    }
+
+                    // Home over an open library: back to the workspace as it was left.
+                    ActionButton {
+                        objectName: "backToLibrary"
+                        kind: "ghost"
+                        iconName: "arrow"
+                        visible: app.loaded
+                        text: Strings.t("home.back")
+                        Accessible.description: Strings.t("home.back_tip")
+                        onClicked: app.leave_home()
+
+                        Tip {
+                            visible: parent.hovered
+                            text: Strings.t("home.back_tip")
                         }
                     }
                 }

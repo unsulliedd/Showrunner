@@ -6,8 +6,20 @@ import Showrunner
 MenuItem {
     id: row
 
+    // What the row does, said on hover; empty for a row whose text says it all.
+    property string tip
+
     implicitHeight: Theme.row_md
     implicitWidth: Theme.menu_width
+
+    // Beside the menu rather than under the row, which would cover the rows below. Also shown for the highlighted row,
+    // so the keys reach it too.
+    Tip {
+        x: row.width + Theme.space_sm
+        y: 0
+        visible: (row.hovered || row.highlighted) && row.tip !== ""
+        text: row.tip
+    }
 
     indicator: Icon {
         x: Theme.space_md

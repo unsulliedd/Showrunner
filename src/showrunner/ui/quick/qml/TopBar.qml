@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Showrunner
 
-// The app name, the profile pill, the search field in the middle, the drawer and settings buttons, the change
+// The app name, the profile pill and the Home button, the search field in the middle, the drawer and settings buttons, the change
 // count and the way to Review.
 Item {
     id: bar
@@ -44,6 +44,17 @@ Item {
         }
 
         ProfilePill {}
+
+        // Home over the open library: nothing is closed, and a click on a row of the library comes back.
+        IconButton {
+            objectName: "homeButton"
+            visible: app.loaded
+            enabled: !app.home_shown
+            iconName: "home"
+            label: Strings.t("workspace.home")
+            tip: Strings.t("workspace.home_tip")
+            onClicked: app.go_home()
+        }
 
         Item {
             Layout.fillWidth: true

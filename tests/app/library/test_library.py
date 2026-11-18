@@ -119,3 +119,36 @@ def test_extras_are_counted_apart_from_episodes_and_movies(sample_library: Libra
     assert (counts.videos, counts.episodes, counts.movies, counts.extras) == (7, 4, 1, 2)
     assert counts.shows == 3  # a show with nothing but extras still counts
     assert library.counts([extra.file.path]).extras == 1
+
+
+def test_without_takes_videos_out_with_their_doubts_and_failures_and_keeps_the_rest(sample_library: Library) -> None:
+    doubt, failed = path_of(sample_library, "S01E02"), path_of(sample_library, "Beta")
+    library = sample_library.without([doubt, failed])
+    assert [i.file.path.name for i in library.items] == [
+        "Alpha S01E01.mkv",
+        "Alpha S02E01.mkv",
+        "Movie Title (2016).mkv",
+    ]
+    assert (library.alternatives, library.failures) == ((), ())
+    assert library.unpaired == sample_library.unpaired
+    assert library.roots == sample_library.roots
+    assert sample_library.without([]) == sample_library
+
+
+def test_folders_of_names_the_opened_folders_that_hold_the_videos(sample_library: Library) -> None:
+    alpha = path_of(sample_library, "S01E01")
+    library = replace(sample_library, roots=(Path("lib/Alpha"), Path("lib/Beta")))
+    assert library.folders_of([alpha]) == (Path("lib/Alpha"),)
+    assert library.folders_of([alpha, path_of(library, "Beta")]) == (Path("lib/Alpha"), Path("lib/Beta"))
+    assert library.folders_of([path_of(library, "Movie")]) == ()
+    assert replace(sample_library, roots=()).folders_of([alpha]) == ()  # opened one by one: no folder
+
+
+def test_closed_removes_the_folder_with_everything_listed_from_it(sample_library: Library) -> None:
+    library = replace(sample_library, roots=(Path("lib/Alpha"), Path("lib/Beta")))
+    closed = library.closed([Path("lib/Alpha")])
+    assert [i.file.path.name for i in closed.items] == ["Beta S01E01.mkv", "Movie Title (2016).mkv"]
+    assert closed.roots == (Path("lib/Beta"),)
+    assert closed.alternatives == ()  # the doubt was about an Alpha episode
+    assert [f.path.name for f in closed.failures] == ["Beta S01E01.mkv"]
+    assert closed.unpaired == ()

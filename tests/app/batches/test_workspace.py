@@ -150,3 +150,23 @@ def test_a_language_choice_survives_a_restart_and_a_workspace_without_one_still_
     path.write_text(json.dumps(data), encoding="utf-8")
     (old,) = load_batches(store, path).copy(SEASON).profile.for_stage("tracks").rules
     assert (old.language, old.from_choice, old.match.languages) == ("", True, ["en"])
+
+
+def test_the_videos_taken_out_of_the_list_survive_a_restart_and_an_old_file_loads_without_them(
+    tmp_path: Path, store: ProfileStore
+) -> None:
+    path = tmp_path / "workspace.json"
+    batches = load_batches(store, path)
+    batches.removed |= {tmp_path / "Show" / "One.mkv", tmp_path / "Show" / "Two.mkv"}
+    batches.set_excluded(SEASON, True)
+    save_batches(batches, path)
+    again = load_batches(store, path)
+    assert again.removed == batches.removed
+    assert again.is_excluded(SEASON)  # the exclusion is kept beside them
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    del data["batches"]["removed"]  # a file written before the list existed
+    path.write_text(json.dumps(data), encoding="utf-8")
+    old = load_batches(store, path)
+    assert old.removed == set()
+    assert old.is_excluded(SEASON)

@@ -324,11 +324,12 @@ SIZES: dict[str, int] = {
     "dash": 4,  # the dashes of a drop area's outline, in strokes
     "handle_length": 40,  # the grip shown on a split handle under the pointer
     "menu_width": 220,
+    "tip_width": 320,  # a wrapped tooltip
     "help_chip": 20,  # the ? that opens a help tip
     "help_width": 340,  # a help tip's card
     "artwork_slot": 64,  # a movie's artwork in the workspace header
     "home_card_height": 190,  # the Programs and Recent cards
-    "home_art_width": 340,  # the drawing beside the home screen's title
+    "home_art_width": 160,  # the drawing beside the home screen's title
     "home_text_width": 500,
     "swatch_width": 96,
     "dialog_width": 960,  # the Settings window

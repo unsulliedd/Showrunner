@@ -114,6 +114,38 @@ class Library:
             tuple(dict.fromkeys((*self.roots, *load.roots))),
         )
 
+    def without(self, gone: Iterable[Path]) -> Library:
+        """The library with the videos at `gone` taken out, with their doubts and read failures. Unpaired subtitle
+        files and the folders stay as they are."""
+        gone = set(gone)
+        return replace(
+            self,
+            items=tuple(i for i in self.items if i.file.path not in gone),
+            alternatives=tuple(a for a in self.alternatives if a.video not in gone),
+            failures=tuple(f for f in self.failures if f.path not in gone),
+        )
+
+    def folders_of(self, paths: Iterable[Path]) -> tuple[Path, ...]:
+        """The opened folders that hold any of `paths`; empty for files that were opened one by one."""
+        wanted = tuple(paths)
+        return tuple(r for r in self.roots if any(p.is_relative_to(r) for p in wanted))
+
+    def closed(self, folders: Iterable[Path]) -> Library:
+        """The library without `folders` and everything that lies in them: videos, unpaired subtitle files, doubts
+        and read failures."""
+        folders = tuple(folders)
+
+        def inside(path: Path) -> bool:
+            return any(path.is_relative_to(f) for f in folders)
+
+        gone = {i.file.path for i in self.items if inside(i.file.path)}
+        return replace(
+            self.without(gone),
+            unpaired=tuple(s for s in self.unpaired if not inside(s.path)),
+            failures=tuple(f for f in self.failures if not inside(f.path)),
+            roots=tuple(r for r in self.roots if r not in folders),
+        )
+
     def with_files(self, files: dict[Path, MediaFile], gone: Iterable[Path] = ()) -> Library:
         """The library with these files, read again after they were written, in place of the ones at the paths
         they are keyed by; a file read under a new name keeps its place in a show or movie. The subtitle files in

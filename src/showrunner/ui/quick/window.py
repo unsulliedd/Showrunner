@@ -199,6 +199,7 @@ class WindowController(QObject):
     loading_changed = Signal()
     programs_changed = Signal()
     recent_changed = Signal()
+    home_changed = Signal()  # Home was asked for or left, or the library became empty or not
     batch_changed = Signal()
     filter_changed = Signal()
     plans_changed = Signal()  # the live plan or the choices of the selected batch changed
@@ -249,6 +250,7 @@ class WindowController(QObject):
         self._open_unread = 0  # how many of them lie in the open place
         self._message = ""  # what the last load ended with, when it is worth saying
         self._filter = ""
+        self._at_home = False  # Home is shown over an open library, which stays as it is
         self._needs_look_only = False
         self._selected = ""  # the row id of the selected row
         self._key: BatchKey | None = None
@@ -313,6 +315,7 @@ class WindowController(QObject):
         self._recent = dict(settings.recent_folders)
         self._restore = settings.last_selection
         self.model.library_changed.connect(self.library_changed)
+        self.model.library_changed.connect(self.home_changed)
         self.model.library_changed.connect(self._refresh_excluded)
         self.model.library_changed.connect(self.needs_look_changed)
         self.model.marks_changed.connect(self.needs_look_changed)
@@ -327,7 +330,7 @@ class WindowController(QObject):
         settings = load_settings().value
         if settings.startup is not Startup.LAST_WORKSPACE:
             return
-        self.add_paths([Path(f) for f in settings.last_folders if Path(f).is_dir()])
+        self.add_paths([Path(f) for f in settings.last_folders if Path(f).is_dir()], restoring=True)
 
     def save_workspace(self) -> None:
         """Keep what is open for the next start: the folders, the selection and each batch's working copy."""
@@ -457,22 +460,112 @@ class WindowController(QObject):
     @Slot()
     def close_folder(self) -> None:
         """Back to Home: the library is emptied and nothing stays selected, and the next start opens on Home as well.
-        Nothing on disk changes; the folders stay in Recent and each batch keeps its saved choices."""
-        if not self.loaded or self._loader.busy or self.applying:
+        Nothing on disk changes; the folders stay in Recent and each batch keeps its saved choices. What was taken out
+        of the list is forgotten with the library, since adding a folder again lists all of it."""
+        if not self._can_change_library():
             return
+        self.batches.removed.clear()
+        self._clear_view(Library())
+        self._remember(last_folders=[], last_selection="")
+        self._save_timer.start()
+
+    def _can_change_library(self) -> bool:
+        """Videos are taken out of the library only while it is open and neither being read nor applied."""
+        return self.loaded and not self._loader.busy and not self.applying and not self._locked_paths()
+
+    def _clear_view(self, library: Library) -> None:
+        """Show `library`, which holds no videos, with nothing selected: Home."""
         self._set_filter("")
         self._set_needs_look_only(False)
-        self.model.set_library(Library())
+        self.model.set_library(library)
         self._selected = self._restore = self._message = ""
         self._focus = self._preview = self._run_preview = None
         self._key, self._items = None, []
+        self._at_home = False
         self._editing, self._editing_builtin = -1, ""
         self._marks.clear()
         self._rule_editor.close()
         self._replan()
         self.batch_changed.emit()
         self.loading_changed.emit()
-        self._remember(last_folders=[], last_selection="")
+
+    def _show_library(self, library: Library, gone: set[Path]) -> None:
+        """Show `library`, the open one without the videos at `gone`; the selection stays where its row does."""
+        if not library.items:
+            self._clear_view(library)
+            return
+        for path in gone:
+            self._marks.pop(path, None)
+        self._restore = ""
+        self.model.set_library(library)
+        self._reselect()
+        self.loading_changed.emit()
+
+    def _reselect(self) -> None:
+        """Select the selected row again, also when it stays, since a season or show may have gained or lost videos;
+        the first row when it is gone."""
+        current = self.tree.index_of(self._selected) if self._selected else QModelIndex()
+        if current.isValid():
+            self._select(current)
+        else:
+            self._select_first()
+
+    # Home
+
+    @Property(bool, notify=home_changed)
+    def home_shown(self) -> bool:
+        """Home is what the window shows: nothing is open, or Home was asked for over an open library."""
+        return not self.loaded or self._at_home
+
+    @Slot()
+    def go_home(self) -> None:
+        """Show Home without closing anything: the open folders, the selection and every choice stay as they are, and
+        a click on a row of the library, or on Back to the library, shows the workspace again."""
+        if self.loaded and not self._at_home:
+            self._at_home = True
+            self.home_changed.emit()
+
+    @Slot()
+    def leave_home(self) -> None:
+        if self._at_home:
+            self._at_home = False
+            self.home_changed.emit()
+
+    # Remove from list and Close folder, from the library's menu
+
+    @Slot()
+    def remove_place(self) -> None:
+        """Take the selected place's videos out of the library's list and remember it with the workspace. They stay out
+        when the app is opened again, until their folder is added again; nothing on disk changes. Unlike Exclude, the
+        place is no longer listed, and its choices and exclusion are kept for when it comes back."""
+        if self._key is None or not self._can_change_library():
+            return
+        gone = {i.file.path for i in self._items}
+        self.batches.removed |= gone
+        self._show_library(self.model.library.without(gone), gone)
+        self._save_timer.start()
+
+    def _folders_of_place(self) -> tuple[Path, ...]:
+        """The opened folders the selected show or Movies group lists videos from; none for a place inside a show and
+        for videos that were opened one by one."""
+        if self._key is None or self._key.parent is not None:
+            return ()
+        return self.model.library.folders_of(i.file.path for i in self._items)
+
+    @Slot()
+    def close_place_folders(self) -> None:
+        """Close the folders the selected show or Movies group comes from, with everything listed from them. The other
+        open folders stay; a folder that holds several shows takes them all."""
+        folders = self._folders_of_place()
+        if not folders or not self._can_change_library():
+            return
+        library = self.model.library
+        gone = {i.file.path for i in library.items if any(i.file.path.is_relative_to(f) for f in folders)}
+        self.batches.removed = {p for p in self.batches.removed if not any(p.is_relative_to(f) for f in folders)}
+        closed = library.closed(folders)
+        self._show_library(closed, gone)
+        self._remember(last_folders=[str(r) for r in closed.roots])
+        self._save_timer.start()
 
     @Slot(str)
     def remove_recent(self, folder: str) -> None:
@@ -489,12 +582,20 @@ class WindowController(QObject):
         except OSError:
             _log.exception("Could not save the workspace")
 
-    def add_paths(self, paths: list[Path]) -> None:
+    def add_paths(self, paths: list[Path], *, restoring: bool = False) -> None:
+        """Read `paths` and add what was found. Adding a folder or a file again lists the videos of it that were taken
+        out of the list; the folders opened again at the start (`restoring`) leave them out."""
         # A second drop while reading is ignored: the loader runs one load at a time.
         if not paths or self._loader.busy:
             return
         self._message = ""
-        self._loader.start(paths, known=[item.file.path for item in self.model.library.items])
+        known = [item.file.path for item in self.model.library.items]
+        if restoring:
+            known += self.batches.removed
+        elif self.batches.removed:
+            self.batches.removed = {p for p in self.batches.removed if not any(p.is_relative_to(a) for a in paths)}
+            self._save_timer.start()
+        self._loader.start(paths, known=known)
         self.loading_changed.emit()
 
     @Slot()
@@ -538,23 +639,25 @@ class WindowController(QObject):
         if load.roots:
             self._recent = with_recent(self._recent, [str(root) for root in load.roots], self._clock())
             self.recent_changed.emit()
-        current = self.tree.index_of(self._selected) if self._selected else QModelIndex()
-        # Selected again even when it stays, since a season or show may have gained videos.
-        if current.isValid():
-            self.select(current)
-        else:
-            self._select_first()
+        self._at_home = False  # what was just opened is what the user looks at
+        self.home_changed.emit()
+        self._reselect()
         self.loading_changed.emit()
 
     def _select_first(self) -> None:
         """The row selected when the window last closed, else the first row of the tree."""
         restored = self.tree.index_of(self._restore) if self._restore else QModelIndex()
-        self.select(restored if restored.isValid() else self.tree.index(0, 0))
+        self._select(restored if restored.isValid() else self.tree.index(0, 0))
 
     # Selection and batch
 
     @Slot(QModelIndex)
     def select(self, index: QModelIndex) -> None:
+        """Select a row, as the user does: Home gives way to the workspace."""
+        self.leave_home()
+        self._select(index)
+
+    def _select(self, index: QModelIndex) -> None:
         if not index.isValid():
             return
         self._selected = self.tree.row_id(index)
@@ -717,12 +820,32 @@ class WindowController(QObject):
             {
                 "key": "include" if excluded else "exclude",
                 "text": tr("workspace.include" if excluded else "workspace.exclude"),
+                "tip": tr("workspace.include_tip" if excluded else "workspace.exclude_tip"),
                 "enabled": self._key is not None and not self.locked,
             },
         ]
         if self._key is not None and self._key.parent is not None:
             actions.insert(1, {"key": "keep", "text": tr("workspace.keep"), "enabled": self.can_keep})
         actions.append({"key": "queue", "text": tr("queue.add"), "enabled": self.can_queue})
+        if self._key is not None:
+            actions.append(
+                {
+                    "key": "remove",
+                    "text": tr("workspace.remove"),
+                    "tip": tr("workspace.remove_tip"),
+                    "enabled": self._can_change_library(),
+                }
+            )
+        if folders := self._folders_of_place():
+            names = tr("common.list_separator").join(f.name or str(f) for f in folders)
+            actions.append(
+                {
+                    "key": "close",
+                    "text": tr("library.close"),
+                    "tip": tr("library.close_tip", folders=names),
+                    "enabled": self._can_change_library(),
+                }
+            )
         return actions
 
     @Slot(str)
@@ -735,6 +858,10 @@ class WindowController(QObject):
             self.exclude_place(key == "exclude")
         elif key == "queue":
             self.add_to_queue()
+        elif key == "remove":
+            self.remove_place()
+        elif key == "close":
+            self.close_place_folders()
 
     # Keep these files as they are
 
@@ -1958,11 +2085,7 @@ class WindowController(QObject):
         self._reading -= targets
         self.model.replace_files(files, gone)
         # The batch is selected again, so it holds the files as read now; a file with a new name opens its season.
-        index = self.tree.index_of(self._selected) if self._selected else QModelIndex()
-        if index.isValid():
-            self.select(index)
-        else:
-            self._select_first()
+        self._reselect()
         self._on_lock_changed()
 
     def _on_read_again_failed(self, error: Exception) -> None:
@@ -2067,6 +2190,7 @@ class WindowController(QObject):
             Entry("action", "open_folder", tr("palette.action.open_folder")),
             Entry("action", "add_files", tr("palette.action.add_files")),
             Entry("action", "close_folder", tr("palette.action.close_folder"), "", self.loaded),
+            Entry("action", "home", tr("palette.action.home"), "", self.loaded and not self._at_home),
             *(
                 Entry("action", f"place.{key}", tr("palette.action.place", place=tr(f"workspace.tab.{key}")), "", batch)
                 for key in places
@@ -2133,6 +2257,7 @@ class WindowController(QObject):
                 "open_folder": self.choose_folder,
                 "add_files": self.choose_files,
                 "close_folder": self.close_folder,
+                "home": self.go_home,
                 "save_profile": self.save_profile,
                 "discard": self.discard_profile,
                 "exclude": lambda: self.exclude_place(True),

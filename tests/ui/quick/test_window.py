@@ -263,7 +263,7 @@ def test_a_recent_folder_is_removed_from_the_list_only(controller: WindowControl
 
 def test_the_palette_offers_to_close_only_an_open_folder(controller: WindowController, library: Library) -> None:
     def keys() -> list[object]:
-        controller.palette_query = "close the folder"
+        controller.palette_query = "close all folders"
         return [e["key"] for e in controller.palette]
 
     assert "close_folder" not in keys()

@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import Showrunner
 
-// A right-click menu over a list of actions given by Python, each {key, text, enabled}. It only draws and says which
+// A right-click menu over a list of actions given by Python, each {key, text, enabled} and an optional tip. It only draws and says which
 // action was picked; what the actions are and what they do is decided where the list comes from.
 Menu {
     id: menu
@@ -28,6 +28,7 @@ Menu {
             required property var modelData
 
             text: modelData.text
+            tip: modelData.tip || ""
             enabled: modelData.enabled
             onTriggered: menu.picked(modelData.key)
         }
