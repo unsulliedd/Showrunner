@@ -168,7 +168,7 @@ def test_review_lists_an_excluded_file_apart_from_one_left_out_this_time(
     assert {r["path"] for r in controller.review["rows"]} == {path_of(library, 2), path_of(library, 3)}
     # Not this time is not saved and no part of exclusion: putting the file back leaves the excluded one out.
     controller.set_file_in_run(path_of(library, 3), True)
-    assert controller.left_out.files == set()
+    assert controller.left_out.empty
     assert marked(controller, path_of(library, 2))
     assert not marked(controller, path_of(library, 3))
     controller.exclude_file(path_of(library, 2), False)
@@ -179,11 +179,12 @@ def test_the_menu_and_the_palette_offer_exclude_or_include(
     controller: WindowController, library: Library, qtbot: QtBot
 ) -> None:
     open_season(controller, library, qtbot)
-    assert [a["key"] for a in controller.place_actions] == ["discard", "exclude"]
+    assert [a["key"] for a in controller.place_actions] == ["discard", "keep", "exclude"]
     controller.place_action("exclude")
     assert controller.place_excluded
     assert [(a["key"], a["text"]) for a in controller.place_actions] == [
         ("discard", "Discard changes"),
+        ("keep", "Keep these files as they are"),
         ("include", "Include"),
     ]
     controller.palette_query = "include"
@@ -203,7 +204,7 @@ def test_a_place_being_applied_cannot_be_excluded(
 ) -> None:
     open_season(controller, library, qtbot)
     monkeypatch.setattr(controller, "_locked_paths", lambda: {i.file.path for i in library.items})
-    assert [a["enabled"] for a in controller.place_actions][1] is False
+    assert next(a for a in controller.place_actions if a["key"] == "exclude")["enabled"] is False
     controller.exclude_place(True)
     assert not controller.place_excluded
 
@@ -219,7 +220,7 @@ def test_the_right_click_menu_and_the_header_exclude_and_the_row_shows_the_mark(
     menu = _named(window, "libraryMenu")
     _click(window, _row(root, season), Qt.MouseButton.RightButton)
     qtbot.waitUntil(lambda: bool(menu.property("visible")))
-    entry = _evaluate(menu, "itemAt(1)")
+    entry = _evaluate(menu, "itemAt(2)")
     assert (entry.property("text"), entry.property("enabled")) == ("Exclude", True)
     _click(window, entry)
     qtbot.waitUntil(lambda: controller.place_excluded)

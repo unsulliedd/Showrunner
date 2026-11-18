@@ -1,38 +1,40 @@
-"""What this run alone leaves out: groups of planned change per batch, and files.
+"""What this run alone leaves out: groups of planned change, and files, each a value per place that the nearest place
+decides.
 
-A left-out group is planned as if its options asked for nothing (`groups.without`), so it belongs to the batch whose
-options it empties. A file left out of this run is one set of paths for the whole window, so a file left out in its
-season is left out in its whole show and in a selection too. Both last for the session: they choose one run, while
-the choices stay in the working copy and the saved exclusion of a place (`Exclusions`) is a different thing.
+A left-out group is planned as if its options asked for nothing (`groups.without`). Leaving it out of a season leaves
+it out of every episode of the season, and an episode can put it back for itself, as with exclusion (`Exclusions`,
+whose rules both follow: a value equal to what the place receives is not kept). "Not this time" is the same for a
+file, set on the file's own place. Both last for the session: they choose one run, while the choices stay in the
+working copy and the saved exclusion of a place is a different thing.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from showrunner.app.batches.batch import BatchKey
+from showrunner.app.batches.exclusions import Exclusions
 from showrunner.app.jobs.groups import ChangeGroup
 
 
 @dataclass
 class LeftOut:
-    groups: dict[BatchKey, frozenset[ChangeGroup]] = field(default_factory=dict)
-    files: set[Path] = field(default_factory=set)
+    groups: dict[ChangeGroup, Exclusions] = field(default_factory=dict)  # per group, which places leave it out
+    files: Exclusions = field(default_factory=Exclusions)  # which places this run leaves out
 
     def groups_of(self, key: BatchKey) -> frozenset[ChangeGroup]:
-        return self.groups.get(key, frozenset())
+        """The groups the place leaves out: its own value of each, else the nearest place's above it."""
+        return frozenset(group for group, places in self.groups.items() if places.excluded(key))
 
     def set_group(self, key: BatchKey, group: ChangeGroup, out: bool) -> None:
-        groups = self.groups_of(key) | {group} if out else self.groups_of(key) - {group}
-        if groups:
-            self.groups[key] = groups
-        else:
-            self.groups.pop(key, None)
+        self.groups.setdefault(group, Exclusions()).set(key, out)
 
-    def set_files(self, paths: Iterable[Path], out: bool) -> None:
-        if out:
-            self.files.update(paths)
-        else:
-            self.files.difference_update(paths)
+    def file_out(self, key: BatchKey) -> bool:
+        return self.files.excluded(key)
+
+    def set_file(self, key: BatchKey, out: bool) -> None:
+        self.files.set(key, out)
+
+    @property
+    def empty(self) -> bool:
+        return not self.files.values and not any(places.values for places in self.groups.values())

@@ -9,6 +9,7 @@ import pytest
 from showrunner.app.batches.batch import Batches, BatchKey, BatchKind, Discard, Media
 from showrunner.app.batches.choices import NO_CHOICE, TrackChoice, TrackSignature, choice_of, choose
 from showrunner.app.batches.workspace import load_batches, save_batches
+from showrunner.app.jobs.blocked import blocked_stages
 from showrunner.app.jobs.preview import preview, preview_each
 from showrunner.app.jobs.stages import TracksStage
 from showrunner.app.profiles import registered  # noqa: F401
@@ -16,7 +17,9 @@ from showrunner.app.profiles.profile import Profile, profile_to_json
 from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME, ProfileStore
 from showrunner.core.language import Language
 from showrunner.core.media import Episode, Extra, MediaFile, MediaItem, Movie
+from showrunner.core.naming import CustomToken
 from showrunner.core.track import AudioProperties, Track, TrackFlags, TrackKind
+from showrunner.stages.mux.options import Original
 from showrunner.stages.tracks import KindTest, TrackMatch, TrackPlan, TrackRule, TracksOptions, Verdict
 
 ENGLISH = Track(1, TrackKind.AUDIO, "A_AC3", Language("eng"), "English", audio=AudioProperties(6))
@@ -534,3 +537,169 @@ def test_the_places_of_extras_survive_a_restart(tmp_path: Path, store: ProfileSt
         del entry["key"]["name"]
     path.write_text(json.dumps(old), encoding="utf-8")
     assert load_batches(store, path).own(file) == {}
+
+
+def hand_drop(batches: Batches, key: BatchKey) -> None:
+    """A hand-written rule on a place: drop every audio track."""
+    rule = TrackRule(match=TrackMatch(kind=KindTest.AUDIO), verdict=Verdict.DROP)
+    own = batches.own_tracks(key)
+    batches.set_options(key, "tracks", replace(own, rules=[*own.rules, rule]))
+
+
+def title(batches: Batches, key: BatchKey, template: str) -> None:
+    naming = batches.profile(key).for_stage("naming")
+    batches.set_options(key, "naming", replace(naming, title_template=template))
+
+
+def test_a_kept_place_receives_nothing_from_above_and_keeps_its_own_choices(
+    tmp_path: Path, store: ProfileStore
+) -> None:
+    batches = Batches(store)
+    first, other = episode(tmp_path, 1), episode(tmp_path, 1, season=2)
+    show, season = BatchKey.of(first, whole_show=True), BatchKey.of(first)
+    hand_drop(batches, show)
+    pick(batches, show, ENGLISH, STAR)
+    title(batches, show, "{show}")
+    assert batches.receives(season)
+    batches.keep(season)
+    assert batches.kept(season)
+    assert dropped(batches, first) == []
+    assert batches.profile(BatchKey.file(first)).for_stage("naming").title_template == ""
+    assert dropped(batches, other) == [COMMENTARY.id]  # the star keeps English ahead of the hand-written drop
+    # A later change on the show does not reach it either; its own choice after the keep does.
+    title(batches, show, "{show} {episode}")
+    drop_commentary(batches, season)
+    assert batches.profile(season).for_stage("naming").title_template == ""
+    assert dropped(batches, first) == [COMMENTARY.id]
+    assert batches.origins(season) == [season]
+
+
+def test_keeping_a_place_that_receives_nothing_or_a_root_stores_nothing(tmp_path: Path, store: ProfileStore) -> None:
+    batches = Batches(store)
+    item = episode(tmp_path, 1)
+    for key in (BatchKey.of(item, whole_show=True), BatchKey.of(item), BatchKey.movies()):
+        batches.keep(key)
+        assert not batches.kept(key)
+        assert not batches.discard_of(key).anything
+
+
+def test_discarding_a_kept_place_removes_the_keep_and_never_its_parents_choices(
+    tmp_path: Path, store: ProfileStore
+) -> None:
+    batches = Batches(store)
+    item = episode(tmp_path, 1)
+    show, season = BatchKey.of(item, whole_show=True), BatchKey.of(item)
+    drop_commentary(batches, show)
+    batches.keep(BatchKey.file(item))
+    assert batches.discard_of(BatchKey.file(item)) == Discard(own=0, edited=False, inside=0, places=0, kept=True)
+    assert batches.discard_of(BatchKey.file(item)).only_kept
+    assert batches.discard_of(season) == Discard(own=0, edited=False, inside=1, places=1)
+    batches.discard(BatchKey.file(item))
+    assert not batches.kept(BatchKey.file(item))
+    assert dropped(batches, item) == [COMMENTARY.id]
+    # From the season it goes too, as a place inside it; the show keeps its choice.
+    batches.keep(BatchKey.file(item))
+    batches.discard(season)
+    assert not batches.kept(BatchKey.file(item))
+    assert dropped(batches, item) == [COMMENTARY.id]
+
+
+def test_a_keep_survives_a_restart(tmp_path: Path, store: ProfileStore) -> None:
+    batches = Batches(store)
+    item = episode(tmp_path, 1)
+    drop_commentary(batches, BatchKey.of(item, whole_show=True))
+    batches.keep(BatchKey.of(item))
+    data = json.loads(json.dumps(batches.to_json()))
+    data["kept"].append({"kind": "nonsense"})
+    again = Batches.from_json(store, data)
+    assert again.kept(BatchKey.of(item))
+    assert dropped(again, item) == []
+
+
+def test_each_field_is_known_by_the_place_that_set_it(tmp_path: Path, store: ProfileStore) -> None:
+    batches = Batches(store)
+    item = episode(tmp_path, 1)
+    show, season, file = BatchKey.of(item, whole_show=True), BatchKey.of(item), BatchKey.file(item)
+    origin = "naming", "title_template"
+    assert [batches.field_origin(key, *origin) for key in (show, season, file)] == [None, None, None]
+    title(batches, show, "{show}")
+    assert [batches.field_origin(key, *origin) for key in (show, season, file)] == [show, show, show]
+    # "As it is" set on the season is a value of its own, which the episode receives from it.
+    title(batches, season, "")
+    assert [batches.field_origin(key, *origin) for key in (season, file)] == [season, season]
+    batches.forget(season)
+    batches.keep(season)
+    assert [batches.field_origin(key, *origin) for key in (season, file)] == [season, season]
+    # A field nothing above sets stays unmarked in a kept place.
+    assert batches.field_origin(season, "metadata", "untagged_language") is None
+
+
+def test_normalizing_drops_what_a_place_sets_to_what_it_now_receives(tmp_path: Path, store: ProfileStore) -> None:
+    batches = Batches(store)
+    item = episode(tmp_path, 1)
+    show, season, file = BatchKey.of(item, whole_show=True), BatchKey.of(item), BatchKey.file(item)
+    title(batches, season, "{show}")
+    drop_commentary(batches, file)
+    # The show comes to say the same; the values stay until the places are normalized.
+    title(batches, show, "{show}")
+    drop_commentary(batches, show)
+    assert batches.own(season)
+    assert batches.own(file)
+    batches.normalize(show)
+    assert batches.own(season) == batches.own(file) == {}
+    assert dropped(batches, item) == [COMMENTARY.id]
+    # Now the season follows the show again, and a later change reaches it.
+    title(batches, show, "{episode}")
+    assert batches.profile(season).for_stage("naming").title_template == "{episode}"
+
+
+def own_rules_of(batches: Batches, key: BatchKey) -> list[TrackRule]:
+    return list(batches.own(key).get("tracks", {}).get("rules", []))
+
+
+def test_normalizing_keeps_a_repeated_choice_whose_going_would_change_the_plan(
+    tmp_path: Path, store: ProfileStore
+) -> None:
+    """Without its own choice the received one comes after the place's other rules, which would then decide first."""
+    batches = Batches(store)
+    quiet = (replace(ENGLISH, flags=TrackFlags(default=False)), COMMENTARY, TURKISH)
+    item = episode(tmp_path, 1, tracks=quiet)
+    show, season = BatchKey.of(item, whole_show=True), BatchKey.of(item)
+    # A second star is the fallback of the first; the show comes to give the first one.
+    pick(batches, season, ENGLISH, STAR)
+    pick(batches, season, TURKISH, STAR)
+    pick(batches, show, ENGLISH, STAR)
+    # A drop ahead of a hand-written keep; the show comes to drop the same tracks.
+    drop_commentary(batches, season)
+    rule = TrackRule(match=TrackMatch(kind=KindTest.AUDIO), verdict=Verdict.KEEP)
+    own = batches.own_tracks(season)
+    batches.set_options(season, "tracks", replace(own, rules=[*own.rules, rule]))
+    drop_commentary(batches, show)
+    before = (defaults(batches, item), dropped(batches, item))
+    assert before == ([ENGLISH.id], [COMMENTARY.id])
+    batches.normalize(show)
+    assert (defaults(batches, item), dropped(batches, item)) == before
+
+
+def test_a_kept_place_keeps_what_only_says_how_so_its_own_template_works(tmp_path: Path, store: ProfileStore) -> None:
+    """Custom tokens, value maps and where originals go change nothing alone: they still come from above."""
+    batches = Batches(store)
+    item = episode(tmp_path, 1)
+    show, season = BatchKey.of(item, whole_show=True), BatchKey.of(item)
+    naming = batches.profile(show).for_stage("naming")
+    tokens = [CustomToken("tag", text="Remastered")]
+    batches.set_options(show, "naming", replace(naming, title_template="{tag}", custom_tokens=tokens))
+    mux = batches.profile(show).for_stage("mux")
+    batches.set_options(show, "mux", replace(mux, original=Original.KEEP))
+    batches.keep(season)
+    kept = batches.profile(season)
+    assert kept.for_stage("naming").title_template == ""
+    assert kept.for_stage("naming").custom_tokens == tokens
+    assert kept.for_stage("mux").original is Original.KEEP
+    assert not batches.receives(season)
+    # Only the cancelled field reads as the kept place's own; the tokens are still the show's.
+    assert batches.field_origin(season, "naming", "title_template") == season
+    assert batches.field_origin(season, "naming", "custom_tokens") == show
+    # The season's own template uses the show's token and is not blocked.
+    title(batches, season, "{show} {tag}")
+    assert "metadata" not in blocked_stages(batches.profile(season))

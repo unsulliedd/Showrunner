@@ -11,6 +11,8 @@ Item {
 
     readonly property var names: app.names
     readonly property bool empty: names.empty === true
+    // Rows show for a template a file inside sets for itself too, while the open place's own is empty.
+    readonly property bool listed: names.listed === true
 
     ColumnLayout {
         anchors.fill: parent
@@ -53,6 +55,11 @@ Item {
                 text: app.untagged.label
                 Accessible.name: Strings.t("names.untagged") + " " + app.untagged.label
                 onClicked: app.pick_untagged_language()
+            }
+
+            PlaceMark {
+                objectName: "untaggedMark"
+                choice: app.field_marks["metadata.untagged_language"] || ({})
             }
 
             UiText {
@@ -222,6 +229,11 @@ Item {
                 }
             }
 
+            PlaceMark {
+                objectName: "spaceMark"
+                choice: place.names.space ? app.field_marks[place.names.space.field] || ({}) : ({})
+            }
+
             UiText {
                 Layout.fillWidth: true
                 Layout.leftMargin: Theme.space_sm
@@ -362,7 +374,7 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Layout.topMargin: Theme.space_sm
-            visible: !place.empty
+            visible: place.listed
             spacing: Theme.space_lg
 
             component Heading: UiText {
@@ -387,7 +399,7 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
-            visible: !place.empty
+            visible: place.listed
             spacing: Theme.space_lg
 
             Heading {
@@ -414,7 +426,7 @@ Item {
 
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: !place.empty
+            visible: place.listed
             objectName: "nameRows"
             clip: true
             // A count, not the rows: a click that moves the focus rebuilds the rows, and the list keeps its place.
@@ -512,7 +524,7 @@ Item {
 
         Item {
             Layout.fillHeight: true
-            visible: place.empty
+            visible: !place.listed
         }
     }
 }

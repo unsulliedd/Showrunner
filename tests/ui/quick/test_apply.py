@@ -222,8 +222,7 @@ def test_the_batch_is_locked_while_its_job_runs_and_others_stay_open(setup: Setu
     controller.set_file_in_run(str(setup.season[0]), False)
     controller.set_in_run("names", False)
     assert controller.rules == rules
-    assert not controller.left_out.files
-    assert not controller.left_out.groups
+    assert controller.left_out.empty
     qtbot.waitUntil(lambda: controller.jobs.view["rows"][0]["phases"][0]["percent"] == 50)
     assert controller.jobs.status == "Applying Show Name (2020), Season 1 · 0 of 10"
     movie = next(i for i in setup.library.items if "Movie.Title" in i.file.path.name)

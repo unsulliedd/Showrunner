@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import fields, replace
 from typing import Any
 
-from showrunner.app.batches.choices import layered_rules
+from showrunner.app.batches.choices import layered_rules, repeats_received
 from showrunner.app.profiles.profile import Profile
 from showrunner.core.options.registry import REGISTRY, OptionsRegistry
 from showrunner.core.options.serialization import LoadWarning, from_fields, to_fields
@@ -48,6 +48,33 @@ def with_options(layer: Layer, stage_id: str, options: Any, received: Any) -> La
             own[field.name] = value
     rest = {key: values for key, values in layer.items() if key != stage_id}
     return {**rest, stage_id: own} if own else rest
+
+
+def normalized(layer: Layer, received: Profile) -> Layer:
+    """`layer` without what equals what the place receives (`received`): a field of the same value, and an own choice
+    that says what the place receives on the same tracks. Such a choice stays where dropping it would move the rules
+    the place plans with (the received one comes after the place's other rules, so a second star or a hand-written
+    rule would decide before it). Hand-written rules stay."""
+    result: Layer = {}
+    for stage_id, values in layer.items():
+        options = received.for_stage(stage_id)
+        own: dict[str, Any] = {}
+        for name, value in values.items():
+            if (stage_id, name) == RULES:
+                rules = list(value)
+                for rule in value:
+                    slim = [kept for kept in rules if kept is not rule]
+                    if repeats_received(rule, options.rules) and layered_rules(slim, options.rules) == layered_rules(
+                        rules, options.rules
+                    ):
+                        rules = slim
+                if rules:
+                    own[name] = rules
+            elif value != getattr(options, name):
+                own[name] = value
+        if own:
+            result[stage_id] = own
+    return result
 
 
 def own_rules(layer: Layer) -> list[Any]:

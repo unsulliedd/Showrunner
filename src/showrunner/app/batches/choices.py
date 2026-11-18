@@ -159,8 +159,7 @@ def choice_of(options: TracksOptions, signature: TrackSignature) -> TrackChoice:
     index = choice_index(options.rules, signature)
     if index is None or not options.rules[index].enabled:
         return NO_CHOICE
-    rule = options.rules[index]
-    return TrackChoice(rule.verdict, rule.default is FlagShape.FIRST, rule.forced is FlagShape.FIRST, rule.language)
+    return _choice(options.rules[index])
 
 
 def choose(
@@ -285,6 +284,20 @@ def layered_rules(own: Sequence[TrackRule], inherited: Sequence[TrackRule]) -> l
     it hides nothing either."""
     hidden = [form for rule in own if rule.from_choice and rule.enabled for form in _rule_forms(rule)]
     return [*own, *(rule for rule in inherited if not (rule.from_choice and rule.match in hidden))]
+
+
+def repeats_received(rule: TrackRule, received: Sequence[TrackRule]) -> bool:
+    """Whether an own choice says what the place receives on the same tracks (none received counting as no choice),
+    as `choose` would have left no rule. A paused choice and a hand-written rule never do."""
+    if not (rule.from_choice and rule.enabled):
+        return False
+    forms = _rule_forms(rule)
+    given = next((r for r in received if r.from_choice and r.match in forms), None)
+    return _choice(rule) == (_choice(given) if given is not None and given.enabled else NO_CHOICE)
+
+
+def _choice(rule: TrackRule) -> TrackChoice:
+    return TrackChoice(rule.verdict, rule.default is FlagShape.FIRST, rule.forced is FlagShape.FIRST, rule.language)
 
 
 def _rule_forms(rule: TrackRule) -> tuple[TrackMatch, TrackMatch]:

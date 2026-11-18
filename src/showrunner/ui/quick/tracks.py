@@ -74,6 +74,10 @@ class Received:
     origins: Sequence[str] = ()  # per rule of the batch's track options
     tracks: TracksOptions = field(default_factory=TracksOptions)  # the track options received
     received_origins: Sequence[str] = ()  # per rule of `tracks`
+    # The paired files added: the kind of place above that set them, or, when the batch set them itself, the kind of
+    # place whose paired files it overrides; "" for neither.
+    paired_from: str = ""
+    paired_over: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,7 +257,20 @@ class BatchView:
         """Where a column's choice comes from: `from` names the place above that made it, `over` the place whose
         choice the batch's own one overrides, `short` either of them for a narrow column; all empty when the choice
         is the batch's own and nothing came from above, or when there is none."""
-        return self._mark(self.cols[index].signature)
+        column = self.cols[index]
+        mark = self._mark(column.signature)
+        return mark if any(mark.values()) or column.paired is None else self._paired_mark(column.paired)
+
+    def _paired_mark(self, paired: PairedFile) -> dict[str, str]:
+        """Where a paired file chip's adding comes from, when no rule decides it: marked from above while it is
+        added, and as an override where the batch's own list adds or leaves it unlike what it receives."""
+        received, added = self.received, paired in self.options.add_paired
+        if received.paired_from and added:
+            origin = received.paired_from
+            return {"from": tr(f"place.from.{origin}"), "over": "", "short": tr(f"place.short.from.{origin}")}
+        if received.paired_over and added != (paired in received.tracks.add_paired):
+            return {"from": "", "over": tr(f"place.over.{received.paired_over}"), "short": tr("place.short.over")}
+        return {"from": "", "over": "", "short": ""}
 
     def _mark(self, signature: TrackSignature) -> dict[str, str]:
         received = self.received

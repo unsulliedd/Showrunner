@@ -62,6 +62,12 @@ AbstractButton {
                 }
             }
 
+            PlaceMark {
+                objectName: "placeMark"
+                Layout.fillWidth: true
+                choice: app.field_marks[control.entry.field] || ({})
+            }
+
             UiText {
                 Layout.fillWidth: true
                 mono: !control.entry.empty

@@ -9,6 +9,13 @@ laid over what they receive, so a later change on the show still reaches them wh
 removing a place's own choices (`forget`) makes it follow its parent again, and `discard` does so for a place and
 everything inside it. Preview plans each file with its own combined options.
 
+A nearer place can also keep its files as they are (`keep`): what it receives then asks for no change (`as_it_is`), the
+parent's track rules included, as its own value for all of it, so no change from above reaches it or what lies inside
+it while its own choices still apply. What only says how a change is made (custom tokens, value maps, spaces, the
+Episode code spelling, where originals go) still comes from above, so the place's own templates and choices work as
+they would elsewhere. It is one flag per place rather than a copy of each value, so a later change above does not
+reach it either; `forget` removes it like any other own choice.
+
 Whether a place is excluded from every run is a value per place too, kept apart from the choices (`Exclusions`): a
 show's excludes its seasons, episodes and extras unless one of them holds its own value, and Discard leaves it alone.
 """
@@ -30,14 +37,17 @@ from showrunner.app.batches.places import (
     difference,
     layer_from_json,
     layer_to_json,
+    normalized,
     own_rules,
 )
 from showrunner.app.batches.places import with_options as layer_with_options
+from showrunner.app.jobs.groups import ChangeGroup, without
 from showrunner.app.profiles.errors import ProfileError
 from showrunner.app.profiles.profile import Profile, profile_from_json, profile_to_json
 from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME, ProfileStore
 from showrunner.app.profiles.working import WorkingCopy
 from showrunner.core.media import Episode, Extra, MediaItem
+from showrunner.core.options.registry import REGISTRY
 from showrunner.stages.tracks import TracksOptions
 
 
@@ -141,12 +151,18 @@ class Discard:
 
     own: int  # the own choices of a season, an episode, an extra or a movie
     edited: bool  # a show's or the Movies group's unsaved edits of its profile
-    inside: int  # the own choices of the places inside it
+    inside: int  # the own choices of the places inside it, a kept one counting one
     places: int  # how many places inside it hold some
+    kept: bool = False  # the place keeps its files as they are
 
     @property
     def anything(self) -> bool:
-        return bool(self.own or self.edited or self.inside)
+        return bool(self.own or self.edited or self.inside or self.kept)
+
+    @property
+    def only_kept(self) -> bool:
+        """Discarding removes nothing but the place's keep, which one click sets again, so nothing is asked."""
+        return self.kept and not (self.own or self.edited or self.inside)
 
 
 class Batches:
@@ -157,6 +173,7 @@ class Batches:
         self._store = store
         self._copies: dict[BatchKey, WorkingCopy] = {}  # by root
         self._layers: dict[BatchKey, Layer] = {}  # a season's, an episode's, an extra's or a movie's own choices
+        self._kept: set[BatchKey] = set()  # nearer places that keep their files as they are
         self.exclusions = Exclusions()
         self.last_used: dict[Media, str] = dict(last_used or {})  # media -> the profile a new root starts from
 
@@ -174,8 +191,40 @@ class Batches:
         return self._combined(key, {})
 
     def received(self, key: BatchKey) -> Profile | None:
-        """What the place receives from above; None for a show and for the Movies group."""
-        return self.profile(key.parent) if key.parent is not None else None
+        """What the place receives from above, every stage as it is for a kept place; None for a show and for the
+        Movies group."""
+        return self._received(key, {}) if key.parent is not None else None
+
+    def receives(self, key: BatchKey) -> bool:
+        """Whether something above asks for a change in the place: a value or a rule other than as it is."""
+        received = self.received(key)
+        return received is not None and received.options != as_it_is(received).options
+
+    def kept(self, key: BatchKey) -> bool:
+        return key in self._kept
+
+    def keep(self, key: BatchKey) -> None:
+        """Keep the place's files as they are: nothing from above reaches it, its own choices still do. A show, the
+        Movies group and a place that receives nothing keep theirs already, so nothing is stored for them."""
+        if key.parent is None or key in self._kept or not self.receives(key):
+            return
+        self._kept.add(key)
+        self.normalize(key)
+
+    def field_origin(self, key: BatchKey, stage_id: str, name: str) -> BatchKey | None:
+        """The place whose value of one field the place has: the nearest that set it, a kept place for a value from
+        above that its keep cancels, or the root when its value asks for something; None when nothing set it."""
+        if key.parent is None:
+            value = getattr(self.copy(key).profile.for_stage(stage_id), name)
+            return key if value != getattr(REGISTRY.get(stage_id)(), name) else None
+        if name in self.own(key).get(stage_id, {}):
+            return key
+        above = self.field_origin(key.parent, stage_id, name)
+        if key in self._kept and above is not None:
+            parent = self.profile(key.parent).for_stage(stage_id)
+            if getattr(self._received(key, {}).for_stage(stage_id), name) != getattr(parent, name):
+                return key
+        return above
 
     def file_profiles(self, items: Sequence[MediaItem], under: BatchKey) -> dict[Path, Profile]:
         """Each file's options, the files lying in place `under` (see `BatchKey.in_show`). Files whose places set
@@ -213,12 +262,23 @@ class Batches:
         if key.parent is None:
             self.copy(key).set_options(stage_id, options)
             return
-        received = self.profile(key.parent).for_stage(stage_id)
-        layer = layer_with_options(self.own(key), stage_id, options, received)
+        received = self._received(key, {}).for_stage(stage_id)
+        self._set_layer(key, layer_with_options(self.own(key), stage_id, options, received))
+
+    def _set_layer(self, key: BatchKey, layer: Layer) -> None:
         if layer:
             self._layers[key] = layer
         else:
             self._layers.pop(key, None)
+
+    def normalize(self, key: BatchKey) -> None:
+        """Drop what the place and the places inside it set to what they now receive, as values and as choices on
+        the same tracks, so each follows its parent there again and a later change above reaches it. Called once a
+        place's values are settled (the place is left, the workspace saved), not on each edit: a template typed on a
+        show passes through values a season set, which would otherwise be lost while typing."""
+        inside = sorted((place for place in self._layers if place.within(key)), key=_depth)
+        for place in inside:
+            self._set_layer(place, normalized(self._layers[place], self._received(place, {})))
 
     def origins(self, key: BatchKey) -> list[BatchKey]:
         """For each rule of the place's tracks options, in order, the place that set it. The root's working copy
@@ -226,8 +286,8 @@ class Batches:
         if key.parent is None:
             return [key] * len(self.copy(key).profile.for_stage("tracks").rules)
         own = own_rules(self.own(key))
-        received = self.profile(key.parent).for_stage("tracks").rules
-        from_above = self.origins(key.parent)
+        received = self._received(key, {}).for_stage("tracks").rules
+        from_above = [] if key in self._kept else self.origins(key.parent)
         if not own:
             return from_above
         kept = self.profile(key).for_stage("tracks").rules[len(own) :]
@@ -295,21 +355,23 @@ class Batches:
                 self._copies[key].revert()
         else:
             self._layers.pop(key, None)
+            self._kept.discard(key)
 
     def discard_of(self, key: BatchKey) -> Discard:
         """What `discard` would remove from the place and from every place inside it."""
         copy = self._copies.get(key) if key.parent is None else None
-        inside = [layer for place, layer in self._layers.items() if place != key and place.within(key)]
+        inside = [place for place in {*self._layers, *self._kept} if place != key and place.within(key)]
         return Discard(
             own=choice_count(self.own(key)),
             edited=copy is not None and copy.changed,
-            inside=sum(choice_count(layer) for layer in inside),
+            inside=sum(choice_count(self.own(place)) + (place in self._kept) for place in inside),
             places=len(inside),
+            kept=key in self._kept,
         )
 
     def discard(self, key: BatchKey) -> None:
         """Discard the changes of the place and of every place inside it, so each follows its parent again."""
-        for place in [place for place in self._layers if place.within(key)]:
+        for place in [place for place in {*self._layers, *self._kept} if place.within(key)]:
             self.forget(place)
         if key.parent is None:
             self.forget(key)
@@ -334,6 +396,7 @@ class Batches:
                 for key, copy in self._copies.items()
             ],
             "places": [{"key": _key_json(key), "own": layer_to_json(layer)} for key, layer in self._layers.items()],
+            "kept": [_key_json(key) for key in self._kept],
             "excluded": [{"key": _key_json(key), "value": value} for key, value in self.exclusions.values.items()],
         }
 
@@ -389,6 +452,14 @@ class Batches:
                 continue
             if key.parent is not None and (layer := layer_from_json(entry.get("own"))):
                 batches._layers[key] = layer
+        kept = data.get("kept")
+        for entry in kept if isinstance(kept, list) else ():
+            try:
+                key = _key_from_json(entry)
+            except (AttributeError, KeyError, TypeError, ValueError):
+                continue
+            if key.parent is not None:
+                batches._kept.add(key)
         excluded = data.get("excluded")
         for entry in excluded if isinstance(excluded, list) else ():
             try:
@@ -405,16 +476,37 @@ class Batches:
             if parent is None:
                 cache[key] = self.copy(key).profile
             else:
-                received = self._combined(parent, cache)
+                received = self._received(key, cache)
                 layer = self._layers.get(key)
                 cache[key] = combine(received, layer) if layer else received
         return cache[key]
+
+    def _received(self, key: BatchKey, cache: dict[BatchKey, Profile]) -> Profile:
+        """What a nearer place lays its own choices over: its parent's options, asking for no change when it keeps
+        its files as they are."""
+        assert key.parent is not None
+        parent = self._combined(key.parent, cache)
+        return as_it_is(parent) if key in self._kept else parent
 
     def _open(self, name: str) -> WorkingCopy:
         try:
             return WorkingCopy(self._store, name)
         except ProfileError:
             return WorkingCopy(self._store, DEFAULT_PROFILE_NAME)
+
+
+def as_it_is(profile: Profile) -> Profile:
+    """`profile` asking for no change: every group of change emptied as a run that leaves it out empties it, and no
+    track rule left, not even one that would only give a language. What says how a change is made stays, since
+    alone it changes nothing and a place's own template may use it (a custom token, a value map)."""
+    for group in ChangeGroup:
+        profile = without(profile, group)
+    tracks = profile.for_stage("tracks")
+    return profile.with_options("tracks", replace(tracks, rules=[]))
+
+
+def _depth(key: BatchKey) -> int:
+    return 0 if key.parent is None else 1 + _depth(key.parent)
 
 
 def _key_json(key: BatchKey) -> dict[str, Any]:

@@ -669,7 +669,7 @@ def test_review_apply_and_the_job_offer_draw_without_warnings(
     qtbot.waitUntil(lambda: not controller.planning and not controller.review["groups"][1]["in_run"])
     qtbot.wait(50)
     _click(window, _items(root, "notThisTime")[1])
-    assert controller.left_out.files == {made.season[1]}
+    assert controller._files_out() == {made.season[1]}
     qtbot.wait(50)
     _click(window, _items(root, "expand")[0])
     qtbot.wait(50)

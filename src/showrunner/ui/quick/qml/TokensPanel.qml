@@ -58,14 +58,25 @@ Item {
                         Layout.topMargin: Theme.space_md
                         spacing: Theme.space_xs
 
-                        UiText {
+                        RowLayout {
                             Layout.fillWidth: true
-                            text: group.modelData.label
-                            color: Theme.faint
-                            font.pixelSize: Theme.text_xs
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: Theme.stroke
-                            font.capitalization: Font.AllUppercase
+                            spacing: Theme.space_md
+
+                            UiText {
+                                Layout.fillWidth: true
+                                text: group.modelData.label
+                                color: Theme.faint
+                                font.pixelSize: Theme.text_xs
+                                font.weight: Font.DemiBold
+                                font.letterSpacing: Theme.stroke
+                                font.capitalization: Font.AllUppercase
+                            }
+
+                            PlaceMark {
+                                objectName: "customTokensMark"
+                                visible: group.modelData.key === "custom" && text !== ""
+                                choice: app.field_marks["naming.custom_tokens"] || ({})
+                            }
                         }
 
                         Repeater {

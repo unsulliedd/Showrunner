@@ -185,9 +185,18 @@ Rectangle {
         }
 
         // The Episode code token's spelling, one choice for every template.
-        Label {
+        RowLayout {
             visible: editor.token.formats !== undefined
-            text: editor.token.formats_label || ""
+            spacing: Theme.space_md
+
+            Label {
+                text: editor.token.formats_label || ""
+            }
+
+            PlaceMark {
+                objectName: "codeFormatMark"
+                choice: app.field_marks["naming.episode_code_format"] || ({})
+            }
         }
 
         Flow {
@@ -233,6 +242,11 @@ Rectangle {
             HelpTip {
                 objectName: "replaceValuesTip"
                 topic: "replace_values"
+            }
+
+            PlaceMark {
+                objectName: "valueMapsMark"
+                choice: app.field_marks["naming.value_maps"] || ({})
             }
         }
 

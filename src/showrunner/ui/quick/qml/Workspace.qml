@@ -158,6 +158,36 @@ Panel {
             }
         }
 
+        // A place that keeps its files as they are, or lies in one: nothing from above reaches it.
+        RowLayout {
+            objectName: "keptLine"
+            Layout.fillWidth: true
+            Layout.leftMargin: Theme.space_lg + Theme.space_sm
+            Layout.rightMargin: Theme.space_lg
+            Layout.topMargin: Theme.space_md
+            visible: app.kept_text !== ""
+            spacing: Theme.space_md
+
+            Icon {
+                name: "check"
+                size: Theme.icon_sm
+                color: Theme.control
+            }
+
+            UiText {
+                Layout.fillWidth: true
+                text: app.kept_text
+                color: Theme.muted
+                font.pixelSize: Theme.text_sm
+                wrapMode: Text.WordWrap
+            }
+
+            HelpTip {
+                objectName: "keepTip"
+                topic: "keep"
+            }
+        }
+
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true

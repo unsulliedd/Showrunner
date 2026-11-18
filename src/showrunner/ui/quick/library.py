@@ -13,7 +13,7 @@ from showrunner.ui.library.model import DOT_ROLE, MARK_ROLE, NAME_COLUMN, SUMMAR
 from showrunner.ui.library.proxy import LibraryFilter
 
 _FIRST = Qt.ItemDataRole.UserRole + 100
-KIND, LABEL, NUMBER, SUMMARY, PROBLEM, PLANNED, ROW_ID, EXCLUDED = range(_FIRST, _FIRST + 8)
+KIND, LABEL, NUMBER, SUMMARY, PROBLEM, PLANNED, ROW_ID, EXCLUDED, KEPT = range(_FIRST, _FIRST + 9)
 ROLE_NAMES = {
     KIND: "kind",
     LABEL: "label",
@@ -23,6 +23,7 @@ ROLE_NAMES = {
     PLANNED: "planned",  # a planned change at or below the row
     ROW_ID: "row_id",  # a video's path, a group's place in the tree
     EXCLUDED: "excluded",  # a place that is excluded from every run, whether on its own or through a parent
+    KEPT: "kept",  # a place that keeps its files as they are, on its own (not one inside it)
 }
 _PROBLEM_ROLES = {Mark.FAILED: "drop", Mark.UNSURE: "change"}
 
@@ -33,17 +34,24 @@ class LibraryTree(LibraryFilter):
     """The name column of a `LibraryModel`, filtered, with the summary and marks folded in as roles."""
 
     _excluded: frozenset[str] = frozenset()
+    _kept: frozenset[str] = frozenset()
 
     def set_excluded(self, rows: Iterable[str]) -> None:
         """Mark the rows, by row id, that are excluded: videos and folders alike, since a folder can be excluded while
         a video inside it is included again."""
-        rows = frozenset(rows)
-        changed = rows ^ self._excluded
-        self._excluded = rows
-        if changed:
+        old, self._excluded = self._excluded, frozenset(rows)
+        self._changed(old ^ self._excluded, EXCLUDED)
+
+    def set_kept(self, rows: Iterable[str]) -> None:
+        """Mark the rows, by row id, whose places keep their files as they are."""
+        old, self._kept = self._kept, frozenset(rows)
+        self._changed(old ^ self._kept, KEPT)
+
+    def _changed(self, rows: frozenset[str], role: int) -> None:
+        if rows:
             for index in self._indexes(QModelIndex()):
-                if self.row_id(index) in changed:
-                    self.dataChanged.emit(index, index, [EXCLUDED])
+                if self.row_id(index) in rows:
+                    self.dataChanged.emit(index, index, [role])
 
     def setSourceModel(self, model: QAbstractItemModel) -> None:  # noqa: N802  # Qt's name
         super().setSourceModel(model)
@@ -100,6 +108,8 @@ class LibraryTree(LibraryFilter):
             return self.row_id(index)
         if role == EXCLUDED:
             return self.row_id(index) in self._excluded
+        if role == KEPT:
+            return self.row_id(index) in self._kept
         if role == PROBLEM:
             return _PROBLEM_ROLES.get(Mark(source.data(MARK_ROLE)), "") if kind.is_video else ""
         path = model.path(source)

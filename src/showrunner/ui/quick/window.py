@@ -41,7 +41,7 @@ from showrunner.app.batches.workspace import load_batches, save_batches
 from showrunner.app.dependencies.service import check, mkvpropedit_from, probe_file, programs_from
 from showrunner.app.jobs.blocked import blocked_stages
 from showrunner.app.jobs.counts import count_changes
-from showrunner.app.jobs.groups import TITLE_TEMPLATE, ChangeGroup
+from showrunner.app.jobs.groups import TITLE_TEMPLATE, TRACK_TEMPLATES, ChangeGroup, without
 from showrunner.app.jobs.preview import FileOutcome, FilePreview, Preview, preview_each
 from showrunner.app.jobs.run import JobResult, Read, StalePreviewError, create_job
 from showrunner.app.jobs.stages import Stage, pipeline
@@ -103,6 +103,20 @@ WORKSPACE_TABS: tuple[tuple[str, str, bool], ...] = (
 )
 # The side panel each place brings; Review takes the whole width.
 # The places whose data is built only while they show, with the signal that tells QML it changed.
+# The fields a view marks with where their value comes from, each beside its control. The track rules and the paired
+# files are marked on their chips instead.
+_MARKED_FIELDS: tuple[tuple[str, str], ...] = (
+    *(("naming", name) for name in (TITLE_TEMPLATE, *TRACK_TEMPLATES)),
+    *(("naming", name.removesuffix("_template") + "_space") for name in (TITLE_TEMPLATE, *TRACK_TEMPLATES)),
+    ("naming", "episode_code_format"),
+    ("naming", "custom_tokens"),
+    ("naming", "value_maps"),
+    ("metadata", "untagged_language"),
+    ("metadata", "write_implied_flags"),
+    ("mux", "original"),
+    ("tracks", "order"),
+    ("tracks", "flags_from_names"),
+)
 _PLACE_SIGNALS = {"overview": "overview_changed", "tracks": "matrix_changed", "review": "review_changed"}
 SIDE_PANELS: dict[str, tuple[str, ...]] = {
     "overview": ("inspector", "chapters", "attachments"),
@@ -135,7 +149,6 @@ class _Applying:
     paths: frozenset[Path]
     profiles: dict[Path, Profile]  # each file's options
     stages: tuple[Stage, ...]
-    groups: frozenset[ChangeGroup]
     out: frozenset[Path]
     live: dict[Path, Any]  # each file's plans in the run plan on screen
     name: str  # the batch, as the job names it
@@ -320,6 +333,8 @@ class WindowController(QObject):
             save_settings(replace(saved, last_folders=folders, last_selection=focus, recent_folders=self._recent))
         except OSError:
             _log.exception("Could not save the workspace")
+        if self._key is not None:
+            self.batches.normalize(self._key.root)
         self._save_batches()
 
     def stop_jobs(self) -> None:
@@ -543,6 +558,8 @@ class WindowController(QObject):
         # An episode or a movie row is one file's own place: what is chosen there is that file's alone.
         self._key, self._items = (place_key(kind, items[0], self._show_of(source)), items) if items else (None, [])
         if self._key != previous:
+            if previous is not None:
+                self.batches.normalize(previous.root)  # its values are settled now that it is left
             self._editing = -1  # the open token belongs to the other batch's profile
             self._editing_builtin = ""
             self._rule_editor.close()  # as does the rule being written
@@ -686,7 +703,7 @@ class WindowController(QObject):
     def place_actions(self) -> list[dict[str, Any]]:
         """What the right-click menu of a library row offers for the selected place."""
         excluded = self.place_excluded
-        return [
+        actions: list[dict[str, Any]] = [
             {"key": "discard", "text": tr("workspace.discard"), "enabled": self.can_discard},
             {
                 "key": "include" if excluded else "exclude",
@@ -694,13 +711,66 @@ class WindowController(QObject):
                 "enabled": self._key is not None and not self.locked,
             },
         ]
+        if self._key is not None and self._key.parent is not None:
+            actions.insert(1, {"key": "keep", "text": tr("workspace.keep"), "enabled": self.can_keep})
+        return actions
 
     @Slot(str)
     def place_action(self, key: str) -> None:
         if key == "discard":
             self.ask_discard()
+        elif key == "keep":
+            self.keep_place()
         elif key in ("exclude", "include"):
             self.exclude_place(key == "exclude")
+
+    # Keep these files as they are
+
+    @Property(bool, notify=batch_changed)
+    def can_keep(self) -> bool:
+        """Something from above asks for a change in the selected place, which is not a show or the Movies group."""
+        return self._key is not None and not self.locked and self.batches.receives(self._key)
+
+    @Slot()
+    def keep_place(self) -> None:
+        """Keep the selected place's files as they are: nothing from above reaches it, its own choices stay. Asks
+        nothing, since Discard changes takes it back."""
+        if self._key is not None and self.can_keep:
+            self.batches.keep(self._key)
+            self._refresh_excluded()
+            self._copy_changed()
+
+    @Property(str, notify=batch_changed)
+    def kept_text(self) -> str:
+        """The line that marks a place kept as it is, or one inside a kept place; empty otherwise."""
+        place: BatchKey | None = self._key
+        while place is not None and place.parent is not None and not self.batches.kept(place):
+            place = place.parent
+        if place is None or place.parent is None:
+            return ""
+        parent = tr(f"discard.parent.{place.parent.kind.value}")
+        if place == self._key:
+            return tr("workspace.kept", parent=parent)
+        return tr("workspace.kept_above", place=tr(f"discard.parent.{place.kind.value}"), parent=parent)
+
+    @Property("QVariantMap", notify=batch_changed)
+    def field_marks(self) -> dict[str, dict[str, str]]:
+        """Where each field a view marks comes from, by `stage.field`: `from` the place above that set it, `over` the
+        place whose value the selected place's own one overrides; both empty for a value set here with nothing above
+        it, and for a show and the Movies group."""
+        if self._key is None or self._key.parent is None:
+            return {}
+        return {f"{stage_id}.{name}": self._field_mark(stage_id, name) for stage_id, name in _MARKED_FIELDS}
+
+    def _field_mark(self, stage_id: str, name: str) -> dict[str, str]:
+        key = self._key
+        assert key is not None
+        assert key.parent is not None
+        origin = self.batches.field_origin(key, stage_id, name)
+        if origin is not None and origin != key:
+            return {"from": tr(f"place.from.{origin.kind.value}"), "over": ""}
+        above = self.batches.field_origin(key.parent, stage_id, name) if origin == key else None
+        return {"from": "", "over": tr(f"place.over.{above.kind.value}") if above is not None else ""}
 
     # Exclude and Include
 
@@ -733,8 +803,9 @@ class WindowController(QObject):
         self.batch_changed.emit()
 
     def _refresh_excluded(self) -> None:
-        """Read which rows of the library are excluded, folders too, and tell the tree and the model."""
-        model, rows, files = self.model, set(), set()
+        """Read which rows of the library are excluded, folders too, and which keep their files as they are, and tell
+        the tree and the model."""
+        model, rows, files, kept = self.model, set(), set(), set()
 
         def walk(parent: QModelIndex, show: BatchKey | None) -> None:
             for row in range(model.rowCount(parent)):
@@ -748,11 +819,14 @@ class WindowController(QObject):
                     rows.add(self.tree.source_row_id(index))
                     if kind.is_video:
                         files.add(item.file.path)
+                if self.batches.kept(key):
+                    kept.add(self.tree.source_row_id(index))
                 walk(index, key if kind is Kind.SHOW else show)
 
         walk(QModelIndex(), None)
         self._excluded_files = frozenset(files)
         self.tree.set_excluded(rows)
+        self.tree.set_kept(kept)
         model.set_excluded(files)
 
     @Property(bool, notify=batch_changed)
@@ -763,7 +837,11 @@ class WindowController(QObject):
 
     @Slot()
     def ask_discard(self) -> None:
-        if self.can_discard:
+        if not self.can_discard or self._key is None:
+            return
+        if self.batches.discard_of(self._key).only_kept:
+            self.discard_changes()
+        else:
             self.discard_asked.emit()
 
     @Property("QVariantMap", notify=batch_changed)
@@ -784,6 +862,8 @@ class WindowController(QObject):
                     parent=tr(f"discard.parent.{parent}"),
                 )
             )
+        if found.kept and key.parent is not None:
+            lines.append(tr("discard.kept", place=place, parent=tr(f"discard.parent.{key.parent.kind.value}")))
         if found.edited:
             lines.append(tr("discard.edited", place=place, profile=self.profile))
         if found.inside:
@@ -810,6 +890,7 @@ class WindowController(QObject):
         other choice."""
         if self._key is not None and self.can_discard:
             self.batches.discard(self._key)
+            self._refresh_excluded()
             self._copy_changed()
 
     @Property(QObject, constant=True)
@@ -1078,6 +1159,17 @@ class WindowController(QObject):
     def write_implied_flags(self) -> bool:
         """Whether a track named Forced, SDH or Commentary also gets that flag written, in the selected batch."""
         return self._key is not None and self.batches.profile(self._key).for_stage("metadata").write_implied_flags
+
+    @Property(bool, notify=batch_changed)
+    def flags_from_names(self) -> bool:
+        """Whether the rules of the selected batch read a track named Forced, SDH or Commentary as having that flag."""
+        return self._key is not None and self.batches.profile(self._key).for_stage("tracks").flags_from_names
+
+    @Slot(bool)
+    def set_flags_from_names(self, on: bool) -> None:
+        if self._key is None or self.locked or on == self.flags_from_names:
+            return
+        self._set_tracks(replace(self._own_tracks(), flags_from_names=on))
 
     @Slot(bool)
     def set_write_implied_flags(self, on: bool) -> None:
@@ -1359,6 +1451,7 @@ class WindowController(QObject):
                 block=blocked_stages(profile).get("metadata"),
                 batch_title=heading(self._key, self._items).title,
                 untagged=profile.for_stage("metadata").untagged_language,
+                profiles=self.batches.file_profiles(self._items, self._key),
             )
             built = {
                 "place": rail.place(given),
@@ -1385,23 +1478,43 @@ class WindowController(QObject):
         stages = tuple(self._make_pipeline(statuses))
         items = tuple(self._items)
         profiles = self.batches.file_profiles(items, self._key)
-        groups = self.left_out.groups_of(self._key)
+        run_profiles = self._run_profiles(items, profiles)
 
         def work() -> tuple[Preview, Preview]:
             full = preview_each(items, profiles, stages, stamped=False)
-            run = preview_each(items, profiles, stages, left_out=groups, stamped=False) if groups else full
+            run = preview_each(items, run_profiles, stages, stamped=False) if run_profiles != profiles else full
             return full, run
 
         self._planner.request(self._plan_token(profiles), work)
 
+    def _groups_out(self, items: Sequence[MediaItem]) -> dict[Path, frozenset[ChangeGroup]]:
+        """The groups this run leaves out of each file, as its own place has them (`LeftOut`)."""
+        assert self._key is not None
+        return {i.file.path: self.left_out.groups_of(BatchKey.file(i).in_show(self._key)) for i in items}
+
+    def _run_profiles(self, items: Sequence[MediaItem], profiles: dict[Path, Profile]) -> dict[Path, Profile]:
+        """Each file's options with the groups this run leaves out of it asking for nothing. Files that shared an
+        options object and leave out the same groups share one again, so they are still planned together."""
+        made: dict[tuple[int, frozenset[ChangeGroup]], Profile] = {}
+        result = {}
+        for path, groups in self._groups_out(items).items():
+            profile = profiles[path]
+            if groups and (id(profile), groups) not in made:
+                emptied = profile
+                for group in sorted(groups):
+                    emptied = without(emptied, group)
+                made[id(profile), groups] = emptied
+            result[path] = made[id(profile), groups] if groups else profile
+        return result
+
     def _plan_token(self, profiles: dict[Path, Profile] | None = None) -> tuple[Any, ...]:
         """What a plan was made for; a result for another token is out of date when it arrives. Each file's options
-        count, read once per options object the files share."""
+        count, read once per options object the files share, and the groups left out of each."""
         if self._key is None:
             return (None,)
         profiles = profiles if profiles is not None else self.batches.file_profiles(self._items, self._key)
         options = repr([p.options for p in {id(p): p for p in profiles.values()}.values()])
-        groups = sorted(self.left_out.groups_of(self._key))
+        groups = tuple(sorted(g) for g in self._groups_out(self._items).values())
         return (self._key, tuple(i.file.path for i in self._items), options, repr(self._statuses), groups)
 
     def _on_planned(self, token: object, result: tuple[Preview, Preview]) -> None:
@@ -1455,8 +1568,18 @@ class WindowController(QObject):
         if parent is None:
             return Received()
         origins = ["" if origin == key else origin.kind.value for origin in self.batches.origins(key)]
-        given = self.batches.profile(parent).for_stage("tracks")
-        return Received(origins, given, [origin.kind.value for origin in self.batches.origins(parent)])
+        received = self.batches.received(key)
+        assert received is not None
+        above = [] if self.batches.kept(key) else self.batches.origins(parent)
+        paired = self.batches.field_origin(key, "tracks", "add_paired")
+        over = self.batches.field_origin(parent, "tracks", "add_paired") if paired == key else None
+        return Received(
+            origins,
+            received.for_stage("tracks"),
+            [origin.kind.value for origin in above],
+            paired_from=paired.kind.value if paired is not None and paired != key else "",
+            paired_over=over.kind.value if over is not None else "",
+        )
 
     def _failures(self) -> dict[str, str]:
         """Why each file of the batch whose tracks could not be read was not read."""
@@ -1467,7 +1590,8 @@ class WindowController(QObject):
         focus = self._focus or (self._items[0] if self._items else None)
         if self._view is None or self._key is None or focus is None:
             return {}
-        return self._view.inspector(focus, self.batches.profile(self._key).for_stage("mux").original)
+        own = self.batches.profile(BatchKey.file(focus).in_show(self._key))
+        return self._view.inspector(focus, own.for_stage("mux").original)
 
     def _signal_shown(self) -> None:
         signal = _PLACE_SIGNALS.get(self._place)
@@ -1497,12 +1621,20 @@ class WindowController(QObject):
             run=self._current_files(self._run_preview) if files else (),
             full=files,
             groups_out=self.left_out.groups_of(self._key),
-            files_out=self.left_out.files,
+            files_out=self._files_out(),
             excluded=self._excluded_files,
             blocks=blocked_stages(profile),
+            profiles=self.batches.file_profiles(self._items, self._key),
             mkvtoolnix_missing=self._statuses is not None and (status is None or status.state is not State.FOUND),
             filter=self._review_filter,
             failures=self._failures(),
+        )
+
+    def _files_out(self) -> frozenset[Path]:
+        """The files of the open place that this run leaves out ("Not this time"), by their own places."""
+        assert self._key is not None
+        return frozenset(
+            i.file.path for i in self._items if self.left_out.file_out(BatchKey.file(i).in_show(self._key))
         )
 
     @Property("QVariantMap", notify=review_changed)
@@ -1522,7 +1654,8 @@ class WindowController(QObject):
 
     @Slot(str, bool)
     def set_in_run(self, group: str, on: bool) -> None:
-        """A group's "In this run": left out, it is planned as if its options asked for nothing; they stay."""
+        """A group's "In this run" for the open place and what lies inside it: left out, it is planned as if its
+        options asked for nothing; they stay. A place inside that set its own value keeps it."""
         if self._key is None or self.locked or group not in set(ChangeGroup):
             return
         self.left_out.set_group(self._key, ChangeGroup(group), not on)
@@ -1530,10 +1663,12 @@ class WindowController(QObject):
 
     @Slot(str, bool)
     def set_file_in_run(self, path: str, on: bool) -> None:
-        """A file's "Not this time": left out of this run only, nothing saved; its choices and exclusion stay."""
-        if self._key is None or self.locked or all(str(i.file.path) != path for i in self._items):
+        """A file's "Not this time", a value of its own place: left out of this run only, nothing saved; its choices
+        and exclusion stay."""
+        item = next((i for i in self._items if str(i.file.path) == path), None)
+        if self._key is None or self.locked or item is None:
             return
-        self.left_out.set_files([Path(path)], not on)
+        self.left_out.set_file(BatchKey.file(item).in_show(self._key), not on)
         self._refresh()
 
     @Slot(str)
@@ -1593,23 +1728,23 @@ class WindowController(QObject):
             return
         stages = tuple(self._make_pipeline(self._statuses or {}))
         items = tuple(self._items)
-        profiles = self.batches.file_profiles(items, self._key)
+        # The groups this run leaves out of a file are emptied in its own options, which the job stores.
+        profiles = self._run_profiles(items, self.batches.file_profiles(items, self._key))
         head = heading(self._key, items)
         self._applying = _Applying(
             paths=frozenset(i.file.path for i in items),
             profiles=profiles,
             stages=stages,
-            groups=self.left_out.groups_of(self._key),
-            out=frozenset(i.file.path for i in items if i.file.path in {*self.left_out.files, *self._excluded_files}),
+            out=self._files_out() | {i.file.path for i in items if i.file.path in self._excluded_files},
             live={f.item.file.path: f.plans for f in self._run_preview.files},
             name=tr("common.list_separator").join((head.over, head.title))
             if self._key.season or self._key.kind in (BatchKind.EXTRAS, BatchKind.EXTRA)
             else head.title,
         )
-        given, store = self._applying, self.jobs.store
+        store = self.jobs.store
 
         def work() -> Preview:
-            return preview_each(items, profiles, stages, left_out=given.groups, finished=store.is_finished)
+            return preview_each(items, profiles, stages, finished=store.is_finished)
 
         job = BackgroundJob(work)
         job.finished.connect(self._on_stamped)
@@ -1647,7 +1782,6 @@ class WindowController(QObject):
                     stamped,
                     given.profiles,
                     given.stages,
-                    left_out=given.groups,
                     left_out_files=given.out,
                 )
             except StalePreviewError:

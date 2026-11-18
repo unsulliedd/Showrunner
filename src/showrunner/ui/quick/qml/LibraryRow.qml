@@ -19,6 +19,7 @@ AbstractButton {
     required property string problem
     required property bool planned
     required property bool excluded
+    required property bool kept
     required property string row_id
 
     readonly property bool isSelected: row_id === app.selected
@@ -33,7 +34,7 @@ AbstractButton {
     focusPolicy: Qt.NoFocus
     Accessible.role: Accessible.TreeItem
     Accessible.name: number !== "" ? number + " " + label : label
-    Accessible.description: excluded ? Strings.t("library.excluded_tip") : ""
+    Accessible.description: [excluded ? Strings.t("library.excluded_tip") : "", kept ? Strings.t("library.kept_tip") : ""].filter(t => t !== "").join(" ")
     onClicked: app.select(treeView.index(row.row, row.column))
     onDoubleClicked: if (hasChildren) treeView.toggleExpanded(row.row)
 
@@ -141,6 +142,23 @@ AbstractButton {
 
                 ToolTip.visible: markHover.hovered
                 ToolTip.text: Strings.t("library.excluded_tip")
+            }
+
+            // A place that keeps its files as they are; the tooltip says so and how to undo it.
+            Icon {
+                objectName: "keptMark"
+                anchors.verticalCenter: parent.verticalCenter
+                visible: row.kept
+                name: "check"
+                size: Theme.icon_sm
+                color: Theme.control
+
+                HoverHandler {
+                    id: keptHover
+                }
+
+                ToolTip.visible: keptHover.hovered
+                ToolTip.text: Strings.t("library.kept_tip")
             }
 
             Item {

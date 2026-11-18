@@ -190,6 +190,12 @@ Item {
                     }
                 }
             }
+
+            PlaceMark {
+                objectName: "originalMark"
+                visible: originals.visible && text !== ""
+                choice: app.field_marks["mux.original"] || ({})
+            }
         }
     }
 }

@@ -669,6 +669,14 @@ Item {
                 font.pixelSize: Theme.text_sm
             }
 
+            PlaceMark {
+                objectName: "orderMark"
+                Layout.alignment: Qt.AlignTop
+                Layout.preferredHeight: Theme.row_sm
+                verticalAlignment: Text.AlignVCenter
+                choice: app.field_marks["tracks.order"] || ({})
+            }
+
             // A name such as Forced or SDH already counts as the flag when rules match; this writes the flag itself.
             ActionButton {
                 objectName: "writeImpliedFlags"
@@ -681,6 +689,14 @@ Item {
                 text: Strings.t("matrix.write_implied_flags")
                 Accessible.description: Strings.t("matrix.write_implied_flags_help")
                 onToggled: app.set_write_implied_flags(checked)
+            }
+
+            PlaceMark {
+                objectName: "impliedFlagsMark"
+                Layout.alignment: Qt.AlignTop
+                Layout.preferredHeight: Theme.row_sm
+                verticalAlignment: Text.AlignVCenter
+                choice: app.field_marks["metadata.write_implied_flags"] || ({})
             }
         }
     }

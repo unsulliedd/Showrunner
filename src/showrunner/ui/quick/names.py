@@ -11,14 +11,16 @@ how many names a card changes, comes from the live plan, so the cards agree with
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from pathlib import Path
 
 from showrunner.app.batches.batch import Media
 from showrunner.app.jobs.blocked import StageBlock, template_problems
 from showrunner.app.jobs.groups import TITLE_TEMPLATE, TRACK_TEMPLATES
 from showrunner.app.jobs.preview import FileOutcome, FilePreview
 from showrunner.app.jobs.stages import PlanState
+from showrunner.app.profiles.profile import Profile
 from showrunner.core.media import Episode, MediaItem
 from showrunner.core.naming import (
     SUGGESTED_TEMPLATES,
@@ -256,6 +258,7 @@ class Named:
     context: NamingContext
     now: str
     after: str  # empty when the template gives nothing, which leaves the name as it is
+    text: str = ""  # the template it was named with
 
 
 def named(
@@ -273,7 +276,8 @@ def named(
             tag = language_after(track.track, tracks.rules, tracks.flags_from_names, untagged) if track else ""
             context = naming_context(item, naming, options, track, language=tag)
             now = item.file.title if track is None else track.track.name
-            found.append(Named(item, track, context, now, preview(getattr(naming, template), context).text))
+            text = getattr(naming, template)
+            found.append(Named(item, track, context, now, preview(text, context).text, text))
     return found
 
 
@@ -477,6 +481,21 @@ class NamesInput:
     block: StageBlock | None  # why the metadata stage is not planned
     batch_title: str
     untagged: str = ""  # the language given to tracks without one
+    # Each file's own options; a file missing here, or every file when it is empty, is named with the open place's.
+    profiles: Mapping[Path, Profile] = field(default_factory=dict)
+
+
+def _options_of(given: NamesInput, item: MediaItem) -> tuple[NamingOptions, TracksOptions, str]:
+    """What a file is named with: its own options, which differ from the open place's where it or a place between
+    them chose otherwise."""
+    profile = given.profiles.get(item.file.path)
+    if profile is None:
+        return given.naming, given.tracks, given.untagged
+    return profile.for_stage("naming"), profile.for_stage("tracks"), profile.for_stage("metadata").untagged_language
+
+
+def _named_each(given: NamesInput, items: Sequence[MediaItem], template: str) -> list[Named]:
+    return [entry for item in items for entry in named([item], template, *_options_of(given, item))]
 
 
 def _file_label(item: MediaItem) -> str:
@@ -492,26 +511,28 @@ def place(given: NamesInput) -> dict[str, object]:
     text = getattr(naming, template)
     counts = card_counts(given.files)
     focus = given.focus or (given.items[0] if given.items else None)
-    entries = named(given.items, template, naming, given.tracks, given.untagged) if given.items else []
+    entries = _named_each(given, given.items, template)
     focused = next((e for e in entries if e.item is focus), None)
+    listed = any(e.text for e in entries)  # the open place's template, or one a file inside sets for itself
     cards = []
     for name in TEMPLATES:
         own = getattr(naming, name)
-        sample = (
-            next((e for e in named([focus], name, naming, given.tracks, given.untagged) if e.after), None)
-            if focus
-            else None
-        )
+        # A template a file inside sets for itself counts too, so its names are listed and counted here.
+        used = bool(own) or any(getattr(_options_of(given, item)[0], name) for item in given.items)
+        stays = tr("names.card.stays.title" if name == TITLE_TEMPLATE else "names.card.stays.track")
+        sample = next((e for e in _named_each(given, [focus], name) if e.after), None) if focus else None
         cards.append(
             {
                 "key": name,
+                "field": f"naming.{name}",  # the key of its mark in the window's `field_marks`
                 "label": card_label(name),
                 "icon": _ICON.get(name, "tv" if given.media is Media.EPISODES else "film"),
-                "empty": not own,
-                "sample": sample.after if own and sample else "",
-                "stays": tr("names.card.stays.title" if name == TITLE_TEMPLATE else "names.card.stays.track"),
+                "empty": not used,
+                # A focused file that leaves the names as they are, by its own choice, reads as an empty card does.
+                "sample": (sample.after if sample else stays) if used else "",
+                "stays": stays,
                 "count": counts[name],
-                "count_text": _count_text(name, counts[name]) if own else "",
+                "count_text": _count_text(name, counts[name]) if used else "",
                 "problem": bool(own and template_problems(naming, name))
                 or bool(given.block and name in given.block.templates),
             }
@@ -536,7 +557,8 @@ def place(given: NamesInput) -> dict[str, object]:
         "result": _result(text, focused),
         "rows_title": tr("names.preview_on", batch=given.batch_title),
         "rows_count": _count_text(template, len(entries)),
-        "rows": _rows(text, entries, focus, given.files) if text else [],
+        "rows": _rows(text, entries, focus, given.files) if listed else [],
+        "listed": listed,
     }
 
 
@@ -544,6 +566,7 @@ def space_choice(naming: NamingOptions, template: str) -> dict[str, object]:
     """What a space inside a token's value becomes in the picked template, with the choices."""
     return {
         "value": naming.space_for(template).value,
+        "field": f"naming.{template.removesuffix('_template')}_space",
         "choices": [{"key": s.value, "label": tr(f"names.space.{s.value}")} for s in SpaceStyle],
     }
 
@@ -562,7 +585,7 @@ def _subject(entry: Named) -> str:
 def _result(text: str, entry: Named | None) -> dict[str, object]:
     if entry is None or not text:
         return {"label": "", "segments": [], "stays": False}
-    parts = segments(text, entry.context)
+    parts = segments(entry.text, entry.context)  # the template the file is named with
     if not parts:
         return {"label": tr("names.result.stays", name=_subject(entry)), "segments": [], "stays": True}
     return {"label": tr("names.result.becomes", name=_subject(entry)), "segments": parts, "stays": False}
@@ -604,7 +627,7 @@ def _rows(text: str, entries: Sequence[Named], focus: MediaItem | None, files: S
     not; before the plan arrives it follows the template. A part left out is noted only where it sets a file apart:
     when most files lack it, as most tracks lack flags, it is no news."""
     by_path = {f.item.file.path: f for f in files}
-    losses = [loss_text(text, e.context, track=e.track is not None) for e in entries]
+    losses = [loss_text(e.text or text, e.context, track=e.track is not None) for e in entries]
     usual = Counter(losses).most_common(1)[0][0] if losses else ""
     rows = []
     for entry, loss in zip(entries, losses, strict=True):
@@ -612,12 +635,13 @@ def _rows(text: str, entries: Sequence[Named], focus: MediaItem | None, files: S
         differs = bool(entry.after) and entry.after != entry.now
         why = not_written(file) if file is not None and differs else ""
         changed = differs and (file is None or _planned(file, entry))
+        now = entry.now or tr("names.now_empty.title" if entry.track is None else "names.now_empty.track")
         rows.append(
             {
                 "number": _number(entry.item),
-                "now": entry.now or tr("names.now_empty.title" if entry.track is None else "names.now_empty.track"),
+                "now": now,
                 "now_empty": not entry.now,
-                "after": entry.after or entry.now,
+                "after": entry.after or now,
                 "changed": changed,
                 "note": why or (loss if loss != usual else ""),
                 "path": str(entry.item.file.path),
@@ -636,8 +660,8 @@ def _panel_context(given: NamesInput) -> tuple[NamingContext | None, NamingConte
     focus = given.focus or (given.items[0] if given.items else None)
     if focus is None:
         return None, None
-    entries = named([focus], given.template, given.naming, given.tracks, given.untagged)
-    title = named([focus], TITLE_TEMPLATE, given.naming, given.tracks, given.untagged)[0].context
+    entries = _named_each(given, [focus], given.template)
+    title = _named_each(given, [focus], TITLE_TEMPLATE)[0].context
     track = entries[0].context if entries and given.template != TITLE_TEMPLATE else None
     return title, track
 

@@ -64,6 +64,31 @@ Item {
             }
         }
 
+        // Whether the rules read a track named Forced, SDH or Commentary as having that flag, in this place.
+        RowLayout {
+            Layout.fillWidth: true
+            visible: !panel.editing
+            spacing: Theme.space_md
+
+            ActionButton {
+                objectName: "flagsFromNames"
+                kind: "outline"
+                size: Theme.row_sm
+                checkable: true
+                checked: app.flags_from_names
+                iconName: checked ? "check" : ""
+                text: Strings.t("rules.flags_from_names")
+                Accessible.description: Strings.t("prefs.profiles.flags_hint")
+                onToggled: app.set_flags_from_names(checked)
+            }
+
+            PlaceMark {
+                objectName: "flagsFromNamesMark"
+                Layout.fillWidth: true
+                choice: app.field_marks["tracks.flags_from_names"] || ({})
+            }
+        }
+
         UiText {
             Layout.fillWidth: true
             visible: !panel.editing && app.rules.length === 0

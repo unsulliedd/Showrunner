@@ -14,10 +14,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from showrunner.app.batches.batch import Media
-from showrunner.app.jobs.blocked import StageBlock
+from showrunner.app.jobs.blocked import StageBlock, blocked_stages
 from showrunner.app.jobs.counts import name_changes, track_changes
 from showrunner.app.jobs.groups import ChangeGroup
 from showrunner.app.jobs.preview import FileOutcome, FilePreview
+from showrunner.app.profiles.profile import Profile
 from showrunner.core.media import MediaItem
 from showrunner.core.track import TrackFlags, TrackKind
 from showrunner.stages.metadata import MetadataPlan
@@ -65,6 +66,8 @@ class ReviewInput:
     files_out: Set[Path] = frozenset()  # left out of this run alone
     excluded: Set[Path] = frozenset()  # out of every run until included again
     blocks: dict[str, StageBlock] = field(default_factory=dict)
+    # Each file's own options, which differ from the open place's where it or a place between them chose otherwise.
+    profiles: Mapping[Path, Profile] = field(default_factory=dict)
     mkvtoolnix_missing: bool = False
     filter: str = "all"
     failures: Mapping[str, str] = field(default_factory=dict)  # why a file's tracks could not be read, by path
@@ -199,16 +202,35 @@ def _original(mux: MuxOptions, original: str) -> str:
 
 
 def _problems(given: ReviewInput, group: ChangeGroup) -> list[str]:
-    """Why a group plans nothing or less than asked, worded, with a missing program first."""
+    """Why a group plans nothing or less than asked, worded, with a missing program first. What blocks a stage only
+    in files whose own options differ from the open place's follows, naming those files."""
     found = [tr(f"review.program.{group.value}")] if given.mkvtoolnix_missing else []
+    shown = _blocked(given.blocks, given.mux, group)
+    found += shown
+    by_options: dict[int, tuple[Profile, list[MediaItem]]] = {}
+    for item in given.items:
+        if (profile := given.profiles.get(item.file.path)) is not None:
+            by_options.setdefault(id(profile), (profile, []))[1].append(item)
+    for profile, items in by_options.values():
+        lines = [
+            line for line in _blocked(blocked_stages(profile), profile.for_stage("mux"), group) if line not in shown
+        ]
+        one = item_title(items[0]) or items[0].file.path.stem
+        files = one if len(items) == 1 else tr_plural("review.files", len(items))
+        found += [tr("review.blocked.in_files", files=files, problem=line) for line in lines]
+    return found
+
+
+def _blocked(blocks: Mapping[str, StageBlock], mux: MuxOptions, group: ChangeGroup) -> list[str]:
+    found: list[str] = []
     if group is ChangeGroup.TRACKS:
-        if block := given.blocks.get("tracks"):
+        if block := blocks.get("tracks"):
             numbers = sorted({p.rule_index + 1 for p in block.rules})
             found.append(tr("review.blocked.rules", rules=tr("common.list_separator").join(map(str, numbers))))
-        if block := given.blocks.get("mux"):
-            found += [tr(f"review.blocked.{name.value}", folder=given.mux.keep_folder) for name in block.names]
+        if block := blocks.get("mux"):
+            found += [tr(f"review.blocked.{name.value}", folder=mux.keep_folder) for name in block.names]
     else:
-        found += blocked_lines(given.blocks.get("metadata"))
+        found += blocked_lines(blocks.get("metadata"))
     return found
 
 
@@ -364,7 +386,9 @@ def _file_after(given: ReviewInput, file: FilePreview | None) -> str:
     if file is not None and file.outcome is FileOutcome.NEEDS_REMUX:
         return tr("inspector.new_file.cannot")
     if isinstance(plan, TrackPlan) and plan.needs_remux:
-        return tr(f"review.file_after.{given.mux.original.value}", folder=given.mux.keep_folder)
+        profile = given.profiles.get(file.item.file.path) if file is not None else None
+        mux = profile.for_stage("mux") if profile is not None else given.mux
+        return tr(f"review.file_after.{mux.original.value}", folder=mux.keep_folder)
     if file is not None and file.writes:
         return tr("review.file_after.in_place")
     return tr("review.file_after.stays")
