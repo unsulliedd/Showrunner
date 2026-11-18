@@ -7,7 +7,7 @@ from collections.abc import Iterable, Iterator
 from PySide6.QtCore import QAbstractItemModel, QByteArray, QModelIndex, QPersistentModelIndex, Qt
 
 from showrunner.app.library.library import Mark
-from showrunner.core.media import Episode
+from showrunner.core.media import Episode, Extra
 from showrunner.ui.i18n.catalog import tr
 from showrunner.ui.library.model import DOT_ROLE, MARK_ROLE, NAME_COLUMN, SUMMARY_COLUMN, Kind, LibraryModel
 from showrunner.ui.library.proxy import LibraryFilter
@@ -111,7 +111,7 @@ class LibraryTree(LibraryFilter):
             return episode.episode_title or tr("library.episode_untitled", number=episode.episode)
         if kind is Kind.SHOW:
             first = model.library.item(model.video_paths(source)[0])
-            year = first.identity.year if first is not None and isinstance(first.identity, Episode) else None
+            year = first.identity.year if first is not None and isinstance(first.identity, Episode | Extra) else None
             return tr("library.movie", title=source.data(), year=year) if year else source.data()
         return source.data()
 

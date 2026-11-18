@@ -90,6 +90,15 @@ class Episode:
 
 
 @dataclass(frozen=True, slots=True)
+class Extra:
+    """A video of a show that belongs to no season: behind the scenes, a trailer, a deleted scene."""
+
+    show: str
+    title: str
+    year: int | None = None  # of the show
+
+
+@dataclass(frozen=True, slots=True)
 class SubtitleFile:
     """A subtitle file beside a video; the flags come from its file name."""
 
@@ -101,8 +110,8 @@ class SubtitleFile:
 
 @dataclass(frozen=True, slots=True)
 class MediaItem:
-    """What a file is (a movie or an episode), the file itself and the subtitle files beside it."""
+    """What a file is (a movie, an episode or an extra), the file itself and the subtitle files beside it."""
 
-    identity: Movie | Episode
+    identity: Movie | Episode | Extra
     file: MediaFile
     subtitles: tuple[SubtitleFile, ...] = ()

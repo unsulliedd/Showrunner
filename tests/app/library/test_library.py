@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from showrunner.app.library.library import Library, LibraryLoad, Mark
-from showrunner.core.media import SubtitleFile
+from showrunner.core.media import Extra, SubtitleFile
 
 
 def path_of(library: Library, name: str) -> Path:
@@ -108,3 +108,14 @@ def test_files_read_again_after_apply_take_their_place_and_lose_the_subtitles_mo
     assert (moved.file.title, moved.subtitles) == ("New", ())
     assert library.item(first.file.path) is None
     assert [i.file.path for i in library.items][1:] == [i.file.path for i in sample_library.items][1:]
+
+
+def test_extras_are_counted_apart_from_episodes_and_movies(sample_library: Library) -> None:
+    extra = replace(sample_library.items[0], identity=Extra("Alpha", "Making Of", 2020))
+    extra = replace(extra, file=replace(extra.file, path=Path("lib/Alpha/Extras/Making Of.mkv")))
+    stranger = replace(extra, identity=Extra("Gamma", "Trailer"), file=replace(extra.file, path=Path("lib/G/T.mkv")))
+    library = replace(sample_library, items=(*sample_library.items, extra, stranger))
+    counts = library.counts()
+    assert (counts.videos, counts.episodes, counts.movies, counts.extras) == (7, 4, 1, 2)
+    assert counts.shows == 3  # a show with nothing but extras still counts
+    assert library.counts([extra.file.path]).extras == 1

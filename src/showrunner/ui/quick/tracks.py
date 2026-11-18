@@ -23,7 +23,7 @@ from showrunner.app.batches.choices import (
 from showrunner.app.jobs.counts import count_changes
 from showrunner.app.jobs.preview import FileOutcome, FilePreview
 from showrunner.core.language import Language
-from showrunner.core.media import Episode, MediaItem, SubtitleFile
+from showrunner.core.media import Episode, Extra, MediaItem, SubtitleFile
 from showrunner.core.naming.names import channel_layout, codec_display
 from showrunner.core.track import ObjectAudio, Track, TrackFlags, TrackKind
 from showrunner.stages.metadata import MetadataPlan
@@ -721,6 +721,10 @@ def _facts(item: MediaItem) -> str:
     parts = []
     if isinstance(identity, Episode):
         parts.append(tr("inspector.episode_code", season=identity.season, episode=identity.episode))
+        parts.append(
+            identity.show if identity.year is None else tr("library.movie", title=identity.show, year=identity.year)
+        )
+    elif isinstance(identity, Extra):
         parts.append(
             identity.show if identity.year is None else tr("library.movie", title=identity.show, year=identity.year)
         )

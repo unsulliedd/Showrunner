@@ -8,13 +8,14 @@ import pytest
 
 from showrunner.app.batches.batch import Batches, BatchKey, BatchKind, Discard, Media
 from showrunner.app.batches.choices import NO_CHOICE, TrackChoice, TrackSignature, choice_of, choose
+from showrunner.app.batches.workspace import load_batches, save_batches
 from showrunner.app.jobs.preview import preview, preview_each
 from showrunner.app.jobs.stages import TracksStage
 from showrunner.app.profiles import registered  # noqa: F401
 from showrunner.app.profiles.profile import Profile, profile_to_json
 from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME, ProfileStore
 from showrunner.core.language import Language
-from showrunner.core.media import Episode, MediaFile, MediaItem, Movie
+from showrunner.core.media import Episode, Extra, MediaFile, MediaItem, Movie
 from showrunner.core.track import AudioProperties, Track, TrackFlags, TrackKind
 from showrunner.stages.tracks import KindTest, TrackMatch, TrackPlan, TrackRule, TracksOptions, Verdict
 
@@ -458,3 +459,78 @@ def test_an_edited_profile_reaches_its_roots_unless_they_changed_that_field(
     assert batches.profile(chosen).for_stage("mux").original == "keep"
     assert batches.profile(chosen).for_stage("mux").suffix == " new"
     assert batches.copy(chosen).changed
+
+
+def extra(tmp_path: Path, title: str = "Making Of", show: str = "Show Name") -> MediaItem:
+    path = tmp_path / f"{show} - {title}.mkv"
+    path.write_bytes(b"matroska")
+    return MediaItem(Extra(show, title), MediaFile(path, "matroska", tracks=TRACKS))
+
+
+def test_an_extra_is_a_place_inside_its_show_after_the_seasons(tmp_path: Path) -> None:
+    item, other = extra(tmp_path), extra(tmp_path, "Bloopers")
+    show = BatchKey.of(episode(tmp_path, 1), whole_show=True)
+    group = BatchKey.of(item)
+    file = BatchKey.file(item)
+    assert BatchKey.of(item, whole_show=True) == show
+    assert group == BatchKey(BatchKind.EXTRAS, Media.EPISODES, "Show Name")
+    assert (
+        file == BatchKey(BatchKind.EXTRA, Media.EPISODES, "Show Name", None, name="Making Of") != BatchKey.file(other)
+    )
+    assert file.parent == group == BatchKey.of(other)
+    assert group.parent == file.root == show
+    assert file.within(show)
+    assert file.within(group)
+    assert not file.within(BatchKey.of(episode(tmp_path, 1)))
+    assert file.in_show(replace(show, title="SHOW NAME", year=2020)).year == 2020
+
+
+def test_a_choice_on_a_show_reaches_its_extras_and_a_nearer_one_overrides_it(
+    tmp_path: Path, store: ProfileStore
+) -> None:
+    batches = Batches(store)
+    item, other = extra(tmp_path), extra(tmp_path, "Bloopers")
+    drop_commentary(batches, BatchKey.of(item, whole_show=True))
+    assert dropped(batches, item) == dropped(batches, other) == [COMMENTARY.id]
+    pick(batches, BatchKey.of(item), COMMENTARY, TrackChoice(Verdict.KEEP))  # the group's, reaches each extra
+    assert dropped(batches, item) == dropped(batches, other) == []
+    drop_commentary(batches, BatchKey.file(other))
+    assert dropped(batches, other) == [COMMENTARY.id]
+    assert dropped(batches, item) == []
+    assert dropped(batches, episode(tmp_path, 1)) == [COMMENTARY.id]  # the seasons are not in the group
+
+
+def test_discarding_a_show_clears_the_choices_of_its_extras(tmp_path: Path, store: ProfileStore) -> None:
+    batches = Batches(store)
+    item = extra(tmp_path)
+    show, group, file = BatchKey.of(item, whole_show=True), BatchKey.of(item), BatchKey.file(item)
+    drop_commentary(batches, file)
+    assert batches.discard_of(file) == Discard(own=1, edited=False, inside=0, places=0)
+    assert batches.discard_of(group) == Discard(own=0, edited=False, inside=1, places=1)
+    assert batches.discard_of(show) == Discard(own=0, edited=False, inside=1, places=1)
+    batches.discard(group)
+    assert dropped(batches, item) == []
+    drop_commentary(batches, file)
+    batches.discard(file)
+    assert not batches.discard_of(file).anything
+
+
+def test_the_places_of_extras_survive_a_restart(tmp_path: Path, store: ProfileStore) -> None:
+    batches = Batches(store)
+    item = extra(tmp_path)
+    file = BatchKey.file(item)
+    drop_commentary(batches, file)
+    batches.set_excluded(BatchKey.of(item), True)
+    path = tmp_path / "workspace.json"
+    save_batches(batches, path)
+    again = load_batches(store, path)
+    assert again.own(file) == batches.own(file) != {}
+    assert dropped(again, item) == [COMMENTARY.id]
+    assert again.is_excluded(file)
+    assert again.excluded_files([item], BatchKey.of(item, whole_show=True)) == {item.file.path}
+    # A key stored before extras existed has no name and loads as it did.
+    old = json.loads(path.read_text(encoding="utf-8"))
+    for entry in (*old["batches"]["places"], *old["batches"]["excluded"]):
+        del entry["key"]["name"]
+    path.write_text(json.dumps(old), encoding="utf-8")
+    assert load_batches(store, path).own(file) == {}

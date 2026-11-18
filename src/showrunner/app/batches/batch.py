@@ -1,16 +1,16 @@
-"""Batches: the places a workspace shows (a whole show, a season, an episode, the Movies group or one movie) and the
-choices made on each.
+"""Batches: the places a workspace shows (a whole show, a season, an episode, the extras of a show or one of them, the
+Movies group or one movie) and the choices made on each.
 
-A choice made on a place reaches everything inside it: a show's reaches its seasons and their episodes, a season's
-its episodes, and the Movies group's every movie. A place's own choice overrides the one it receives, for that place
-only. The show and the Movies group follow a profile: they hold a working copy of it, which Save writes back and
-Revert returns to. A season, an episode and a movie hold only what they set themselves (`places.Layer`), laid over
-what they receive, so a later change on the show still reaches them wherever they did not choose otherwise; removing
-a place's own choices (`forget`) makes it follow its parent again, and `discard` does so for a place and everything
-inside it. Preview plans each file with its own combined options.
+A choice made on a place reaches everything inside it: a show's reaches its seasons and their episodes and its extras,
+a season's its episodes, and the Movies group's every movie. A place's own choice overrides the one it receives, for
+that place only. The show and the Movies group follow a profile: they hold a working copy of it, which Save writes back
+and Revert returns to. A season, an episode, an extra and a movie hold only what they set themselves (`places.Layer`),
+laid over what they receive, so a later change on the show still reaches them wherever they did not choose otherwise;
+removing a place's own choices (`forget`) makes it follow its parent again, and `discard` does so for a place and
+everything inside it. Preview plans each file with its own combined options.
 
 Whether a place is excluded from every run is a value per place too, kept apart from the choices (`Exclusions`): a
-show's excludes its seasons and episodes unless one of them holds its own value, and Discard leaves it alone.
+show's excludes its seasons, episodes and extras unless one of them holds its own value, and Discard leaves it alone.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ from showrunner.app.profiles.errors import ProfileError
 from showrunner.app.profiles.profile import Profile, profile_from_json, profile_to_json
 from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME, ProfileStore
 from showrunner.app.profiles.working import WorkingCopy
-from showrunner.core.media import Episode, MediaItem
+from showrunner.core.media import Episode, Extra, MediaItem
 from showrunner.stages.tracks import TracksOptions
 
 
@@ -45,6 +45,8 @@ class BatchKind(StrEnum):
     SHOW = "show"
     SEASON = "season"
     EPISODE = "episode"
+    EXTRAS = "extras"  # the extras of a show, listed after its seasons
+    EXTRA = "extra"
     MOVIE = "movie"
     MOVIES = "movies"  # the Movies group: every movie in the library
 
@@ -66,11 +68,16 @@ class BatchKey:
     year: int | None = None
     season: int | None = None
     episode: int | None = None
+    name: str = ""  # an extra's title, which tells it from the other extras of its show
 
     @classmethod
     def of(cls, item: MediaItem, *, whole_show: bool = False) -> BatchKey:
-        """The season of an episode (the show with `whole_show`), or the movie itself."""
+        """The season of an episode, the extras group of an extra (the show with `whole_show`), or the movie itself."""
         identity = item.identity
+        if isinstance(identity, Extra):
+            if whole_show:
+                return cls(BatchKind.SHOW, Media.EPISODES, identity.show, identity.year)
+            return cls(BatchKind.EXTRAS, Media.EPISODES, identity.show, identity.year)
         if isinstance(identity, Episode):
             if whole_show:
                 return cls(BatchKind.SHOW, Media.EPISODES, identity.show, identity.year)
@@ -79,8 +86,10 @@ class BatchKey:
 
     @classmethod
     def file(cls, item: MediaItem) -> BatchKey:
-        """The place of one file: its episode, or its movie."""
+        """The place of one file: its episode, its extra, or its movie."""
         identity = item.identity
+        if isinstance(identity, Extra):
+            return cls(BatchKind.EXTRA, Media.EPISODES, identity.show, identity.year, name=identity.title)
         if isinstance(identity, Episode):
             season, episode = identity.season, identity.episode
             return cls(BatchKind.EPISODE, Media.EPISODES, identity.show, identity.year, season, episode)
@@ -95,7 +104,9 @@ class BatchKey:
         """The place this one receives choices from; None for a show and for the Movies group."""
         if self.kind is BatchKind.EPISODE:
             return BatchKey(BatchKind.SEASON, self.media, self.title, self.year, self.season)
-        if self.kind is BatchKind.SEASON:
+        if self.kind is BatchKind.EXTRA:
+            return BatchKey(BatchKind.EXTRAS, self.media, self.title, self.year)
+        if self.kind in (BatchKind.SEASON, BatchKind.EXTRAS):
             return BatchKey(BatchKind.SHOW, self.media, self.title, self.year)
         if self.kind is BatchKind.MOVIE:
             return BatchKey.movies()
@@ -128,7 +139,7 @@ class BatchKey:
 class Discard:
     """What discarding the changes of a place removes."""
 
-    own: int  # the own choices of a season, an episode or a movie
+    own: int  # the own choices of a season, an episode, an extra or a movie
     edited: bool  # a show's or the Movies group's unsaved edits of its profile
     inside: int  # the own choices of the places inside it
     places: int  # how many places inside it hold some
@@ -145,7 +156,7 @@ class Batches:
     def __init__(self, store: ProfileStore, last_used: dict[Media, str] | None = None) -> None:
         self._store = store
         self._copies: dict[BatchKey, WorkingCopy] = {}  # by root
-        self._layers: dict[BatchKey, Layer] = {}  # a season's, an episode's or a movie's own choices
+        self._layers: dict[BatchKey, Layer] = {}  # a season's, an episode's, an extra's or a movie's own choices
         self.exclusions = Exclusions()
         self.last_used: dict[Media, str] = dict(last_used or {})  # media -> the profile a new root starts from
 
@@ -173,7 +184,8 @@ class Batches:
         return {item.file.path: self._combined(BatchKey.file(item).in_show(under), cache) for item in items}
 
     def own(self, key: BatchKey) -> Layer:
-        """The fields a season, an episode or a movie set itself; empty for a root, whose choices are its copy."""
+        """The fields a season, an episode, an extra or a movie set itself; empty for a root, whose choices are its
+        copy."""
         return self._layers.get(key, {})
 
     def own_tracks(self, key: BatchKey) -> TracksOptions:
@@ -417,7 +429,7 @@ def _key_from_json(data: Any) -> BatchKey:
     year, season, episode = data.get("year"), data.get("season"), data.get("episode")
     if not all(value is None or type(value) is int for value in (year, season, episode)):
         raise TypeError("a batch key has a wrong value")
-    title = data.get("title", "")
-    if not isinstance(title, str):
+    title, name = data.get("title", ""), data.get("name", "")
+    if not isinstance(title, str) or not isinstance(name, str):
         raise TypeError("a batch key has a wrong value")
-    return BatchKey(kind, media, title, year, season, episode)
+    return BatchKey(kind, media, title, year, season, episode, name)

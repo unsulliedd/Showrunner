@@ -1,4 +1,5 @@
-"""The library tree's model: shows, seasons and episodes, then movies, built from a `Library`."""
+"""The library tree's model: shows with their seasons and episodes, then their extras, then movies, built from a
+`Library`."""
 
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ from PySide6.QtCore import QModelIndex, QObject, Qt, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 
 from showrunner.app.library.library import Library, LibraryLoad, Mark
-from showrunner.core.media import Episode, MediaFile, MediaItem, SubtitleFile
+from showrunner.core.media import Episode, Extra, MediaFile, MediaItem, SubtitleFile
 from showrunner.ui.i18n.catalog import tr
 from showrunner.ui.sheet.format import episode_name, movie_name
 
@@ -32,12 +33,14 @@ class Kind(StrEnum):
     SHOW = "show"
     SEASON = "season"
     EPISODE = "episode"
+    EXTRAS = "extras"
+    EXTRA = "extra"
     MOVIES = "movies"
     MOVIE = "movie"
 
     @property
     def is_video(self) -> bool:
-        return self in (Kind.EPISODE, Kind.MOVIE)
+        return self in (Kind.EPISODE, Kind.EXTRA, Kind.MOVIE)
 
 
 class LibraryModel(QStandardItemModel):
@@ -121,22 +124,29 @@ class LibraryModel(QStandardItemModel):
         self.removeRows(0, self.rowCount())
         self._videos.clear()
         self._order.clear()
-        shows: dict[str, tuple[str, dict[int, list[MediaItem]]]] = {}
+        shows: dict[str, tuple[str, dict[int, list[MediaItem]], list[MediaItem]]] = {}
         movies: list[MediaItem] = []
         for item in library.items:
             identity = item.identity
             if isinstance(identity, Episode):
-                seasons = shows.setdefault(identity.show.casefold(), (identity.show, {}))[1]
+                seasons = shows.setdefault(identity.show.casefold(), (identity.show, {}, []))[1]
                 seasons.setdefault(identity.season, []).append(item)
+            elif isinstance(identity, Extra):
+                shows.setdefault(identity.show.casefold(), (identity.show, {}, []))[2].append(item)
             else:
                 movies.append(item)
         root = self.invisibleRootItem()
-        for _key, (name, seasons) in sorted(shows.items()):
-            show = self._add(root, Kind.SHOW, name, str(sum(len(e) for e in seasons.values())))
+        for _key, (name, seasons, extras) in sorted(shows.items()):
+            count = sum(len(e) for e in seasons.values()) + len(extras)
+            show = self._add(root, Kind.SHOW, name, str(count))
             for number, episodes in sorted(seasons.items()):
                 season = self._add(show, Kind.SEASON, tr("library.season", number=number), str(len(episodes)))
                 for item in sorted(episodes, key=lambda i: (i.identity.episode, str(i.file.path))):
                     self._add_video(season, item, episode_name(item.identity))
+            if extras:
+                group = self._add(show, Kind.EXTRAS, tr("library.extras"), str(len(extras)))
+                for item in sorted(extras, key=lambda i: (i.identity.title.casefold(), str(i.file.path))):
+                    self._add_video(group, item, item.identity.title)
         if movies:
             group = self._add(root, Kind.MOVIES, tr("library.movies"), str(len(movies)))
             for item in sorted(movies, key=lambda i: (i.identity.title.casefold(), i.identity.year or 0)):
@@ -192,7 +202,7 @@ class LibraryModel(QStandardItemModel):
 
     def _add_video(self, parent: QStandardItem, item: MediaItem, text: str) -> None:
         path = item.file.path
-        kind = Kind.EPISODE if isinstance(item.identity, Episode) else Kind.MOVIE
+        kind = {Episode: Kind.EPISODE, Extra: Kind.EXTRA}.get(type(item.identity), Kind.MOVIE)
         cell = self._add(parent, kind, text, "", path)
         self._videos[path] = cell
         self._order.append(path)

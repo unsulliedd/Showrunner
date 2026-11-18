@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 
 from showrunner.core.media import MediaFile, MediaItem, SubtitleFile
 from showrunner.stages.scan.extensions import SUBTITLE_EXTENSIONS, SUBTITLE_FOLDER_NAMES, VIDEO_EXTENSIONS
-from showrunner.stages.scan.identify import identify
+from showrunner.stages.scan.identify import holds_show, identify
 from showrunner.stages.scan.names import parse_subtitle_name, spaced
 from showrunner.stages.scan.options import ScanOptions
 from showrunner.stages.scan.pairing import name_keys, pair
@@ -89,12 +90,16 @@ def scan(paths: Iterable[Path], options: ScanOptions | None = None) -> ScanResul
                     add_subtitle(neighbour)
                     incidental.add(neighbour)
 
+    shows = cache(holds_show)  # one look at each folder, however many videos lie in it
     items: list[MediaItem] = []
     alternatives: list[Alternatives] = []
     unpaired: list[SubtitleFile] = []
     for folder in videos.keys() | subtitles.keys():
         folder_items, folder_alternatives, folder_unpaired = _scan_folder(
-            sorted(videos.get(folder, []), key=natural_key), sorted(subtitles.get(folder, []), key=natural_key), options
+            sorted(videos.get(folder, []), key=natural_key),
+            sorted(subtitles.get(folder, []), key=natural_key),
+            options,
+            shows,
         )
         items += folder_items
         alternatives += folder_alternatives
@@ -107,7 +112,7 @@ def scan(paths: Iterable[Path], options: ScanOptions | None = None) -> ScanResul
 
 
 def _scan_folder(
-    video_paths: list[Path], subtitle_paths: list[Path], options: ScanOptions
+    video_paths: list[Path], subtitle_paths: list[Path], options: ScanOptions, shows: Callable[[Path], bool]
 ) -> tuple[list[MediaItem], list[Alternatives], list[SubtitleFile]]:
     # A VobSub pair is one subtitle: the `.idx` names it, and its `.sub` holds the pictures.
     index_files = {p.with_suffix("") for p in subtitle_paths if p.suffix.lower() == ".idx"}
@@ -138,7 +143,7 @@ def _scan_folder(
 
     items = [
         MediaItem(
-            identify(path, alone=len(video_paths) == 1),
+            identify(path, alone=len(video_paths) == 1, shows=shows),
             MediaFile(path, path.suffix.lstrip(".").lower(), size=_size(path)),
             tuple(attached[index]),
         )

@@ -11,7 +11,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from showrunner.core.media import Episode, MediaItem, Movie
+from showrunner.core.media import Episode, Extra, MediaItem, Movie
 from showrunner.core.naming.custom import CustomToken
 from showrunner.core.naming.names import (
     OBJECT_AUDIO_NAMES,
@@ -72,7 +72,7 @@ class Token:
 
 def _show(c: NamingContext) -> str | None:
     identity = c.item.identity
-    return identity.show if isinstance(identity, Episode) else None
+    return identity.show if isinstance(identity, Episode | Extra) else None
 
 
 def _movie(c: NamingContext) -> str | None:
@@ -104,6 +104,9 @@ def _episode_code(c: NamingContext) -> str | None:
 
 
 def _episode_title(c: NamingContext) -> str | None:
+    identity = c.item.identity
+    if isinstance(identity, Extra):
+        return identity.title  # the nearest thing an extra has to an episode title
     return episode.episode_title if (episode := _episode(c)) else None
 
 

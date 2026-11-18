@@ -8,7 +8,7 @@ from PySide6.QtCore import QModelIndex, QPersistentModelIndex
 from PySide6.QtWidgets import QApplication
 
 from showrunner.app.library.library import Library, LibraryLoad, Mark
-from showrunner.core.media import Episode, MediaItem
+from showrunner.core.media import Episode, Extra, MediaItem
 from showrunner.ui.i18n.catalog import tr
 from showrunner.ui.library.model import Kind, LibraryModel
 
@@ -161,3 +161,26 @@ def test_a_file_of_two_episodes_is_one_row_at_its_first_episode(model: LibraryMo
     names = [name for name, _, _ in rows(model) if name[:2].isdigit()]
     assert names[:2] == ["02  Second", "04  Pilot"]
     assert model.library.counts().videos == 5
+
+
+def test_extras_follow_the_seasons_in_their_own_group_and_count_in_the_show(
+    model: LibraryModel, sample_library: Library
+) -> None:
+    first = sample_library.items[0]
+    extras = [
+        replace(
+            first, identity=Extra("Alpha", title, 2020), file=replace(first.file, path=Path(f"lib/Alpha/{title}.mkv"))
+        )
+        for title in ("Making Of", "Bloopers")
+    ]
+    model.set_library(replace(sample_library, items=(*sample_library.items, *extras)))
+    alpha = model.index(0, 0)
+    assert model.kind(alpha) is Kind.SHOW
+    assert model.index(0, 1).data() == "5"  # 3 episodes and 2 extras
+    group = model.index(2, 0, alpha)
+    assert (model.kind(group), group.data(), model.index(2, 1, alpha).data()) == (Kind.EXTRAS, "Extras", "2")
+    leaf = model.index(0, 0, group)
+    assert model.kind(leaf) is Kind.EXTRA
+    assert model.kind(leaf).is_video
+    assert model.path(leaf) == Path("lib/Alpha/Bloopers.mkv")
+    assert [p.name for p in model.video_paths(alpha)][-2:] == ["Bloopers.mkv", "Making Of.mkv"]

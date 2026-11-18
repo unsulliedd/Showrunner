@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from showrunner.app.batches.batch import BatchKey, BatchKind
-from showrunner.core.media import Episode, MediaItem, Movie
+from showrunner.core.media import Episode, Extra, MediaItem, Movie
 from showrunner.core.naming.names import codec_display, hdr_display, resolution
 from showrunner.core.track import ObjectAudio, TrackKind
 from showrunner.ui.i18n.catalog import tr, tr_plural
@@ -56,9 +56,16 @@ def heading(key: BatchKey, items: Sequence[MediaItem]) -> Heading:
         count = tr_plural("facts.episodes", len(items))
         return Heading(show, tr("library.season", number=key.season), _joined((count, common, size)))
     if key.kind is BatchKind.SHOW:
-        seasons = len({i.identity.season for i in items if isinstance(i.identity, Episode)})
-        count = (tr_plural("facts.seasons", seasons), tr_plural("facts.episodes", len(items)))
+        episodes = [i.identity for i in items if isinstance(i.identity, Episode)]
+        extras = sum(isinstance(i.identity, Extra) for i in items)
+        count = (
+            tr_plural("facts.seasons", len({e.season for e in episodes})),
+            tr_plural("facts.episodes", len(episodes)),
+            tr_plural("facts.extras", extras) if extras else "",
+        )
         return Heading(tr("workspace.over.show"), show, _joined((*count, common, size)))
+    if key.kind is BatchKind.EXTRAS:
+        return Heading(show, tr("library.extras"), _joined((tr_plural("facts.extras", len(items)), common, size)))
     first = items[0].identity if items else None
     if key.kind is BatchKind.EPISODE and len(items) == 1 and isinstance(first, Episode):
         file = items[0].file
@@ -66,6 +73,10 @@ def heading(key: BatchKey, items: Sequence[MediaItem]) -> Heading:
         length = duration(file.duration) if file.duration else ""
         title = first.episode_title or tr("library.episode_untitled", number=first.episode)
         return Heading(over, title, _joined((length, common, size)))
+    if key.kind is BatchKind.EXTRA and len(items) == 1 and isinstance(first, Extra):
+        file = items[0].file
+        length = duration(file.duration) if file.duration else ""
+        return Heading(_joined((show, tr("library.extras"))), first.title, _joined((length, common, size)))
     if key.kind is BatchKind.MOVIE and len(items) == 1 and isinstance(items[0].identity, Movie):
         movie, file = items[0].identity, items[0].file
         year = str(movie.year) if movie.year else ""

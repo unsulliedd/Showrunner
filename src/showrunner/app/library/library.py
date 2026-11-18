@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from enum import IntEnum
 from pathlib import Path
 
-from showrunner.core.media import Episode, MediaFile, MediaItem, Movie, SubtitleFile
+from showrunner.core.media import Episode, Extra, MediaFile, MediaItem, Movie, SubtitleFile
 from showrunner.stages.scan import Alternatives, ProbeFailure, attach, detach, move_subtitle
 from showrunner.stages.scan.scanner import natural_key
 
@@ -26,6 +26,7 @@ class Counts:
     shows: int = 0
     episodes: int = 0
     movies: int = 0
+    extras: int = 0
     unsure: int = 0  # videos with a pairing the scan was unsure of
     failed: int = 0
     unpaired: int = 0
@@ -88,11 +89,13 @@ class Library:
         marks = [self.mark(i.file.path) for i in items]
         unpaired = self.unpaired if wanted is None else self.unpaired_near(i.file.path for i in items)
         episodes = [i.identity for i in items if isinstance(i.identity, Episode)]
+        extras = [i.identity for i in items if isinstance(i.identity, Extra)]
         return Counts(
             videos=len(items),
-            shows=len({e.show.casefold() for e in episodes}),
+            shows=len({e.show.casefold() for e in (*episodes, *extras)}),
             episodes=len(episodes),
             movies=sum(isinstance(i.identity, Movie) for i in items),
+            extras=len(extras),
             unsure=marks.count(Mark.UNSURE),
             failed=marks.count(Mark.FAILED),
             unpaired=len(unpaired),

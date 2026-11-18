@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import Showrunner
 
-// One row of the library tree: a show, a season, an episode, the movies, or a movie.
+// One row of the library tree: a show, a season, an episode, the extras of a show, an extra, the movies, or a movie.
 AbstractButton {
     id: row
 
@@ -98,7 +98,7 @@ AbstractButton {
                 width: Math.min(implicitWidth, parent.width - x)
                 text: row.label
                 color: row.excluded ? Theme.faint : Theme.ink
-                font.weight: row.isGroup ? Font.DemiBold : row.kind === "season" ? Font.Medium : Font.Normal
+                font.weight: row.isGroup ? Font.DemiBold : row.kind === "season" || row.kind === "extras" ? Font.Medium : Font.Normal
             }
         }
 
@@ -120,7 +120,7 @@ AbstractButton {
             UiText {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: row.kind !== "show"
-                mono: row.kind === "episode" || row.kind === "movie"
+                mono: row.kind === "episode" || row.kind === "extra" || row.kind === "movie"
                 text: row.summary
                 color: Theme.faint
                 font.pixelSize: mono ? Theme.text_xs : Theme.text_sm

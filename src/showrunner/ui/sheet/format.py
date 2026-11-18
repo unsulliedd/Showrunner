@@ -6,7 +6,7 @@ from pathlib import Path
 
 from showrunner.app.library.library import Counts
 from showrunner.core.language import Language
-from showrunner.core.media import Episode, MediaItem, Movie
+from showrunner.core.media import Episode, Extra, MediaItem, Movie
 from showrunner.core.track import HdrKind, ObjectAudio, Track, TrackKind
 from showrunner.ui.i18n.catalog import tr, tr_plural
 
@@ -108,6 +108,8 @@ def item_title(item: MediaItem) -> str:
     identity = item.identity
     if isinstance(identity, Movie):
         return movie_name(identity)
+    if isinstance(identity, Extra):
+        return tr("sheet.title.extra", show=identity.show, title=identity.title)
     name = identity.episode_title
     code = tr("sheet.episode_code", season=identity.season, episode=identity.episode)
     return tr("sheet.title.episode", show=identity.show, code=code, title=name) if name else f"{identity.show} {code}"
@@ -130,7 +132,12 @@ def count_parts(counts: Counts, *, breakdown: bool = True) -> list[tuple[str, st
     if breakdown and counts.videos:
         kinds = [
             tr_plural(f"summary.{kind}", n)
-            for kind, n in (("shows", counts.shows), ("episodes", counts.episodes), ("movies", counts.movies))
+            for kind, n in (
+                ("shows", counts.shows),
+                ("episodes", counts.episodes),
+                ("extras", counts.extras),
+                ("movies", counts.movies),
+            )
             if n
         ]
         parts.append((tr("common.list_separator").join(kinds), ""))

@@ -11,3 +11,26 @@ TEXT_SUBTITLE_EXTENSIONS = frozenset({".srt", ".ass", ".ssa", ".vtt"})
 
 # Folders that release packs put subtitle files in, beside the videos.
 SUBTITLE_FOLDER_NAMES = frozenset({"subs", "subtitles", "sub", "subtitle"})
+
+# Folder names, in lower case, that hold the extras of a show or movie: Plex's extras folders and the common
+# release-pack names for them.
+EXTRAS_FOLDER_NAMES = frozenset(
+    {
+        "extras",
+        "extra",
+        "featurettes",
+        "featurette",
+        "deleted scenes",
+        "deleted scene",
+        "behind the scenes",
+        "interviews",
+        "interview",
+        "trailers",
+        "trailer",
+        "scenes",
+        "shorts",
+        "other",
+        "bonus",
+        "bonus features",
+    }
+)

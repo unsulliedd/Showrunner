@@ -141,7 +141,7 @@ def place_key(kind: Kind, first: MediaItem, show: BatchKey | None) -> BatchKey:
     under, so every place in a show's row names the show as the row does."""
     if kind.is_video:
         key = BatchKey.file(first)
-    elif kind is Kind.SEASON:
+    elif kind in (Kind.SEASON, Kind.EXTRAS):
         key = BatchKey.of(first)
     elif kind is Kind.SHOW:
         key = BatchKey.of(first, whole_show=True)
@@ -1515,7 +1515,9 @@ class WindowController(QObject):
             groups=self.left_out.groups_of(self._key),
             out=frozenset(i.file.path for i in items if i.file.path in {*self.left_out.files, *self._excluded_files}),
             live={f.item.file.path: f.plans for f in self._run_preview.files},
-            name=tr("common.list_separator").join((head.over, head.title)) if self._key.season else head.title,
+            name=tr("common.list_separator").join((head.over, head.title))
+            if self._key.season or self._key.kind in (BatchKind.EXTRAS, BatchKind.EXTRA)
+            else head.title,
         )
         given, store = self._applying, self.jobs.store
 
