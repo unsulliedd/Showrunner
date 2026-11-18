@@ -1298,7 +1298,7 @@ def test_matrix_columns_move_by_drag_and_by_keyboard(
     assert len(grips) == len(controller.matrix["headers"])
     assert grips[1].property("activeFocusOnTab") is True
     # Drag the Turkish column one column to the left.
-    _drag_from(load.window, qtbot, grips[1], -SIZES["matrix_column"], 0)
+    _drag_from(load.window, qtbot, grips[1], -_items(root, "matrixHeader")[0].width(), 0)
     load()
     assert codes()[:2] == ["TUR", "ENG"]
     # Ctrl+Right on the focused grip moves it one place, and the focus follows the column.

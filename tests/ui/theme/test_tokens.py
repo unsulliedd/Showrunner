@@ -131,3 +131,10 @@ def test_dark_roles_follow_a_moved_base() -> None:
     tinted = resolve(with_base(ThemeColors(), Base.PRIMARY, "#ff8fa8"), ColorSet.DARK)
     assert tinted["control"] == "#ff8fa8"
     assert tinted["select"] != APPROVED_DARK["select"].lower()
+
+
+def test_the_matrix_sizes_order_from_narrowest_to_widest() -> None:
+    from showrunner.ui.theme.tokens import SIZES
+
+    assert SIZES["matrix_label"] <= SIZES["matrix_name"]
+    assert SIZES["matrix_column"] <= SIZES["matrix_column_min"]

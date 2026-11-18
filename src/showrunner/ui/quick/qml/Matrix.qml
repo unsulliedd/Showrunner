@@ -17,9 +17,38 @@ Item {
     // The column a grip drags and how many places it has gone, for the line that shows where it lands.
     property int dragFrom: -1
     property int dragPlaces: 0
+    // The width the columns share: the view less the room its vertical scrollbar takes while it shows.
+    readonly property real room: scroll.width - scroll.rightMargin
+    // The file names take their widest share while every track column keeps its minimum, and go down to the narrowest
+    // when it does not; the track columns then share what is left, and scroll sideways when it is under their minimum.
+    readonly property real nameWidth: Math.max(Theme.matrix_label,
+                                               Math.min(Theme.matrix_name,
+                                                        room - headers.length * Theme.matrix_column_min))
+    readonly property real columnWidth: headers.length > 0
+                                        ? Math.max(Theme.matrix_column_min, Math.floor((room - nameWidth) / headers.length))
+                                        : Theme.matrix_column_min
+    readonly property real scrolled: scroll.contentX
 
     TrackNames {
         id: trackNames
+    }
+
+    // The part of a row or of the header that holds the track columns. It stands still beside the file names while its
+    // content scrolls sideways under it, so a column is cut at the names, not drawn over them.
+    component Tracks: Item {
+        default property alias content: inner.data
+
+        x: matrix.scrolled + matrix.nameWidth
+        width: matrix.room - matrix.nameWidth
+        height: parent.height
+        clip: true
+
+        Item {
+            id: inner
+
+            x: -matrix.scrolled
+            height: parent.height
+        }
     }
 
     component Cell: Item {
@@ -27,7 +56,7 @@ Item {
 
         required property var value
 
-        width: Theme.matrix_column
+        width: matrix.columnWidth
         height: Theme.list_row
 
         Row {
@@ -130,13 +159,14 @@ Item {
     component Header: Item {
         id: head
 
+        objectName: "matrixHeader"
         required property var column
         property TrackNames names: null
         readonly property alias grip: grip
 
         signal moveBy(int places)
 
-        width: Theme.matrix_column
+        width: matrix.columnWidth
         height: Theme.matrix_header
         z: grip.active ? 1 : 0
         transform: Translate {
@@ -167,7 +197,7 @@ Item {
                     objectName: "columnGrip"
                     anchors.verticalCenter: parent.verticalCenter
                     visible: head.column.movable
-                    step: Theme.matrix_column
+                    step: matrix.columnWidth
                     label: Strings.f("tracks.order.column", {"track": head.column.code + " " + head.column.title})
                     onActiveChanged: {
                         matrix.dragFrom = active ? head.column.id : -1
@@ -185,6 +215,7 @@ Item {
             }
 
             UiText {
+                objectName: "headerTitle"
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
                 text: head.column.title
@@ -200,6 +231,7 @@ Item {
                 spacing: 0
 
                 UiText {
+                    objectName: "headerName"
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
                     text: head.column.name
@@ -312,7 +344,9 @@ Item {
                 clip: true
                 // The matrix stays put while a column is dragged, so the drag moves the column, not the view.
                 interactive: matrix.dragFrom < 0
-                contentWidth: Theme.matrix_label + matrix.headers.length * Theme.matrix_column
+                contentWidth: matrix.nameWidth + matrix.headers.length * matrix.columnWidth
+                // Room for the vertical scrollbar beside the last column, which then scrolls clear of it.
+                rightMargin: vbar.visible ? vbar.width : 0
                 flickableDirection: Flickable.AutoFlickIfNeeded
                 boundsBehavior: Flickable.StopAtBounds
                 // A count, not the rows: new rows of the same batch then update the delegates in place, so the view
@@ -324,115 +358,122 @@ Item {
                     positionViewAtBeginning()
                     currentIndex = 0
                 }
-                ScrollBar.vertical: Scroller {}
+                ScrollBar.vertical: Scroller {
+                    id: vbar
+                }
                 ScrollBar.horizontal: Scroller {}
 
                 // Scrolls sideways just enough to show column `at`, so a column moved by keyboard stays in view.
                 function showColumn(at) {
-                    const left = Theme.matrix_label + at * Theme.matrix_column
+                    const left = at * matrix.columnWidth
+                    const shown = matrix.room - matrix.nameWidth
                     if (left < contentX)
                         contentX = left
-                    else if (left + Theme.matrix_column > contentX + width)
-                        contentX = Math.min(left + Theme.matrix_column - width, contentWidth - width)
+                    else if (left + matrix.columnWidth > contentX + shown)
+                        contentX = Math.min(left + matrix.columnWidth - shown, contentWidth + rightMargin - width)
                 }
 
-                header: Column {
-                    Row {
-                        Item {
-                            width: Theme.matrix_label
-                            height: Theme.row_sm
-                        }
+                header: Item {
+                    width: scroll.contentWidth
+                    height: Theme.row_sm + Theme.matrix_header
 
-                        Repeater {
-                            model: [
-                                {"kind": "audio", "icon": "audio"},
-                                {"kind": "subtitle", "icon": "subs"}
-                            ]
+                    Item {
+                        x: matrix.scrolled
+                        y: Theme.row_sm
+                        width: matrix.nameWidth
+                        height: Theme.matrix_header
 
-                            delegate: Item {
-                                id: group
+                        Column {
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: Theme.space_md
+                            spacing: Theme.space_xs
 
-                                required property var modelData
-                                readonly property int span: matrix.headers.filter(h => h.kind === modelData.kind).length
+                            UiText {
+                                text: Strings.n("matrix.files", matrix.rows.length)
+                                font.weight: Font.Medium
+                            }
 
-                                visible: span > 0
-                                width: span * Theme.matrix_column
-                                height: Theme.row_sm
-
-                                Row {
-                                    x: Theme.space_md
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: Theme.space_sm
-
-                                    Icon {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        name: group.modelData.icon
-                                        size: Theme.icon_sm
-                                    }
-
-                                    UiText {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: Strings.t("matrix.group." + group.modelData.kind)
-                                        color: Theme.faint
-                                        font.pixelSize: Theme.text_xs
-                                        font.weight: Font.DemiBold
-                                        font.letterSpacing: Theme.stroke
-                                    }
-                                }
-
-                                Rectangle {
-                                    anchors.left: parent.left
-                                    anchors.right: parent.right
-                                    anchors.leftMargin: Theme.space_md
-                                    anchors.bottom: parent.bottom
-                                    height: Theme.stroke
-                                    color: Theme.line
-                                }
+                            UiText {
+                                text: Strings.t("matrix.video_kept")
+                                color: Theme.faint
+                                font.pixelSize: Theme.text_xs
                             }
                         }
                     }
 
-                    Row {
-                        Item {
-                            width: Theme.matrix_label
-                            height: Theme.matrix_header
+                    Tracks {
+                        Column {
+                            Row {
+                                Repeater {
+                                    model: [
+                                        {"kind": "audio", "icon": "audio"},
+                                        {"kind": "subtitle", "icon": "subs"}
+                                    ]
 
-                            Column {
-                                anchors.bottom: parent.bottom
-                                anchors.bottomMargin: Theme.space_md
-                                spacing: Theme.space_xs
+                                    delegate: Item {
+                                        id: group
 
-                                UiText {
-                                    text: Strings.n("matrix.files", matrix.rows.length)
-                                    font.weight: Font.Medium
-                                }
+                                        required property var modelData
+                                        readonly property int span: matrix.headers.filter(h => h.kind === modelData.kind).length
 
-                                UiText {
-                                    text: Strings.t("matrix.video_kept")
-                                    color: Theme.faint
-                                    font.pixelSize: Theme.text_xs
+                                        visible: span > 0
+                                        width: span * matrix.columnWidth
+                                        height: Theme.row_sm
+
+                                        Row {
+                                            x: Theme.space_md
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: Theme.space_sm
+
+                                            Icon {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                name: group.modelData.icon
+                                                size: Theme.icon_sm
+                                            }
+
+                                            UiText {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: Strings.t("matrix.group." + group.modelData.kind)
+                                                color: Theme.faint
+                                                font.pixelSize: Theme.text_xs
+                                                font.weight: Font.DemiBold
+                                                font.letterSpacing: Theme.stroke
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.leftMargin: Theme.space_md
+                                            anchors.bottom: parent.bottom
+                                            height: Theme.stroke
+                                            color: Theme.line
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        Repeater {
-                            id: heads
+                            Row {
+                                Repeater {
+                                    id: heads
 
-                            // A count, not the headers: a move then updates the headers in place, and the focus can
-                            // follow the moved column to its new place.
-                            model: matrix.headers.length
+                                    // A count, not the headers: a move then updates the headers in place, and the focus
+                                    // can follow the moved column to its new place.
+                                    model: matrix.headers.length
 
-                            delegate: Header {
-                                required property int index
+                                    delegate: Header {
+                                        required property int index
 
-                                column: matrix.headers[index]
-                                names: trackNames
-                                onMoveBy: places => {
-                                    const focused = grip.activeFocus
-                                    const at = app.move_track(index, index + places)
-                                    if (focused) {
-                                        heads.itemAt(at).grip.forceActiveFocus()
-                                        scroll.showColumn(at)
+                                        column: matrix.headers[index]
+                                        names: trackNames
+                                        onMoveBy: places => {
+                                            const focused = grip.activeFocus
+                                            const at = app.move_track(index, index + places)
+                                            if (focused) {
+                                                heads.itemAt(at).grip.forceActiveFocus()
+                                                scroll.showColumn(at)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -450,7 +491,7 @@ Item {
                     // The row the arrow keys are on, marked like the focus of the other lists while the rows have it.
                     readonly property bool marked: rowKeys.activeFocus && ListView.isCurrentItem
 
-                    width: Theme.matrix_label + matrix.headers.length * Theme.matrix_column
+                    width: scroll.contentWidth
                     height: Theme.list_row
                     hoverEnabled: true
                     focusPolicy: Qt.NoFocus
@@ -476,33 +517,37 @@ Item {
                         }
                     }
 
-                    contentItem: Row {
-                        Row {
-                            width: Theme.matrix_label
+                    contentItem: Item {
+                        RowLayout {
+                            x: matrix.scrolled
+                            width: matrix.nameWidth - Theme.space_md
                             height: Theme.list_row
                             spacing: Theme.space_md
 
                             UiText {
-                                anchors.verticalCenter: parent.verticalCenter
                                 mono: true
                                 text: line.modelData.number
                                 color: Theme.faint
                             }
 
                             UiText {
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: Theme.matrix_label - Theme.row_md
+                                objectName: "matrixName"
+                                Layout.fillWidth: true
                                 text: line.modelData.title
                             }
                         }
 
-                        Repeater {
-                            model: line.modelData.cells
+                        Tracks {
+                            Row {
+                                Repeater {
+                                    model: line.modelData.cells
 
-                            delegate: Cell {
-                                required property var modelData
+                                    delegate: Cell {
+                                        required property var modelData
 
-                                value: modelData
+                                        value: modelData
+                                    }
+                                }
                             }
                         }
                     }
@@ -520,8 +565,8 @@ Item {
                 readonly property int edge: to > matrix.dragFrom ? to + 1 : to
 
                 objectName: "orderLine"
-                visible: dragged !== null && to !== matrix.dragFrom
-                x: Theme.matrix_label + edge * Theme.matrix_column - scroll.contentX - width / 2
+                visible: dragged !== null && to !== matrix.dragFrom && x + width / 2 >= matrix.nameWidth
+                x: matrix.nameWidth + edge * matrix.columnWidth - matrix.scrolled - width / 2
                 y: Theme.row_sm
                 z: 2
                 width: 3 * Theme.stroke

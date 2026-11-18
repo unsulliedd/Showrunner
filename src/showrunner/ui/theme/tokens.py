@@ -350,8 +350,10 @@ SIZES: dict[str, int] = {
     "quick_window_height": 900,
     "list_row": 46,  # an episode row of Overview, a file row of the track matrix
     "pill": 20,  # a track pill in an episode row, a code badge
-    "matrix_label": 150,  # the file names down the track matrix
-    "matrix_column": 82,  # one track signature across the matrix
+    "matrix_label": 150,  # the narrowest the matrix's file names get; Overview, Review and Jobs size their names by it
+    "matrix_name": 260,  # the widest the file names of the track matrix get, while the track columns keep their minimum
+    "matrix_column": 82,  # a track chip's least width in an Overview row
+    "matrix_column_min": 112,  # the least one track column of the matrix keeps; below it the matrix scrolls sideways
     "matrix_header": 166,  # the matrix's column headers with their toggles and where their choice comes from
     "track_card": 64,  # a movie's track card
     "settings_width": 920,  # the Settings dialog
