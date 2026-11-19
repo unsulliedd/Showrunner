@@ -3,43 +3,118 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
-// The track matrix of the Tracks place: files down, track signatures across, audio then subtitles. A column's
-// header keeps or drops it in every file and sets its flags; a cell shows what the plans leave in that file. The
-// columns stand in the order of the tracks in the new files: a column's grip, the strip down its left edge, drags it,
-// or moves it with Ctrl+Left and Ctrl+Right, among the columns of its kind.
+// The Tracks place: each track of the batch is a row, audio then subtitles, beside a strip of the batch's files, one
+// cell per file under the numbers across the top. A cell is quiet where its file follows the track and drawn only where
+// it differs; Python says which and why. The rows stand in the order of the tracks in the new files: a row's grip drags
+// it up or down, or moves it with Ctrl+Up and Ctrl+Down, among the rows of its kind. A click on a cell is that file's
+// own choice; a click on a number opens the file. "Only files that differ" folds each run of files that follow every
+// track into one cell.
 Item {
     id: matrix
+
+    objectName: "matrix"
 
     // Read once: each read of the property converts the whole batch view for QML.
     readonly property var view: app.matrix
     readonly property var headers: view.headers
-    readonly property var rows: view.rows
-    // The column a grip drags and how many places it has gone, for the line that shows where it lands.
+    // Which files the strip shows, as the user last chose; until then every file where they fit, else the folded runs.
+    property string chosen: app.matrix_files()
+    readonly property bool brief: width < Theme.strip_label_short_below
+    readonly property real labelWidth: brief ? Theme.track_strip_label_narrow : Theme.track_strip_label
+    // The width the rows share: the view less the room its vertical scrollbar takes while it shows.
+    readonly property real room: scroll.width - scroll.rightMargin
+    // What the strip shows of itself beside the labels, which stand still while it scrolls.
+    readonly property real shown: Math.max(0, room - labelWidth - Theme.space_md)
+    readonly property bool fitsAll: view.strip.all.files.length * Theme.strip_pitch <= shown
+    readonly property bool folded: chosen === "differ" || chosen === "" && !fitsAll
+    readonly property var strip: folded ? view.strip.differ : view.strip.all
+    readonly property var files: strip.files
+    // Where each file's cell starts along the strip, and last where the strip ends: a folded run is wider than a file.
+    readonly property var offsets: {
+        const result = [0]
+        for (const file of files) {
+            const least = file.run ? Theme.strip_run : Theme.strip_pitch
+            result.push(result[result.length - 1]
+                        + Math.max(least, Math.ceil(metrics.advanceWidth(file.label)) + 2 * Theme.space_xs))
+        }
+        return result
+    }
+    readonly property real stripWidth: offsets[offsets.length - 1]
+    readonly property real scrolled: scroll.contentX
+    // The cells each row builds: the same count wherever the strip is scrolled, so a scroll rebinds them to other files
+    // instead of making new ones, and a whole show builds only what is in view.
+    readonly property int built: Math.min(files.length, Math.ceil(shown / Theme.strip_pitch) + 2)
+    readonly property int first: Math.max(0, Math.min(files.length - built, at(scrolled)))
+    // The cell of the file the Inspector shows, marked down the strip.
+    readonly property int selected: files.findIndex(file => file.paths.indexOf(app.focus_path) >= 0)
+    // The row whose names are open (one at a time), -1 for none. Another batch closes it.
+    property int openColumn: -1
+    readonly property var openNames: {
+        matrix.view
+        return openColumn < 0 ? [] : app.track_name_rows(openColumn)
+    }
+    readonly property string openMissing: {
+        matrix.view
+        return openColumn < 0 ? "" : app.track_missing(openColumn)
+    }
+    readonly property string openHeld: {
+        matrix.view
+        return openColumn < 0 ? "" : app.track_held(openColumn)
+    }
+    // The row a grip drags and how many places it has gone, for the line that shows where it lands.
     property int dragFrom: -1
     property int dragPlaces: 0
-    // The width the columns share: the view less the room its vertical scrollbar takes while it shows.
-    readonly property real room: scroll.width - scroll.rightMargin
-    // The file names take their widest share while every track column keeps its minimum, and go down to the narrowest
-    // when it does not; the track columns then share what is left, and scroll sideways when it is under their minimum.
-    readonly property real nameWidth: Math.max(Theme.matrix_label,
-                                               Math.min(Theme.matrix_name,
-                                                        room - headers.length * Theme.matrix_column_min))
-    readonly property real columnWidth: headers.length > 0
-                                        ? Math.max(Theme.matrix_column_min, Math.floor((room - nameWidth) / headers.length))
-                                        : Theme.matrix_column_min
-    readonly property real scrolled: scroll.contentX
+    readonly property string batchKey: app.selected
 
-    TrackNames {
-        id: trackNames
+    onBatchKeyChanged: openColumn = -1
+
+    // Where file `at`'s cell starts along the strip; past the last file, where the strip ends. A binding can ask for a
+    // file the strip no longer has while a new batch's strip arrives.
+    function edge(at) {
+        return offsets[Math.max(0, Math.min(at, offsets.length - 1))]
     }
 
-    // The part of a row or of the header that holds the track columns. It stands still beside the file names while its
-    // content scrolls sideways under it, so a column is cut at the names, not drawn over them.
-    component Tracks: Item {
+    // The file whose cell starts at or before `x` along the strip.
+    function at(x) {
+        let low = 0
+        let high = files.length - 1
+        while (low < high) {
+            const middle = Math.ceil((low + high) / 2)
+            if (offsets[middle] <= x)
+                low = middle
+            else
+                high = middle - 1
+        }
+        return Math.max(0, low)
+    }
+
+    // Scrolls sideways just enough to show file `at`, so a file reached by keyboard stays in view.
+    function showFile(at) {
+        if (edge(at) < scroll.contentX)
+            scroll.contentX = edge(at)
+        else if (edge(at + 1) > scroll.contentX + shown)
+            scroll.contentX = Math.min(edge(at + 1) - shown, scroll.contentWidth + scroll.rightMargin - scroll.width)
+    }
+
+    function openFile(at) {
+        if (at >= 0 && at < files.length)
+            app.focus_file(files[at].paths[0])
+    }
+
+    FontMetrics {
+        id: metrics
+
+        font.family: Theme.mono
+        font.pixelSize: Theme.text_xs
+    }
+
+    // The part of a row that holds its strip. It stands still beside the labels while its content scrolls sideways
+    // under it, so a cell is cut at the labels, not drawn over them.
+    component Strip: Item {
         default property alias content: inner.data
 
-        x: matrix.scrolled + matrix.nameWidth
-        width: matrix.room - matrix.nameWidth
+        x: matrix.scrolled + matrix.labelWidth
+        width: matrix.room - matrix.labelWidth
         height: parent.height
         clip: true
 
@@ -47,268 +122,76 @@ Item {
             id: inner
 
             x: -matrix.scrolled
+            width: matrix.stripWidth
             height: parent.height
         }
     }
 
+    // One file's cell under one track: quiet where the file follows its track, drawn where it differs.
     component Cell: Item {
         id: cell
 
-        required property var value
+        objectName: "stripCell"
+        required property int at
+        required property string mark
+        property bool added: false
+        property bool pointed: false
 
-        width: matrix.columnWidth
-        height: Theme.list_row
-
-        Row {
-            anchors.centerIn: parent
-            spacing: Theme.space_xs
-            visible: !cell.value.fallback
-
-            Rectangle {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: cell.value.state === "kept" && !cell.value.default && !cell.value.forced
-                width: Theme.dot
-                height: Theme.dot
-                radius: Theme.dot / 2
-                color: Theme.ink
-            }
-
-            Icon {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: cell.value.state === "dropped"
-                name: "x"
-                size: Theme.icon_sm
-                color: Theme.drop
-            }
-
-            Icon {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: cell.value.state === "added"
-                name: "plus"
-                size: Theme.icon_sm
-                color: Theme.add
-            }
-
-            FlagMark {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: cell.value.default
-                flag: "default"
-            }
-
-            FlagMark {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: cell.value.forced
-                flag: "forced"
-            }
-
-            UiText {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: cell.value.state === "missing" || cell.value.state === "paired"
-                text: Strings.t("matrix.missing_mark")
-                color: Theme.line_strong
-            }
-        }
+        x: matrix.edge(at)
+        width: matrix.edge(at + 1) - matrix.edge(at)
+        height: parent.height
 
         Rectangle {
+            anchors.fill: parent
+            visible: cell.at >= 0 && cell.at === matrix.selected
+            color: Theme.select
+        }
+
+        // The file's own choice, the one a click takes back, is the only framed mark.
+        Rectangle {
             anchors.centerIn: parent
-            visible: cell.value.fallback
-            width: fallback.implicitWidth + 2 * Theme.space_sm
-            height: Theme.pill
+            width: Theme.strip_cell
+            height: Theme.strip_cell
+            visible: cell.mark === "own_drop" || cell.mark === "own_keep" || cell.pointed
             radius: Theme.radius_sm
-            color: Theme.change_soft
+            color: cell.mark === "own_drop" || cell.mark === "own_keep" ? Theme.control_soft : "transparent"
             border.width: Theme.stroke
-            border.color: Theme.change
-
-            Row {
-                id: fallback
-
-                anchors.centerIn: parent
-                spacing: Theme.space_xs
-
-                FlagMark {
-                    anchors.verticalCenter: parent.verticalCenter
-                    flag: "default"
-                    tone: Theme.change
-                }
-
-                UiText {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: Strings.t("matrix.fallback")
-                    color: Theme.change
-                    font.pixelSize: Theme.text_xs
-                    font.weight: Font.DemiBold
-                }
-            }
-        }
-    }
-
-    component Header: Item {
-        id: head
-
-        objectName: "matrixHeader"
-        required property var column
-        property TrackNames names: null
-        readonly property alias grip: grip
-
-        signal moveBy(int places)
-
-        width: matrix.columnWidth
-        height: Theme.matrix_header
-        z: grip.active ? 1 : 0
-        transform: Translate {
-            x: grip.offset
+            border.color: cell.mark === "own_drop" || cell.mark === "own_keep" ? Theme.control : Theme.line_strong
         }
 
         Rectangle {
-            anchors.fill: parent
-            anchors.margins: Theme.space_xs
-            radius: Theme.radius_md
-            color: head.column.state === "dropped" ? Theme.drop_soft : grip.active ? Theme.panel_2 : "transparent"
-            border.width: grip.active ? Theme.stroke : 0
-            border.color: Theme.control
+            anchors.centerIn: parent
+            visible: cell.mark === "follows" || cell.mark === "held"
+            width: cell.mark === "held" ? Theme.dot : Theme.dot - Theme.space_xs
+            height: width
+            radius: width / 2
+            color: cell.mark === "held" ? Theme.change : cell.added ? Theme.add : Theme.line_strong
         }
 
-        Grip {
-            id: grip
-
-            objectName: "columnGrip"
-            anchors.left: parent.left
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            anchors.margins: Theme.space_xs
-            width: Theme.icon_md
-            visible: head.column.movable
-            step: matrix.columnWidth
-            label: Strings.f("tracks.order.column", {"track": head.column.code + " " + head.column.title})
-            onActiveChanged: {
-                matrix.dragFrom = active ? head.column.id : -1
-                matrix.dragPlaces = 0
-            }
-            onPlacesChanged: if (active) matrix.dragPlaces = places
-            onMoved: places => head.moveBy(places)
+        Icon {
+            anchors.centerIn: parent
+            visible: cell.mark === "own_drop" || cell.mark === "drop" || cell.mark === "own_keep" || cell.mark === "keep"
+            name: cell.mark === "own_drop" || cell.mark === "drop" ? "x" : "check"
+            size: Theme.icon_sm
+            color: cell.mark === "own_drop" || cell.mark === "drop" ? Theme.drop : Theme.add
         }
 
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: Theme.space_sm
-            // Clear of the grip, which has the left edge for itself.
-            anchors.leftMargin: grip.visible ? grip.width + Theme.space_xs : Theme.space_sm
-            spacing: Theme.space_xs
+        UiText {
+            anchors.centerIn: parent
+            visible: cell.mark === "missing"
+            text: Strings.t("matrix.missing_mark")
+            color: Theme.change
+            font.weight: Font.Bold
+        }
 
-            CodeBadge {
-                Layout.alignment: Qt.AlignHCenter
-                code: head.column.code
-                look: head.column.state
-            }
-
-            UiText {
-                objectName: "headerTitle"
-                Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
-                text: head.column.title
-                color: head.column.state === "dropped" ? Theme.drop : Theme.ink
-                font.pixelSize: Theme.text_sm
-                font.strikeout: head.column.state === "dropped"
-                wrapMode: Text.WordWrap
-                maximumLineCount: 2
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 0
-
-                UiText {
-                    objectName: "headerName"
-                    Layout.fillWidth: true
-                    horizontalAlignment: Text.AlignHCenter
-                    text: head.column.name
-                    color: Theme.muted
-                    font.pixelSize: Theme.text_xs
-                }
-
-                IconButton {
-                    id: headNames
-
-                    objectName: "namesButton"
-                    visible: head.column.names && head.names !== null
-                    implicitWidth: Theme.pill
-                    implicitHeight: Theme.pill
-                    iconName: "down"
-                    label: Strings.t("tracks.names.open")
-                    tip: Strings.t("tip.names_open")
-                    active: head.names !== null && head.names.opened && head.names.column === head.column.id
-                    onClicked: head.names.toggle(headNames, head.column.id)
-                }
-            }
-
-            PlaceMark {
-                objectName: "placeMark"
-                Layout.fillWidth: true
-                // Kept in the layout while empty, so the toggles below stand at the same height in every column.
-                visible: true
-                horizontalAlignment: Text.AlignHCenter
-                choice: head.column
-                brief: true
-            }
-
-            Row {
-                Layout.alignment: Qt.AlignHCenter
-                spacing: Theme.space_xs
-                opacity: head.column.state === "dropped" || !head.column.flags ? 0 : 1
-
-                FlagButton {
-                    side: Theme.pill
-                    flag: "default"
-                    on: head.column.default
-                    enabled: parent.opacity > 0
-                    onClicked: app.toggle_flag(head.column.id, "default")
-                }
-
-                FlagButton {
-                    visible: head.column.kind === "subtitle"
-                    side: Theme.pill
-                    flag: "forced"
-                    on: head.column.forced
-                    enabled: parent.opacity > 0
-                    onClicked: app.toggle_flag(head.column.id, "forced")
-                }
-            }
-
-            AbstractButton {
-                id: keep
-
-                Layout.fillWidth: true
-                Layout.preferredHeight: Theme.row_sm
-                hoverEnabled: true
-                focusPolicy: Qt.StrongFocus
-                Accessible.role: Accessible.Button
-                Accessible.name: [head.column.code, head.column.title, head.column.button,
-                                  head.column.from || head.column.over || ""].join(" ")
-                onClicked: app.toggle_keep(head.column.id)
-
-                readonly property color tone: head.column.state === "dropped" ? Theme.drop
-                                            : head.column.state === "added" ? Theme.add
-                                            : head.column.state === "paired" ? Theme.faint : Theme.ink
-
-                background: Rectangle {
-                    radius: Theme.radius_sm
-                    color: head.column.state === "dropped" ? Theme.drop_soft
-                         : head.column.state === "added" ? Theme.add_soft
-                         : keep.hovered ? Theme.panel_3 : Theme.panel_2
-                    border.width: Theme.stroke
-                    border.color: keep.visualFocus ? Theme.control
-                                : head.column.state === "kept" || head.column.state === "paired" ? Theme.line_strong
-                                : keep.tone
-                }
-
-                contentItem: UiText {
-                    horizontalAlignment: Text.AlignHCenter
-                    text: head.column.button
-                    color: keep.tone
-                    font.pixelSize: Theme.text_sm
-                    font.weight: Font.Medium
-                }
-            }
+        FlagMark {
+            anchors.centerIn: parent
+            visible: cell.mark === "fallback" || cell.mark === "set_default" || cell.mark === "set_forced"
+                     || cell.mark === "file_default" || cell.mark === "file_forced"
+            flag: cell.mark.endsWith("forced") ? "forced" : "default"
+            on: !cell.mark.startsWith("file_")
+            held: cell.mark.startsWith("file_")
+            tone: Theme.change
         }
     }
 
@@ -317,389 +200,77 @@ Item {
         anchors.margins: Theme.space_lg
         spacing: Theme.space_md
 
-        // A ListView creates a row only as it scrolls into view, so a whole show does not build every row and cell.
-        // The rows are one Tab stop, `rowKeys` (drawn over the list, after the header's buttons in the focus order),
-        // since Tab can only reach rows that exist. Up, Down, Home and End move `currentIndex`; Enter focuses the file.
-        Item {
+        // The switch of files, then the order's mark and the flag switch: on one line, or two where the place is narrow.
+        GridLayout {
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            columns: matrix.brief ? 1 : 2
+            columnSpacing: Theme.space_lg
+            rowSpacing: Theme.space_md
 
-            ListView {
-                id: scroll
-
-                anchors.fill: parent
-                objectName: "matrixRows"
-                clip: true
-                // The matrix stays put while a column is dragged, so the drag moves the column, not the view.
-                interactive: matrix.dragFrom < 0
-                contentWidth: matrix.nameWidth + matrix.headers.length * matrix.columnWidth
-                // Room for the vertical scrollbar beside the last column, which then scrolls clear of it.
-                rightMargin: vbar.visible ? vbar.width : 0
-                flickableDirection: Flickable.AutoFlickIfNeeded
-                boundsBehavior: Flickable.StopAtBounds
-                // A count, not the rows: new rows of the same batch then update the delegates in place, so the view
-                // keeps its scroll position after a choice.
-                model: matrix.rows.length
-                // Another batch starts at the top, even with as many rows as the last one.
-                readonly property string firstPath: matrix.rows.length > 0 ? matrix.rows[0].path : ""
-                onFirstPathChanged: {
-                    positionViewAtBeginning()
-                    currentIndex = 0
-                }
-                ScrollBar.vertical: Scroller {
-                    id: vbar
-                }
-                ScrollBar.horizontal: Scroller {}
-
-                // Scrolls sideways just enough to show column `at`, so a column moved by keyboard stays in view.
-                function showColumn(at) {
-                    const left = at * matrix.columnWidth
-                    const shown = matrix.room - matrix.nameWidth
-                    if (left < contentX)
-                        contentX = left
-                    else if (left + matrix.columnWidth > contentX + shown)
-                        contentX = Math.min(left + matrix.columnWidth - shown, contentWidth + rightMargin - width)
-                }
-
-                header: Item {
-                    width: scroll.contentWidth
-                    height: Theme.row_sm + Theme.matrix_header
-
-                    Item {
-                        x: matrix.scrolled
-                        y: Theme.row_sm
-                        width: matrix.nameWidth
-                        height: Theme.matrix_header
-
-                        Column {
-                            anchors.bottom: parent.bottom
-                            anchors.bottomMargin: Theme.space_md
-                            spacing: Theme.space_xs
-
-                            UiText {
-                                text: Strings.n("matrix.files", matrix.rows.length)
-                                font.weight: Font.Medium
-                            }
-
-                            UiText {
-                                text: Strings.t("matrix.video_kept")
-                                color: Theme.faint
-                                font.pixelSize: Theme.text_xs
-                            }
-                        }
-                    }
-
-                    Tracks {
-                        Column {
-                            Row {
-                                Repeater {
-                                    model: [
-                                        {"kind": "audio", "icon": "audio"},
-                                        {"kind": "subtitle", "icon": "subs"}
-                                    ]
-
-                                    delegate: Item {
-                                        id: group
-
-                                        required property var modelData
-                                        readonly property int span: matrix.headers.filter(h => h.kind === modelData.kind).length
-
-                                        visible: span > 0
-                                        width: span * matrix.columnWidth
-                                        height: Theme.row_sm
-
-                                        Row {
-                                            x: Theme.space_md
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            spacing: Theme.space_sm
-
-                                            Icon {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                name: group.modelData.icon
-                                                size: Theme.icon_sm
-                                            }
-
-                                            UiText {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                text: Strings.t("matrix.group." + group.modelData.kind)
-                                                color: Theme.faint
-                                                font.pixelSize: Theme.text_xs
-                                                font.weight: Font.DemiBold
-                                                font.letterSpacing: Theme.stroke
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            anchors.left: parent.left
-                                            anchors.right: parent.right
-                                            anchors.leftMargin: Theme.space_md
-                                            anchors.bottom: parent.bottom
-                                            height: Theme.stroke
-                                            color: Theme.line
-                                        }
-                                    }
-                                }
-                            }
-
-                            Row {
-                                Repeater {
-                                    id: heads
-
-                                    // A count, not the headers: a move then updates the headers in place, and the focus
-                                    // can follow the moved column to its new place.
-                                    model: matrix.headers.length
-
-                                    delegate: Header {
-                                        required property int index
-
-                                        column: matrix.headers[index]
-                                        names: trackNames
-                                        onMoveBy: places => {
-                                            const focused = grip.activeFocus
-                                            const at = app.move_track(index, index + places)
-                                            if (focused) {
-                                                heads.itemAt(at).grip.forceActiveFocus()
-                                                scroll.showColumn(at)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                delegate: AbstractButton {
-                    id: line
-
-                    objectName: "matrixRow"
-                    required property int index
-                    readonly property var modelData: matrix.rows[index]
-                    readonly property bool focused: modelData.path === app.focus_path
-                    // The row the arrow keys are on, marked like the focus of the other lists while the rows have it.
-                    readonly property bool marked: rowKeys.activeFocus && ListView.isCurrentItem
-
-                    width: scroll.contentWidth
-                    height: Theme.list_row
-                    hoverEnabled: true
-                    focusPolicy: Qt.NoFocus
-                    Accessible.role: Accessible.Button
-                    Accessible.name: modelData.title
-                    onClicked: {
-                        rowKeys.forceActiveFocus()  // first: gaining the focus moves the current row to the focused file
-                        scroll.currentIndex = index
-                        app.focus_file(modelData.path)
-                    }
-
-                    background: Rectangle {
-                        color: line.focused ? Theme.select : line.hovered ? Theme.panel_2 : "transparent"
-                        border.width: line.marked ? Theme.stroke : 0
-                        border.color: Theme.control
-
-                        // Not under the selected row, whose fill then runs the row's whole height.
-                        Rectangle {
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            visible: !line.focused
-                            height: Theme.stroke
-                            color: Theme.line
-                        }
-                    }
-
-                    contentItem: Item {
-                        RowLayout {
-                            x: matrix.scrolled + Theme.space_md
-                            width: matrix.nameWidth - 2 * Theme.space_md
-                            height: Theme.list_row
-                            spacing: Theme.space_md
-
-                            UiText {
-                                mono: true
-                                text: line.modelData.number
-                                color: Theme.faint
-                            }
-
-                            UiText {
-                                objectName: "matrixName"
-                                Layout.fillWidth: true
-                                text: line.modelData.title
-                            }
-                        }
-
-                        Tracks {
-                            Row {
-                                Repeater {
-                                    model: line.modelData.cells
-
-                                    delegate: Cell {
-                                        required property var modelData
-
-                                        value: modelData
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Where the dragged column lands: the edge of the column whose place it takes.
-            Rectangle {
-                readonly property var dragged: matrix.dragFrom >= 0 ? matrix.headers[matrix.dragFrom] : null
-                readonly property int first: dragged ? matrix.headers.findIndex(h => h.kind === dragged.kind) : 0
-                readonly property int last: dragged
-                                            ? first + matrix.headers.filter(h => h.kind === dragged.kind).length - 1 : 0
-                readonly property int to: dragged
-                                          ? Math.max(first, Math.min(last, matrix.dragFrom + matrix.dragPlaces)) : -1
-                readonly property int edge: to > matrix.dragFrom ? to + 1 : to
-
-                objectName: "orderLine"
-                visible: dragged !== null && to !== matrix.dragFrom && x + width / 2 >= matrix.nameWidth
-                x: matrix.nameWidth + edge * matrix.columnWidth - matrix.scrolled - width / 2
-                y: Theme.row_sm
-                z: 2
-                width: 3 * Theme.stroke
-                height: parent.height - y
-                radius: width / 2
-                color: Theme.control
-            }
-
-            Item {
-                id: rowKeys
-
-                objectName: "matrixRowKeys"
-                anchors.fill: parent
-                activeFocusOnTab: true
-                Accessible.role: Accessible.List
-                Accessible.name: Strings.n("matrix.files", matrix.rows.length)
-                onActiveFocusChanged: {
-                    if (activeFocus) {
-                        const at = matrix.rows.findIndex(r => r.path === app.focus_path)
-                        scroll.currentIndex = at >= 0 ? at : Math.min(scroll.currentIndex, matrix.rows.length - 1)
-                    }
-                }
-                Keys.onPressed: event => {
-                    const last = matrix.rows.length - 1
-                    const to = {
-                        [Qt.Key_Up]: scroll.currentIndex - 1,
-                        [Qt.Key_Down]: scroll.currentIndex + 1,
-                        [Qt.Key_Home]: 0,
-                        [Qt.Key_End]: last
-                    }[event.key]
-                    if (to !== undefined) {
-                        scroll.currentIndex = Math.max(0, Math.min(last, to))
-                        if (scroll.currentIndex === 0) {
-                            scroll.positionViewAtBeginning()  // keeps the header in view
-                        } else {
-                            scroll.positionViewAtIndex(scroll.currentIndex, ListView.Contain)
-                        }
-                        event.accepted = true
-                    } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && last >= 0) {
-                        app.focus_file(matrix.rows[scroll.currentIndex].path)
-                        event.accepted = true
-                    }
-                }
-            }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: Theme.space_xl
-
-            Flow {
+            Segmented {
+                objectName: "stripFiles"
+                Layout.preferredWidth: Theme.track_strip_label
+                Layout.minimumWidth: 0
                 Layout.fillWidth: true
-                Layout.alignment: Qt.AlignVCenter
-                spacing: Theme.space_xl
+                Layout.maximumWidth: Theme.track_strip_label
+                name: Strings.t("matrix.show.name")
+                current: matrix.folded ? "differ" : "all"
+                model: [
+                    {"key": "all", "label": Strings.n("matrix.show.all", matrix.view.strip.all.files.length)},
+                    {"key": "differ", "label": Strings.f("matrix.show.differ", {"count": matrix.view.strip.differing})}
+                ]
+                onPicked: key => {
+                    matrix.chosen = key
+                    app.save_matrix_files(key)
+                }
+            }
 
-                Repeater {
-                    model: ["kept", "dropped", "added", "default", "forced", "missing"]
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.space_lg
 
-                    delegate: Row {
-                        required property string modelData
+                Item {
+                    Layout.fillWidth: true
+                }
 
-                        objectName: "legendItem"
-                        // One height for every item, so each is centred on the same line.
-                        height: Theme.row_sm
-                        spacing: Theme.space_sm
+                PlaceMark {
+                    objectName: "orderMark"
+                    Layout.maximumWidth: implicitWidth
+                    choice: app.field_marks["tracks.order"] || ({})
+                }
 
-                        Cell {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: Theme.icon_md + Theme.space_md
-                            height: Theme.pill
-                            value: ({
-                                "state": modelData === "kept" || modelData === "dropped" || modelData === "added"
-                                         || modelData === "missing" ? modelData : "kept",
-                                "default": modelData === "default",
-                                "forced": modelData === "forced",
-                                "fallback": false
-                            })
-                        }
+                // A name such as Forced or SDH already counts as the flag when rules match; this writes the flag itself.
+                ActionButton {
+                    objectName: "writeImpliedFlags"
+                    kind: "outline"
+                    size: Theme.row_sm
+                    checkable: true
+                    checked: app.write_implied_flags
+                    iconName: checked ? "check" : ""
+                    text: Strings.t("matrix.write_implied_flags")
+                    Accessible.description: Strings.t("matrix.write_implied_flags_help")
+                    onToggled: app.set_write_implied_flags(checked)
 
-                        UiText {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: Strings.t("matrix.legend." + modelData)
-                            color: Theme.muted
-                            font.pixelSize: Theme.text_sm
-                        }
+                    Tip {
+                        objectName: "impliedTip"
+                        visible: parent.hovered
+                        text: Strings.t("matrix.write_implied_flags_help")
                     }
                 }
-            }
 
-            UiText {
-                Layout.alignment: Qt.AlignVCenter
-                Layout.preferredHeight: Theme.row_sm
-                verticalAlignment: Text.AlignVCenter
-                visible: matrix.headers.some(h => h.movable)
-                text: Strings.t("matrix.drag_hint")
-                color: Theme.control
-                font.pixelSize: Theme.text_sm
-            }
-
-            PlaceMark {
-                objectName: "orderMark"
-                Layout.alignment: Qt.AlignVCenter
-                Layout.preferredHeight: Theme.row_sm
-                verticalAlignment: Text.AlignVCenter
-                choice: app.field_marks["tracks.order"] || ({})
-            }
-
-            // A name such as Forced or SDH already counts as the flag when rules match; this writes the flag itself.
-            ActionButton {
-                objectName: "writeImpliedFlags"
-                Layout.alignment: Qt.AlignVCenter
-                kind: "outline"
-                size: Theme.row_sm
-                checkable: true
-                checked: app.write_implied_flags
-                iconName: checked ? "check" : ""
-                text: Strings.t("matrix.write_implied_flags")
-                Accessible.description: Strings.t("matrix.write_implied_flags_help")
-                onToggled: app.set_write_implied_flags(checked)
-
-                Tip {
-                    objectName: "impliedTip"
-                    visible: parent.hovered
-                    text: Strings.t("matrix.write_implied_flags_help")
+                PlaceMark {
+                    objectName: "impliedFlagsMark"
+                    Layout.maximumWidth: implicitWidth
+                    choice: app.field_marks["metadata.write_implied_flags"] || ({})
                 }
-            }
 
-            PlaceMark {
-                objectName: "impliedFlagsMark"
-                Layout.alignment: Qt.AlignVCenter
-                Layout.preferredHeight: Theme.row_sm
-                verticalAlignment: Text.AlignVCenter
-                choice: app.field_marks["metadata.write_implied_flags"] || ({})
-            }
-
-            HelpTip {
-                objectName: "firstKeptTip"
-                Layout.alignment: Qt.AlignVCenter
-                topic: "first_kept"
+                HelpTip {
+                    objectName: "firstKeptTip"
+                    topic: "first_kept"
+                }
             }
         }
 
-        // Under the legend, not in its row: beside the switch it would squeeze the legend into a column.
         UiText {
             objectName: "impliedNothing"
             Layout.fillWidth: true
@@ -711,12 +282,410 @@ Item {
             wrapMode: Text.WordWrap
         }
 
-        UiText {
-            objectName: "legendFallback"
+        Item {
             Layout.fillWidth: true
-            text: Strings.t("matrix.legend.fallback")
-            color: Theme.muted
-            font.pixelSize: Theme.text_sm
+            Layout.fillHeight: true
+
+            // A ListView creates a track's row only as it scrolls into view, and each row builds only the cells in view
+            // (`built`), so a whole show with many tracks does not build every row and cell. The numbers across the top
+            // are one Tab stop, `numberKeys`: Left, Right, Home and End move along the files, Return opens one.
+            ListView {
+                id: scroll
+
+                objectName: "trackRows"
+                anchors.fill: parent
+                clip: true
+                // The rows stay put while one is dragged, so the drag moves the row, not the view.
+                interactive: matrix.dragFrom < 0
+                contentWidth: matrix.labelWidth + matrix.stripWidth + Theme.space_md
+                // Room for the vertical scrollbar beside the strip, which then scrolls clear of it.
+                rightMargin: vbar.visible ? vbar.width : 0
+                flickableDirection: Flickable.AutoFlickIfNeeded
+                boundsBehavior: Flickable.StopAtBounds
+                spacing: Theme.space_xs
+                headerPositioning: ListView.OverlayHeader
+                // A count, not the headers: a choice or a move then updates the rows in place, so the view keeps its
+                // place and the focus can follow a moved row.
+                model: matrix.headers.length
+                // Another batch starts at the top and at its first file, even with as many rows as the last one.
+                readonly property string firstPath: matrix.files.length > 0 ? matrix.files[0].paths[0] : ""
+                onFirstPathChanged: {
+                    contentX = 0
+                    positionViewAtBeginning()
+                    numberKeys.current = 0
+                }
+                ScrollBar.vertical: Scroller {
+                    id: vbar
+                }
+                ScrollBar.horizontal: Scroller {}
+
+                header: Rectangle {
+                    readonly property bool seasons: matrix.strip.seasons.length > 0
+
+                    z: 3
+                    width: scroll.contentWidth
+                    height: (seasons ? Theme.row_sm : 0) + Theme.row_sm + Theme.space_xs
+                    color: Theme.panel
+
+                    Strip {
+                        objectName: "stripNumbers"
+
+                        Repeater {
+                            model: matrix.strip.seasons
+
+                            delegate: UiText {
+                                required property var modelData
+
+                                x: matrix.edge(modelData.first) + Theme.space_xs
+                                width: matrix.edge(modelData.first + modelData.count) - x
+                                height: Theme.row_sm
+                                text: modelData.label
+                                color: Theme.faint
+                                font.pixelSize: Theme.text_xs
+                                font.weight: Font.DemiBold
+                            }
+                        }
+
+                        Repeater {
+                            model: matrix.built
+
+                            delegate: Item {
+                                id: number
+
+                                required property int index
+                                readonly property int at: matrix.first + index
+                                readonly property var file: matrix.files[at] ?? {"label": "", "tip": ""}
+                                readonly property bool current: numberKeys.activeFocus && at === numberKeys.current
+
+                                objectName: "stripNumber"
+                                x: matrix.edge(at)
+                                y: parent.height - Theme.row_sm - Theme.space_xs
+                                width: matrix.edge(at + 1) - matrix.edge(at)
+                                height: Theme.row_sm
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    visible: number.at === matrix.selected || number.current || pointer.hovered
+                                    radius: Theme.radius_sm
+                                    color: number.at === matrix.selected ? Theme.select : Theme.panel_3
+                                    border.width: number.current ? Theme.stroke : 0
+                                    border.color: Theme.control
+                                }
+
+                                UiText {
+                                    anchors.centerIn: parent
+                                    mono: true
+                                    text: number.file.label
+                                    color: number.at === matrix.selected ? Theme.ink : Theme.faint
+                                    font.pixelSize: Theme.text_xs
+                                    font.weight: number.at === matrix.selected ? Font.Bold : Font.Normal
+                                }
+
+                                HoverHandler {
+                                    id: pointer
+
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+
+                                TapHandler {
+                                    onTapped: {
+                                        numberKeys.forceActiveFocus()
+                                        numberKeys.current = number.at
+                                        matrix.openFile(number.at)
+                                    }
+                                }
+
+                                Tip {
+                                    visible: pointer.hovered
+                                    text: number.file.tip
+                                }
+                            }
+                        }
+                    }
+                }
+
+                delegate: Item {
+                    id: line
+
+                    objectName: "trackLine"
+                    required property int index
+                    readonly property var column: matrix.headers[index]
+                    readonly property var cells: matrix.strip.lines[index] ?? []
+                    // The first row of its kind carries the kind's label above it.
+                    readonly property bool leads: index === 0 || matrix.headers[index - 1].kind !== column.kind
+                    readonly property real rowTop: leads ? Theme.row_sm + (index > 0 ? Theme.space_md : 0) : 0
+                    readonly property alias grip: label.grip
+
+                    width: scroll.contentWidth
+                    height: rowTop + label.height
+                    z: label.grip.active ? 1 : 0
+
+                    Row {
+                        x: matrix.scrolled + Theme.space_xs
+                        y: line.rowTop - Theme.row_sm
+                        height: Theme.row_sm
+                        visible: line.leads
+                        spacing: Theme.space_sm
+
+                        Icon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            name: line.column.kind === "audio" ? "audio" : "subs"
+                            size: Theme.icon_sm
+                            color: Theme.faint
+                        }
+
+                        UiText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: Strings.t("matrix.group." + line.column.kind)
+                            color: Theme.faint
+                            font.pixelSize: Theme.text_xs
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: Theme.stroke
+                        }
+                    }
+
+                    Item {
+                        y: line.rowTop
+                        width: parent.width
+                        height: label.height
+                        transform: Translate {
+                            y: label.grip.offset
+                        }
+
+                        // The row held by its grip, framed as it moves.
+                        Rectangle {
+                            x: matrix.scrolled - Theme.space_xs
+                            y: -Theme.space_xs
+                            z: 1
+                            width: matrix.room + 2 * Theme.space_xs
+                            height: label.height + 2 * Theme.space_xs
+                            visible: label.grip.active
+                            radius: Theme.radius_md
+                            color: "transparent"
+                            border.width: Theme.stroke
+                            border.color: Theme.control
+                        }
+
+                        TrackChip {
+                            id: label
+
+                            x: matrix.scrolled
+                            width: matrix.labelWidth
+                            form: "label"
+                            brief: matrix.brief
+                            gripStep: Theme.row_lg + scroll.spacing
+                            chip: line.column
+                            namesOpen: matrix.openColumn === line.column.id
+                            rows: namesOpen ? matrix.openNames : []
+                            missing: namesOpen ? matrix.openMissing : ""
+                            held: namesOpen ? matrix.openHeld : ""
+                            onNamesToggled: matrix.openColumn = namesOpen ? -1 : line.column.id
+                        }
+
+                        Connections {
+                            target: label.grip
+
+                            function onActiveChanged() {
+                                matrix.dragFrom = label.grip.active ? line.column.id : -1
+                                matrix.dragPlaces = 0
+                                // An open list would make the rows' steps uneven under the drag.
+                                if (label.grip.active)
+                                    matrix.openColumn = -1
+                            }
+
+                            function onPlacesChanged() {
+                                if (label.grip.active)
+                                    matrix.dragPlaces = label.grip.places
+                            }
+
+                            function onMoved(places) {
+                                const focused = label.grip.activeFocus
+                                const at = app.move_track(line.index, line.index + places)
+                                if (focused) {
+                                    // Only a row that exists can take the focus: bring it into view first.
+                                    scroll.positionViewAtIndex(at, ListView.Contain)
+                                    scroll.itemAtIndex(at).grip.forceActiveFocus()
+                                }
+                            }
+                        }
+
+                        Strip {
+                            id: cells
+
+                            objectName: "trackStrip"
+                            height: Theme.row_lg
+                            // The cell under the pointer, -1 for none: one handler for the strip, not one per cell. The
+                            // handlers lie on the strip's content, so a point on them is a place along the strip.
+                            readonly property int pointed: hover.hovered ? matrix.at(hover.point.position.x) : -1
+                            readonly property var pointedCell: pointed >= 0 ? line.cells[pointed] ?? null : null
+
+                            Rectangle {
+                                width: matrix.stripWidth
+                                height: parent.height
+                                visible: line.column.state === "dropped"
+                                radius: Theme.radius_md
+                                color: Theme.drop_soft
+                            }
+
+                            Repeater {
+                                model: matrix.built
+
+                                delegate: Cell {
+                                    required property int index
+
+                                    at: matrix.first + index
+                                    mark: line.cells[at]?.mark ?? "none"
+                                    added: line.column.state === "added"
+                                    pointed: at === cells.pointed && (line.cells[at]?.click ?? false)
+                                }
+                            }
+
+                            // Under the cell the pointer is over, for its tooltip.
+                            Item {
+                                id: tipAnchor
+
+                                x: cells.pointed >= 0 ? matrix.edge(cells.pointed) : 0
+                                width: cells.pointed >= 0 ? matrix.edge(cells.pointed + 1) - x : 0
+                                height: parent.height
+                            }
+
+                            HoverHandler {
+                                id: hover
+
+                                cursorShape: cells.pointedCell?.click ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            }
+
+                            TapHandler {
+                                id: tap
+
+                                onTapped: {
+                                    const at = matrix.at(tap.point.position.x)
+                                    if (line.cells[at]?.click)
+                                        app.toggle_file_track(line.column.id, matrix.files[at].paths[0])
+                                }
+                            }
+                        }
+
+                        Tip {
+                            objectName: "cellTip"
+                            parent: tipAnchor
+                            visible: cells.pointed >= 0 && text !== ""
+                            text: cells.pointed < 0 ? ""
+                                  : matrix.files[cells.pointed].run ? matrix.files[cells.pointed].tip
+                                  : app.cell_tip(line.column.id, matrix.files[cells.pointed].paths[0])
+                        }
+                    }
+                }
+            }
+
+            // Where the dragged row lands: the edge of the row whose place it takes.
+            Rectangle {
+                readonly property var dragged: matrix.dragFrom >= 0 ? matrix.headers[matrix.dragFrom] : null
+                readonly property int firstOfKind: dragged ? matrix.headers.findIndex(h => h.kind === dragged.kind) : 0
+                readonly property int lastOfKind: dragged
+                    ? firstOfKind + matrix.headers.filter(h => h.kind === dragged.kind).length - 1 : 0
+                readonly property int to: dragged
+                    ? Math.max(firstOfKind, Math.min(lastOfKind, matrix.dragFrom + matrix.dragPlaces)) : -1
+                readonly property var target: dragged && to !== matrix.dragFrom ? scroll.itemAtIndex(to) : null
+
+                objectName: "orderLine"
+                visible: target !== null
+                x: 0
+                y: target ? target.mapToItem(parent, 0, to > matrix.dragFrom ? target.height : target.rowTop).y
+                            - height / 2 : 0
+                z: 2
+                width: matrix.room
+                height: 3 * Theme.stroke
+                radius: height / 2
+                color: Theme.control
+            }
+
+            Item {
+                id: numberKeys
+
+                property int current: 0
+
+                objectName: "numberKeys"
+                width: matrix.room
+                height: Theme.row_sm
+                activeFocusOnTab: true
+                Accessible.role: Accessible.List
+                Accessible.name: Strings.t("matrix.numbers")
+                onActiveFocusChanged: {
+                    if (activeFocus)
+                        current = matrix.selected >= 0 ? matrix.selected : Math.min(current, matrix.files.length - 1)
+                }
+                Keys.onPressed: event => {
+                    const last = matrix.files.length - 1
+                    const to = {
+                        [Qt.Key_Left]: current - 1,
+                        [Qt.Key_Right]: current + 1,
+                        [Qt.Key_Home]: 0,
+                        [Qt.Key_End]: last
+                    }[event.key]
+                    if (to !== undefined) {
+                        current = Math.max(0, Math.min(last, to))
+                        matrix.showFile(current)
+                        event.accepted = true
+                    } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && last >= 0) {
+                        matrix.openFile(current)
+                        event.accepted = true
+                    }
+                }
+            }
+        }
+
+        // What the loud marks mean; a file that follows its track draws nothing that needs a key.
+        Flow {
+            objectName: "stripKey"
+            Layout.fillWidth: true
+            spacing: Theme.space_md
+
+            UiText {
+                height: Theme.row_sm
+                text: Strings.t("matrix.key")
+                color: Theme.muted
+                font.pixelSize: Theme.text_sm
+            }
+
+            Repeater {
+                model: [
+                    {"mark": "own_drop", "key": "own"},
+                    {"mark": "missing", "key": "missing"},
+                    {"mark": "fallback", "key": "fallback"}
+                ]
+
+                delegate: Row {
+                    required property var modelData
+
+                    height: Theme.row_sm
+                    spacing: Theme.space_xs
+
+                    // A cell of no file.
+                    Cell {
+                        at: -1
+                        x: 0
+                        width: Theme.strip_pitch
+                        mark: modelData.mark
+                    }
+
+                    UiText {
+                        height: Theme.row_sm
+                        text: Strings.t("matrix.key." + modelData.key)
+                        color: Theme.muted
+                        font.pixelSize: Theme.text_sm
+                    }
+                }
+            }
+
+            UiText {
+                height: Theme.row_sm
+                leftPadding: Theme.space_lg
+                visible: matrix.headers.some(h => h.movable)
+                text: Strings.t("matrix.drag_hint")
+                color: Theme.faint
+                font.pixelSize: Theme.text_sm
+            }
         }
     }
 }

@@ -373,6 +373,16 @@ SIZES: dict[str, int] = {
     "chip_title_min_width": 56,  # a chip's codec, the last of its texts to be cut short in a narrow row
     "chip_count_min_width": 48,  # a chip's "missing in N files", cut short after the track name and before the codec
     "chip_name_width": 200,  # a chip's track name, cut short with an ellipsis beyond it
+    "track_title_width": 132,  # the codec column of a track row on Overview
+    "track_mark_width": 120,  # where a track row's choice comes from, right-aligned before its flags
+    "track_files_width": 76,  # the "Files" button at the end of a track row
+    "track_row_two_lines_below": 480,  # a track row narrower than this puts its name, count and mark on a second line
+    "track_strip_label": 400,  # a track's row beside its strip of files, which stands still as the strip scrolls
+    "track_strip_label_narrow": 236,  # its short form: the codec over the first of the mark, the count and the name
+    "strip_label_short_below": 640,  # a Tracks place narrower than this takes the short form of the rows
+    "strip_pitch": 22,  # one file's width in the strip
+    "strip_cell": 16,  # the frame of a cell that differs
+    "strip_run": 40,  # the least width of a run of files that follow every track, folded into one
     "window_min_width": 1024,
     "window_min_height": 640,
 }

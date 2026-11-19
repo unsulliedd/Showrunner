@@ -138,3 +138,5 @@ def test_the_matrix_sizes_order_from_narrowest_to_widest() -> None:
 
     assert SIZES["matrix_label"] <= SIZES["matrix_name"]
     assert SIZES["matrix_column"] <= SIZES["matrix_column_min"]
+    assert SIZES["track_strip_label_narrow"] < SIZES["track_strip_label"] < SIZES["strip_label_short_below"]
+    assert SIZES["strip_cell"] < SIZES["strip_pitch"] < SIZES["strip_run"]

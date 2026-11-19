@@ -3,7 +3,7 @@ import QtQuick.Controls.Basic
 import Showrunner
 
 // The D (default) or F (forced) toggle of a track. `on` is the choice; `held` shows that the file has the flag
-// without a choice making it so.
+// without a choice making it so. An unset flag is a faint letter, framed under the pointer and with the focus.
 AbstractButton {
     id: control
 
@@ -25,8 +25,8 @@ AbstractButton {
     background: Rectangle {
         radius: Theme.radius_sm
         color: control.hovered && control.enabled ? Theme.panel_3 : "transparent"
-        border.width: control.visualFocus ? Theme.stroke : 0
-        border.color: Theme.control
+        border.width: control.visualFocus || control.hovered && control.enabled ? Theme.stroke : 0
+        border.color: control.visualFocus ? Theme.control : Theme.line_strong
     }
 
     contentItem: Item {

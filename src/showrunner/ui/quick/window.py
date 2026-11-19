@@ -134,6 +134,7 @@ SAVE_DELAY_MS = 400
 # The tree dot of a file whose plan needs a decision, and of one with planned changes.
 _LOOK_DOT, _PLANNED_DOT = "accent_ink", "control"
 _LOOK = (FileOutcome.REFUSED, FileOutcome.NEEDS_REMUX, FileOutcome.UNWRITTEN)
+_NO_STRIP = {form: {"files": [], "lines": [], "seasons": []} for form in ("all", "differ")} | {"differing": 0}
 # How long closing the window waits for a cancelled job to stop its program and leave the files in a known place.
 STOP_WAIT_MS = 10_000
 
@@ -1398,7 +1399,20 @@ class WindowController(QObject):
 
     @Property("QVariantMap", notify=matrix_changed)
     def matrix(self) -> dict[str, Any]:
-        return {"headers": self._headers(), "rows": self._rows()}
+        """The tracks as rows, each beside a strip of the files, and one row per file."""
+        headers = self._headers()
+        view = self._view
+        strip = self._part("strip", lambda: view.strip(headers)) if view is not None else _NO_STRIP
+        return {"headers": headers, "rows": self._rows(), "strip": strip}
+
+    @Slot(int, str, result=str)
+    def cell_tip(self, column: int, path: str) -> str:
+        """The tooltip of one file's cell under a track of the Tracks strip, built when the pointer is over it."""
+        found = self._column(column)
+        item = next((i for i in self._items if str(i.file.path) == path), None)
+        if found is None or item is None or self._view is None:
+            return ""
+        return self._view.tip(column, item, found[1])
 
     @Property("QVariantMap", notify=plans_changed)
     def movie(self) -> dict[str, Any]:
@@ -2349,6 +2363,21 @@ class WindowController(QObject):
             save_settings(replace(settings, overview_tracks_height=height))
         except OSError:
             _log.exception("Could not save the height of the tracks box")
+
+    @Slot(result=str)
+    def matrix_files(self) -> str:
+        """Which files the Tracks strip shows, as the user last chose: `all`, `differ`, or empty for none chosen."""
+        return load_settings().value.matrix_files
+
+    @Slot(str)
+    def save_matrix_files(self, files: str) -> None:
+        settings = load_settings().value
+        if files == settings.matrix_files or files not in ("all", "differ"):
+            return
+        try:
+            save_settings(replace(settings, matrix_files=files))
+        except OSError:
+            _log.exception("Could not save which files the track strip shows")
 
     @Slot(str, result=QByteArray)
     def panel_state(self, name: str) -> QByteArray:

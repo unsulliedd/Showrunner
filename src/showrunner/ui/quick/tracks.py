@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from itertools import groupby
 
 from showrunner.app.batches.choices import (
     TrackChoice,
@@ -52,6 +53,8 @@ from showrunner.ui.sheet.format import size_text
 
 KINDS = (TrackKind.AUDIO, TrackKind.SUBTITLE)
 FLAGS = ("default", "forced")
+# The marks of the Tracks strip where a file follows its track: a dot, or nothing.
+QUIET = ("follows", "none")
 _FLAG_TESTS = ("default", "forced", "hearing_impaired", "visual_impaired", "commentary", "original")
 # What a track is, as a signature holds it, in the order a chip names it.
 _WHAT = ("commentary", "hearing_impaired", "visual_impaired", "forced")
@@ -178,7 +181,23 @@ def cell(
         if found is None:
             return {"state": "missing", "default": False, "forced": False}
     kept = found.state != "dropped"
-    return {"state": found.state, "default": kept and found.flags.default, "forced": kept and found.flags.forced}
+    rule = found.rule
+    return {
+        "state": found.state,
+        "default": kept and found.flags.default,
+        "forced": kept and found.flags.forced,
+        # A flag the plan gives the track, which the file does not have.
+        "set_default": kept and found.flags.default and not found.track.flags.default,
+        "set_forced": kept and found.flags.forced and not found.track.flags.forced,
+        # What drops it: a choice on one of its names, another choice, or a rule written by hand.
+        "by": ""
+        if rule is None
+        else "name"
+        if name_of_rule(rule, [column.signature])
+        else "choice"
+        if rule.from_choice
+        else "hand",
+    }
 
 
 def _first_defaults(options: TracksOptions, cols: Sequence[Column]) -> dict[TrackKind, TrackSignature]:
@@ -465,6 +484,7 @@ class BatchView:
             lacking = sum(1 for row in read if row[index]["state"] == "missing")
             held = len(self.held(index))
             signature = column.signature
+            staying = [row[index] for row in read if row[index]["state"] in ("kept", "added")]
             headers.append(
                 {
                     "id": index,
@@ -485,6 +505,12 @@ class BatchView:
                     "button": tr(f"tracks.state.{state}"),
                     "default": choice.default,
                     "forced": choice.forced,
+                    # Every file has the flag on the track though no choice sets it: the row's flag shows it, muted,
+                    # and the cells stay quiet. Where the files differ, the cells show each file's own flag.
+                    **{
+                        f"{flag}_held": not getattr(choice, flag) and bool(staying) and all(c[flag] for c in staying)
+                        for flag in FLAGS
+                    },
                     **self.place_mark(index),
                     # Flags apply to a paired file only once it is added.
                     "flags": column.paired is None or state == "added",
@@ -510,6 +536,141 @@ class BatchView:
             }
             for kind in KINDS
         ]
+
+    # Strip: the Tracks place, each track beside a strip of the batch's files
+
+    def look(self, index: int, item: MediaItem, header: Mapping[str, object]) -> tuple[str, str]:
+        """What the strip draws for one file under one track, and why: a mark and the reason its tip gives. A file
+        that follows its track is quiet (`QUIET`); every other mark says how the file differs. `header` is the
+        track's entry of `headers`."""
+        column, state, found = self.cols[index], header["state"], self.cells(item)[index]
+        if not self.was_read(item):
+            return "none", "unread"
+        if state == "paired":  # a paired file not added: nothing to show in any file
+            return "none", "paired"
+        if found["state"] in ("missing", "paired"):
+            # Under a dropped track the new file lacks it either way.
+            return ("none" if state == "dropped" else "missing"), "missing"
+        own = choice_of(TracksOptions(list(self.file_rules.get(str(item.file.path), ()))), column.signature).verdict
+        dropped = found["state"] == "dropped"
+        if dropped and state != "dropped":
+            return ("own_drop", "own_drop") if own is Verdict.DROP else ("drop", f"drop_{found['by'] or 'choice'}")
+        if not dropped and state == "dropped":
+            if own is Verdict.KEEP:
+                return "own_keep", "own_keep"
+            if self.file(item) is None:
+                return "none", "follows"  # the plan has not arrived: the tracks still show as they are
+            if self.kept_by_name(item, index):
+                return "keep", "keep_name"
+            stage = self.file(item).plan_for("tracks")
+            refused = stage is not None and isinstance(stage.plan, PlanRefused)
+            return ("held", "held") if refused else ("keep", "keep_choice")
+        if dropped:
+            return "none", "follows"
+        if found["fallback"]:
+            return "fallback", "fallback"
+        for flag in FLAGS:
+            if found[flag] and not header[flag] and not header[f"{flag}_held"]:
+                if found[f"set_{flag}"]:
+                    return f"set_{flag}", f"set_{flag}"
+                return f"file_{flag}", f"file_{flag}"
+        return "follows", "follows"
+
+    def tip(self, index: int, item: MediaItem, header: Mapping[str, object]) -> str:
+        """The tooltip of one cell of the strip: the file, what the cell means, and what a click on it does."""
+        mark, why = self.look(index, item, header)
+        track = f"{header['code']} {header['title']}"
+        lines = [
+            tr("matrix.tip.file", number=file_label(item, self._one_season()), title=item_title(item)),
+            tr("tracks.not_read") if why == "unread" else tr(f"matrix.tip.{why}", track=track),
+        ]
+        if why == "held":
+            lines[1] = f"{lines[1]} {self.warning(item)}".strip()
+        if why == "follows":
+            lines[1] = tr(f"matrix.tip.follows.{header['state']}", track=track)
+        if self.clickable(index, item):
+            dropped = self.cells(item)[index]["state"] == "dropped"
+            own = mark in ("own_drop", "own_keep")
+            lines.append(tr("matrix.tip.back" if own else "matrix.tip.keep" if dropped else "matrix.tip.drop"))
+        return "\n".join(lines)
+
+    def clickable(self, index: int, item: MediaItem) -> bool:
+        """Whether a click on the cell makes the file's own choice: a track the file has, not a paired file."""
+        return (
+            self.cols[index].paired is None
+            and self.was_read(item)
+            and self.cells(item)[index]["state"] not in ("missing", "paired")
+        )
+
+    def strip(self, headers: Sequence[Mapping[str, object]]) -> dict[str, object]:
+        """The strip of the Tracks place in its two forms: `all` has a cell per file, `differ` folds each run of files
+        that follow every track into one cell. Each form has its `files` (the numbers across the top, a run's spanning
+        its files), its `lines` (per track, a cell per file: the mark and whether a click acts) and its `seasons` (a
+        label over each season's numbers, where the files are of more than one season). `differing` counts the files
+        that differ. `headers` are those of `headers`, built once for both."""
+        one_season = self._one_season()
+        marks = [[self.look(n, item, h)[0] for n, h in enumerate(headers)] for item in self.items]
+        differs = [any(m not in QUIET for m in row) for row in marks]
+        singles = [self._strip_file(at, item, one_season) for at, item in enumerate(self.items)]
+
+        def line(at: int, n: int) -> dict[str, object]:
+            return {"mark": marks[at][n], "click": self.clickable(n, self.items[at])}
+
+        def number(at: int) -> str:
+            """A file's number where no season label stands over it: with its season where there are several."""
+            item = self.items[at]
+            return file_label(item, one_season) if isinstance(item.identity, Episode) else str(singles[at]["label"])
+
+        files: list[dict[str, object]] = []
+        lines: list[list[dict[str, object]]] = [[] for _ in headers]
+        at = 0
+        while at < len(self.items):
+            end = at
+            while not differs[at] and end + 1 < len(self.items) and not differs[end + 1]:
+                end += 1
+            if end > at:
+                run = self.items[at : end + 1]
+                label = tr("matrix.run", first=number(at), last=number(end))
+                paths = [str(i.file.path) for i in run]
+                files.append({"label": label, "tip": tr("matrix.tip.run", files=label), "paths": paths, "run": True})
+                for n, header in enumerate(headers):
+                    quiet = "follows" if header["state"] in ("kept", "added") else "none"
+                    lines[n].append({"mark": quiet, "click": False})
+            else:
+                files.append({**singles[at], "label": number(at)})
+                for n in range(len(headers)):
+                    lines[n].append(line(at, n))
+            at = end + 1
+        return {
+            "all": {
+                "files": singles,
+                "lines": [[line(at, n) for at in range(len(self.items))] for n in range(len(headers))],
+                "seasons": [] if one_season else self._seasons(),
+            },
+            "differ": {"files": files, "lines": lines, "seasons": []},
+            "differing": sum(differs),
+        }
+
+    def _strip_file(self, at: int, item: MediaItem, one_season: bool) -> dict[str, object]:
+        """One file's number across the top of the strip: the episode's number in its season, else its place."""
+        title = tr("matrix.tip.file", number=file_label(item, one_season), title=item_title(item))
+        return {
+            "label": item_number(item) or f"{at + 1:02d}",
+            "tip": title,
+            "paths": [str(item.file.path)],
+            "run": False,
+        }
+
+    def _seasons(self) -> list[dict[str, object]]:
+        """The label over each season's run of numbers: its first file, how many files it spans."""
+        seasons: list[dict[str, object]] = []
+        first = 0
+        for key, group in groupby(self.items, key=_season_of):
+            count = len(list(group))
+            if key is not None:
+                seasons.append({"label": tr("library.season", number=key[1]), "first": first, "count": count})
+            first += count
+        return seasons
 
     # Rows: one per file
 
@@ -826,6 +987,11 @@ def _all(item: MediaItem, options: TracksOptions) -> list[Track]:
     """The file's tracks and the paired files added to it, as the rules see them."""
     added = [stand_in(s, i) for i, s in enumerate(item.subtitles) if PairedFile.of(s) in options.add_paired]
     return [*item.file.tracks, *added]
+
+
+def _season_of(item: MediaItem) -> tuple[str, int] | None:
+    identity = item.identity
+    return (identity.show, identity.season) if isinstance(identity, Episode) else None
 
 
 def item_number(item: MediaItem) -> str:

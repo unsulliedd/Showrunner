@@ -3,14 +3,18 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
-// One track signature of a batch on Overview: a click on its header keeps or drops the track in every file (adds a
-// paired file), D and F set the flags, and the button under the header folds the chip open to list each file's name for
-// the track, then the files that lack it. `chip` is a header from the controller; `namesOpen`, `rows` and `missing`
-// say whether the place has it open and what it lists. An open chip grows taller inside its own frame, up to
-// `names_height` where the list scrolls, and never wider: a long line is cut short.
+// One track signature of a batch as a row of fixed columns: the check box keeps or drops the track in every file (adds
+// a paired file), the badge opens the language picker, D and F set the flags, and the button at the end folds the row
+// open to list each file's name for the track, then the files that lack it. Only the check box keeps or drops: the rest
+// of the row does nothing, so a near miss on the button cannot drop a track in every file. `chip` is a header from the
+// controller; `namesOpen`, `rows` and `missing` say whether the place has it open and what it lists. An open row grows
+// taller inside its own frame, up to `names_height` where the list scrolls, and never wider: a long line is cut short.
+// `form` is "row" on Overview, "lines" where Overview's box is narrow (the count, the mark and the name on a second
+// line), and "label" beside the strip of the Tracks place, with the grip at its left and the name under the codec;
+// `brief` takes the label's short form.
 // A track without a name has a line per file that a click keeps or drops in that file alone (the file's own choice);
 // where the tracks carry several names, each name is a line of its own that a click keeps or drops (a rule by name
-// ahead of the chip's choice). The list is one tab stop, Up and Down move along it and Space or Return acts.
+// ahead of the row's choice). The list is one tab stop, Up and Down move along it and Space or Return acts.
 Item {
     id: control
 
@@ -20,69 +24,180 @@ Item {
     property string missing: ""
     // Why the plan keeps the track in some files though it is dropped; shown above the names, where it is seen first.
     property string held: ""
+    property string form: "row"
+    property bool brief: false
+    // The length of one place of the grip, which moves the row up or down among the rows of its kind.
+    property real gripStep: height
+    readonly property alias grip: grip
     readonly property bool dropped: chip.state === "dropped"
     readonly property bool paired: chip.paired
+    readonly property bool label: form === "label"
     readonly property bool clickable: rows.some(row => row.clickable)
+    // What the row says after the codec: the name, or what a tick does to a paired file nobody adds yet.
+    readonly property string nameText: chip.state === "paired" ? Strings.t("tracks.paired_add") : chip.name
+    readonly property color textTone: dropped ? Theme.drop : Theme.ink
 
     signal namesToggled
 
     objectName: "chip" + chip.id
-    implicitWidth: header.implicitWidth
-    implicitHeight: header.height + (expand.visible ? Theme.space_sm + expand.height : 0)
-                    + (namesOpen ? Theme.space_sm + foldout.height + Theme.space_md : 0)
+    implicitHeight: body.height + (namesOpen ? Theme.space_sm + foldout.height + Theme.space_md : 0)
+
+    // The "Files ⌄" button at the end of an Overview row, behind a hairline.
+    component FilesButton: AbstractButton {
+        id: files
+
+        hoverEnabled: true
+        focusPolicy: Qt.StrongFocus
+        leftPadding: Theme.space_md
+        rightPadding: Theme.space_md
+        Accessible.role: Accessible.Button
+        Accessible.name: Strings.t(control.namesOpen ? "tracks.names.close" : "tracks.names.open")
+        ToolTip.visible: hovered
+        ToolTip.text: Accessible.name
+        onClicked: control.namesToggled()
+
+        background: Rectangle {
+            radius: Theme.radius_sm
+            color: files.hovered ? Theme.panel_3 : "transparent"
+            border.width: files.visualFocus ? Theme.stroke : 0
+            border.color: Theme.control
+        }
+
+        contentItem: RowLayout {
+            spacing: Theme.space_xs
+
+            UiText {
+                Layout.fillWidth: true
+                text: Strings.t(control.namesOpen ? "tracks.names.collapse" : "tracks.names.expand")
+                color: control.namesOpen ? Theme.ink : Theme.muted
+                font.pixelSize: Theme.text_sm
+            }
+
+            Icon {
+                name: control.namesOpen ? "up" : "down"
+                size: Theme.icon_sm
+                color: Theme.muted
+            }
+        }
+    }
+
+    // D and F in a column of their own, as wide as both, so the flags of a kind's rows stand one under the other.
+    component Flags: Row {
+        spacing: Theme.space_xs
+        // Hidden on a dropped track and on a paired file nobody adds, but kept in place.
+        opacity: control.dropped || !control.chip.flags ? 0 : 1
+
+        FlagButton {
+            objectName: "defaultFlag"
+            side: control.label ? Theme.pill : Theme.row_sm
+            enabled: parent.opacity > 0
+            flag: "default"
+            on: control.chip.default
+            held: control.chip.default_held
+            onClicked: app.toggle_flag(control.chip.id, "default")
+        }
+
+        FlagButton {
+            side: control.label ? Theme.pill : Theme.row_sm
+            // An audio track has no forced flag; its place stays empty.
+            opacity: control.chip.kind === "subtitle" ? 1 : 0
+            enabled: parent.opacity > 0 && opacity > 0
+            flag: "forced"
+            on: control.chip.forced
+            held: control.chip.forced_held
+            onClicked: app.toggle_flag(control.chip.id, "forced")
+        }
+    }
+
+    component Codec: UiText {
+        text: control.chip.title
+        color: control.textTone
+        font.strikeout: control.dropped
+        font.weight: Font.Medium
+    }
+
+    component Name: UiText {
+        visible: text !== ""
+        color: control.dropped ? Theme.drop : control.chip.state === "paired" ? Theme.faint : Theme.muted
+        font.strikeout: control.dropped
+        font.pixelSize: Theme.text_sm
+    }
+
+    component Count: UiText {
+        visible: control.chip.count !== ""
+        text: control.chip.count
+        color: Theme.change
+        font.pixelSize: Theme.text_sm
+    }
 
     Rectangle {
         anchors.fill: parent
-        visible: !control.paired
+        visible: !control.paired || control.chip.state === "added"
         radius: Theme.radius_md
-        color: control.dropped ? Theme.drop_soft : Theme.panel
-        border.width: Theme.stroke
-        border.color: header.visualFocus ? Theme.control : control.dropped ? Theme.drop : Theme.line_strong
+        color: control.dropped ? Theme.drop_soft : Theme.panel_2
+        border.width: keep.visualFocus ? Theme.stroke : 0
+        border.color: Theme.control
     }
 
     DashedFrame {
         anchors.fill: parent
-        visible: control.paired
+        visible: control.paired && control.chip.state !== "added"
         radius: Theme.radius_md
-        stroke: header.visualFocus ? Theme.control : control.chip.state === "added" ? Theme.add : Theme.line_strong
+        stroke: keep.visualFocus ? Theme.control : Theme.line_strong
     }
 
-    // The chip's frame takes a click that lands on it outside the header, so none reaches what lies behind.
+    // The row's frame takes a click that lands on it outside its controls, so none reaches what lies behind.
     MouseArea {
         anchors.fill: parent
     }
 
-    AbstractButton {
-        id: header
+    // The row's line, or two: what lies outside the check box, the badge, the flags and the button does nothing.
+    Item {
+        id: body
 
         objectName: "chipHeader"
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        implicitHeight: Theme.row_lg
-        // The same room on both sides, so no badge, flag or arrow touches the chip's edge.
-        leftPadding: Theme.space_md
-        rightPadding: Theme.space_md
-        hoverEnabled: true
-        focusPolicy: Qt.StrongFocus
-        Accessible.role: Accessible.Button
-        Accessible.name: [control.chip.code, control.chip.title, control.chip.name, control.chip.button,
-                          control.chip.from || control.chip.over || ""].join(" ")
-        onClicked: app.toggle_keep(control.chip.id)
+        height: control.form === "lines" ? Theme.row_lg + Theme.row_sm : Theme.row_lg
 
-        background: Rectangle {
-            radius: Theme.radius_md
-            color: header.hovered && !control.dropped ? Theme.panel_3 : "transparent"
-        }
+        RowLayout {
+            id: line
 
-        contentItem: RowLayout {
-            spacing: Theme.space_md
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: Theme.row_lg
+            anchors.leftMargin: control.label ? Theme.space_xs : Theme.space_md
+            anchors.rightMargin: control.label ? Theme.space_xs : 0
+            // Closer in the label, whose room beside the strip is fixed.
+            spacing: control.label ? Theme.space_sm : Theme.space_md
 
-            Icon {
-                visible: control.paired
-                name: "plus"
-                size: Theme.icon_sm
-                color: control.chip.state === "added" ? Theme.add : Theme.faint
+            Grip {
+                id: grip
+
+                objectName: "trackGrip"
+                Layout.preferredHeight: Theme.row_lg - 2 * Theme.space_xs
+                visible: control.label
+                // Kept in the layout where there is nothing to move, so every row's box stands at the same place.
+                opacity: control.chip.movable ? 1 : 0
+                enabled: control.chip.movable
+                vertical: true
+                step: control.gripStep
+                label: Strings.f("tracks.order.card", {"track": control.chip.code + " " + control.chip.title})
+            }
+
+            Tick {
+                id: keep
+
+                objectName: "keepBox"
+                ticked: control.chip.state === "kept" || control.chip.state === "added"
+                adding: control.chip.state === "paired"
+                tone: control.paired ? Theme.add : Theme.control
+                mark: control.paired ? Theme.ground : Theme.control_ink
+                label: [control.chip.code, control.chip.title, control.chip.name, control.chip.button,
+                        control.chip.from || control.chip.over || ""].join(" ")
+                onFlipped: app.toggle_keep(control.chip.id)
             }
 
             CodeBadge {
@@ -94,83 +209,128 @@ Item {
                 onPicked: app.pick_language(control.chip.id)
             }
 
-            UiText {
-                // The title, the name and the count give way together (each cut short in proportion to its length)
-                // when the chip is wider than its row, so the flags and the arrow keep their place. The name has no
-                // least width, the count and the title have one, so the name goes first.
-                Layout.fillWidth: true
-                Layout.maximumWidth: implicitWidth
-                Layout.minimumWidth: Math.min(implicitWidth, Theme.chip_title_min_width)
-                text: control.chip.title
-                color: control.dropped ? Theme.drop : Theme.ink
-                font.strikeout: control.dropped
-                font.weight: Font.Medium
+            // The Overview row: the codec in a column of its own, the name taking the rest, then the count and the mark.
+            Codec {
+                Layout.preferredWidth: Theme.track_title_width
+                Layout.fillWidth: control.form === "lines"
+                visible: !control.label
             }
 
-            UiText {
+            Name {
                 Layout.fillWidth: true
-                Layout.maximumWidth: Math.min(implicitWidth, Theme.chip_name_width)
-                visible: control.chip.name !== ""
-                text: control.chip.name
-                color: control.dropped ? Theme.drop : Theme.muted
-                font.strikeout: control.dropped
-                font.pixelSize: Theme.text_sm
+                visible: control.form === "row" && text !== ""
+                text: control.nameText
             }
 
-            UiText {
+            Item {
                 Layout.fillWidth: true
+                visible: control.form === "row" && control.nameText === ""
+            }
+
+            Count {
                 Layout.maximumWidth: implicitWidth
-                Layout.minimumWidth: Math.min(implicitWidth, Theme.chip_count_min_width)
-                visible: control.chip.count !== ""
-                text: control.chip.count
-                color: Theme.change
-                font.pixelSize: Theme.text_sm
+                visible: control.form === "row" && text !== ""
             }
 
             PlaceMark {
                 objectName: "placeMark"
+                Layout.maximumWidth: Theme.track_mark_width
+                visible: control.form === "row" && text !== "" || control.label && !control.brief && text !== ""
+                horizontalAlignment: Text.AlignRight
+                choice: control.chip
+                brief: control.label
+            }
+
+            // The label beside the strip: the codec, and under it the name with what some files lack.
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: control.label
+                spacing: 0
+
+                Codec {
+                    objectName: "labelCodec"
+                    Layout.fillWidth: true
+                    font.pixelSize: Theme.text_sm
+                }
+
+                // The short form says the first of the mark, the count and the name, each in its own colour.
+                Name {
+                    objectName: "labelName"
+                    Layout.fillWidth: true
+                    font.pixelSize: Theme.text_xs
+                    color: !control.brief || control.dropped ? (control.dropped ? Theme.drop : Theme.muted)
+                         : control.chip.short !== "" ? (control.chip.over ? Theme.control : Theme.faint)
+                         : control.chip.count !== "" ? Theme.change : Theme.muted
+                    text: control.brief
+                          ? control.chip.short || control.chip.count || control.nameText
+                          : [control.nameText, control.chip.count].filter(part => part !== "")
+                                .join(" " + Strings.t("status.separator") + " ")
+                }
+            }
+
+            Flags {}
+
+            Rectangle {
+                Layout.preferredWidth: Theme.stroke
+                Layout.fillHeight: true
+                Layout.topMargin: Theme.space_md
+                Layout.bottomMargin: Theme.space_md
+                visible: !control.label
+                color: Theme.line
+            }
+
+            FilesButton {
+                objectName: "namesButton"
+                Layout.preferredWidth: Theme.track_files_width
+                Layout.fillHeight: true
+                Layout.topMargin: Theme.space_xs
+                Layout.bottomMargin: Theme.space_xs
+                visible: !control.label
+                // Kept in place where there is nothing to list, so the flags stand in their column.
+                opacity: control.chip.names ? 1 : 0
+                enabled: control.chip.names
+            }
+
+            IconButton {
+                objectName: "namesButton"
+                implicitWidth: Theme.pill
+                implicitHeight: Theme.pill
+                visible: control.label
+                opacity: control.chip.names ? 1 : 0
+                enabled: control.chip.names
+                iconName: control.namesOpen ? "up" : "down"
+                label: Strings.t(control.namesOpen ? "tracks.names.close" : "tracks.names.open")
+                tip: Strings.t("tip.names_open")
+                active: control.namesOpen
+                onClicked: control.namesToggled()
+            }
+        }
+
+        // The second line of a narrow Overview row, under the codec: the count, the mark, then the name, cut at its end.
+        RowLayout {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: Theme.space_md
+            anchors.rightMargin: Theme.space_md
+            height: Theme.row_sm
+            visible: control.form === "lines"
+            spacing: Theme.space_md
+
+            Count {
+                Layout.maximumWidth: implicitWidth
+            }
+
+            PlaceMark {
                 Layout.maximumWidth: implicitWidth
                 choice: control.chip
             }
 
-            FlagButton {
-                objectName: "defaultFlag"
-                visible: !control.dropped && control.chip.flags
-                flag: "default"
-                on: control.chip.default
-                onClicked: app.toggle_flag(control.chip.id, "default")
+            Name {
+                Layout.fillWidth: true
+                text: control.nameText
             }
-
-            FlagButton {
-                visible: !control.dropped && control.chip.flags && control.chip.kind === "subtitle"
-                flag: "forced"
-                on: control.chip.forced
-                onClicked: app.toggle_flag(control.chip.id, "forced")
-            }
-
         }
-    }
-
-    // A button of its own across the chip, so folding the list out cannot be taken for keeping or dropping the tracks.
-    ActionButton {
-        id: expand
-
-        objectName: "namesButton"
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: header.bottom
-        anchors.leftMargin: Theme.space_sm
-        anchors.rightMargin: Theme.space_sm
-        anchors.topMargin: Theme.space_sm
-        visible: control.chip.names
-        kind: "outline"
-        size: Theme.row_sm
-        iconName: control.namesOpen ? "up" : "down"
-        text: Strings.t(control.namesOpen ? "tracks.names.collapse" : "tracks.names.expand")
-        Accessible.name: Strings.t(control.namesOpen ? "tracks.names.close" : "tracks.names.open")
-        ToolTip.visible: hovered
-        ToolTip.text: Accessible.name
-        onClicked: control.namesToggled()
     }
 
     Item {
@@ -178,7 +338,7 @@ Item {
 
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: expand.visible ? expand.bottom : header.bottom
+        anchors.top: body.bottom
         anchors.topMargin: Theme.space_sm
         anchors.leftMargin: Theme.space_md
         anchors.rightMargin: Theme.space_md
@@ -226,7 +386,7 @@ Item {
             Accessible.name: Strings.t("tracks.names.open")
 
             delegate: Item {
-                id: line
+                id: entry
 
                 required property int index
                 readonly property var row: control.rows[index] ?? ({"text": "", "name": "", "file": "", "clickable": false, "dropped": false, "from": "", "over": "", "short": "", "label": ""})
@@ -240,10 +400,10 @@ Item {
 
                 Rectangle {
                     anchors.fill: parent
-                    visible: row.clickable && (hover.hovered || line.current)
+                    visible: entry.row.clickable && (hover.hovered || entry.current)
                     radius: Theme.radius_sm
                     color: hover.hovered ? Theme.panel_3 : "transparent"
-                    border.width: line.current ? Theme.stroke : 0
+                    border.width: entry.current ? Theme.stroke : 0
                     border.color: Theme.control
                 }
 
@@ -255,39 +415,39 @@ Item {
 
                     UiText {
                         Layout.fillWidth: true
-                        text: line.row.text
+                        text: entry.row.text
                         mono: true
-                        color: line.row.dropped ? Theme.drop : Theme.ink
-                        font.strikeout: line.row.dropped
+                        color: entry.row.dropped ? Theme.drop : Theme.ink
+                        font.strikeout: entry.row.dropped
                     }
 
                     PlaceMark {
                         objectName: "nameMark"
                         Layout.maximumWidth: implicitWidth
-                        choice: line.row
+                        choice: entry.row
                     }
 
                     // The line's own keep or drop control: what a click on the line does next.
                     Icon {
-                        visible: line.row.clickable
-                        name: line.row.dropped ? "x" : "check"
+                        visible: entry.row.clickable
+                        name: entry.row.dropped ? "x" : "check"
                         size: Theme.icon_sm
-                        color: line.row.dropped ? Theme.drop : Theme.faint
+                        color: entry.row.dropped ? Theme.drop : Theme.faint
                     }
                 }
 
                 HoverHandler {
                     id: hover
 
-                    enabled: line.row.clickable
+                    enabled: entry.row.clickable
                     cursorShape: Qt.PointingHandCursor
                 }
 
                 TapHandler {
-                    enabled: line.row.clickable
+                    enabled: entry.row.clickable
                     onTapped: {
-                        list.currentIndex = line.index
-                        list.toggleRow(line.row)
+                        list.currentIndex = entry.index
+                        list.toggleRow(entry.row)
                     }
                 }
             }

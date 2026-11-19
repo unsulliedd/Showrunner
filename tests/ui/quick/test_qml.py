@@ -164,9 +164,9 @@ def test_chips_and_rules_answer_the_pointer(
     controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     load()
-    # A click on the commentary chip drops it; a click on the Turkish chip's star sets the default only.
+    # A click on the commentary row's box drops it; a click on the Turkish row's D sets the default only.
     root = load.window.contentItem()
-    _click(load.window, _item(root, "chip2"))
+    _click(load.window, _item(_item(root, "chip2"), "keepBox"))
     load()
     _click(load.window, _item(_item(root, "chip1"), "defaultFlag"))
     load()
@@ -318,7 +318,7 @@ def test_a_chip_s_arrow_folds_the_chip_open_and_leaves_the_chip_alone(
     load()
     assert _open_lists(root) == []
     assert controller.rules == []
-    # A click on the rest of the header still drops the track, with the list open.
+    # With the list open, a click on the rest of the row does nothing; only its box drops the track.
     _click(load.window, _item(chip, "namesButton"))
     load()
     header = _item(chip, "chipHeader")
@@ -326,8 +326,11 @@ def test_a_chip_s_arrow_folds_the_chip_open_and_leaves_the_chip_alone(
         load.window,
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,
-        header.mapToScene(QPointF(header.width() / 3, header.height() / 2)).toPoint(),
+        header.mapToScene(QPointF(header.width() / 2, header.height() / 2)).toPoint(),
     )
+    load()
+    assert controller.rules == []
+    _click(load.window, _item(chip, "keepBox"))
     load()
     assert len(controller.rules) == 1
     assert len(_open_lists(root)) == 1
@@ -363,28 +366,32 @@ def test_a_long_list_is_capped_inside_the_chip_and_scrolls(
     assert qt_warnings() == []
 
 
-def test_a_matrix_header_s_arrow_still_opens_the_popup(
+def test_a_matrix_row_s_arrow_folds_the_same_list_open_under_the_row(
     load: Any, controller: WindowController, qt_warnings: Any, qtbot: QtBot
 ) -> None:
     root = _named_show(load, controller, qtbot)
     load.window.setProperty("place", "tracks")
     load()
-    arrows = sorted((b for b in _items(root, "namesButton") if b.isVisible()), key=_right)
+    arrows = sorted((b for b in _items(root, "namesButton") if b.isVisible()), key=_top)
     _click(load.window, arrows[0])
     load()
-    assert len(_names_popup(load.window).property("rows").toVariant()) == 10
+    (rows,) = _open_lists(root)
+    assert rows.property("count") == 10
+    line = _item(root, "chip0")
+    assert _contains(line, rows)  # under the row's label, inside its frame
     assert controller.rules == []
     _click(load.window, arrows[0])  # closes the list
-    # The header of a track some files lack ends its list with the files that do.
-    _click(load.window, arrows[1])
     load()
-    rows = _names_popup(load.window).property("rows").toVariant()  # a list the popup built itself
-    assert (len(rows), rows[-1]) == (10, "Missing in 07")
+    assert _open_lists(root) == []
+    # The row of a track some files lack ends its list with the files that do.
+    _click(load.window, sorted((b for b in _items(root, "namesButton") if b.isVisible()), key=_top)[1])
+    load()
+    assert _item(root, "chip1").property("missing") == "Missing in 07"
     assert load() == []
     assert qt_warnings() == []
 
 
-def test_a_chip_keeps_even_room_on_both_sides_in_every_state_and_its_button_spans_it(
+def test_track_rows_line_up_in_columns_in_every_state_and_at_every_width(
     load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
 ) -> None:
     load()
@@ -394,29 +401,24 @@ def test_a_chip_keeps_even_room_on_both_sides_in_every_state_and_its_button_span
     qtbot.waitUntil(lambda: not controller.planning)
     load()
     root = load.window.contentItem()
-    room = SIZES["space_md"]
 
     def check() -> int:
         found = 0
+        lefts: dict[str, set[float]] = {}
         for index in range(sum(len(group["chips"]) for group in controller.overview["groups"])):
             chip = next((c for c in _items(root, f"chip{index}") if c.isVisible()), None)
             if chip is None:
                 continue
             found += 1
             header = _item(chip, "chipHeader")
-            content = header.property("contentItem")
-            assert content.x() == room, index
-            assert header.width() - content.x() - content.width() == room, index
             assert header.width() == chip.width(), index
-            for part in content.childItems():
-                if part.isVisible() and part.height() > 0:
-                    assert part.x() >= 0, (index, part)
-                    assert part.x() + part.width() <= content.width() + 0.5, (index, part)
-            arrows = [b for b in _items(chip, "namesButton") if b.isVisible()]
-            if arrows:
-                # The expand button lies under the header and spans the chip, a little inside its frame.
-                assert arrows[0].y() >= header.height(), index
-                assert arrows[0].width() == chip.width() - 2 * SIZES["space_sm"], index
+            # The box, the badge, the flags and the Files button stand at the same place in every row, inside it.
+            for name in ("keepBox", "chipBadge", "defaultFlag", "namesButton"):
+                (part,) = (p for p in _items(chip, name) if p.isVisible() or name != "namesButton")
+                assert _left(chip) <= _left(part), (index, name)
+                assert _right(part) <= _right(chip), (index, name)
+                lefts.setdefault(name, set()).add(round(_left(part)))
+        assert all(len(found) == 1 for found in lefts.values()), lefts
         return found
 
     assert check() == 8
@@ -426,12 +428,13 @@ def test_a_chip_keeps_even_room_on_both_sides_in_every_state_and_its_button_span
     qtbot.waitUntil(lambda: not controller.planning)
     load()
     assert check() == 8
-    # At the narrowest window the long names are cut short, the arrow and the room stay.
+    # At the narrowest window a row takes two lines and keeps its columns.
     load.window.setWidth(1024)
     qtbot.waitUntil(lambda: load.window.width() == 1024)
     qtbot.wait(300)
+    assert _item(root, "chip0").property("form") == "lines"
     assert check() == 8
-    # An open chip is no wider, and its header keeps the same room.
+    # An open row is no wider, and its columns stay.
     _click(load.window, _item(_item(root, "chip1"), "namesButton"))
     load()
     assert check() == 8
@@ -470,7 +473,7 @@ def test_a_chip_folds_open_inside_its_row_at_a_narrow_a_laptop_and_a_wide_window
         groups = _item(root, "chipGroups")
         room = _right(groups) - SIZES["scroll_thumb"] - 2 * SIZES["space_xs"]  # what the scroll view leaves the row
         chips = [_item(root, f"chip{i}") for i in range(8)]
-        # The first, a middle and the last chip of every row of the flow, closed and open.
+        # Every row of the box, closed and open: each track is a row of its own.
         rows: dict[int, list[QQuickItem]] = {}
         for chip in chips:
             rows.setdefault(round(_top(chip)), []).append(chip)
@@ -478,7 +481,7 @@ def test_a_chip_folds_open_inside_its_row_at_a_narrow_a_laptop_and_a_wide_window
         picks.update({row[len(row) // 2].objectName(): row[len(row) // 2] for row in rows.values()})
         for name in sorted(picks):
             chip = _item(root, name)
-            arrows = [a for a in _items(chip, "namesButton") if a.isVisible()]
+            arrows = [a for a in _items(chip, "namesButton") if a.isVisible() and a.isEnabled()]
             if not arrows or _bottom(arrows[0]) > _bottom(groups):
                 continue  # the paired file every episode has gives no list; or scrolled out of the box
             arrow = arrows[0]
@@ -789,7 +792,7 @@ def test_escape_on_the_job_offer_asks_next_time(
     assert qt_warnings() == []
 
 
-def test_the_matrix_rows_are_one_tab_stop_with_arrow_keys(
+def test_the_strip_numbers_are_one_tab_stop_with_arrow_keys(
     load: Any, controller: WindowController, qt_warnings: Any, qtbot: QtBot
 ) -> None:
     from .conftest import long_show
@@ -803,49 +806,51 @@ def test_the_matrix_rows_are_one_tab_stop_with_arrow_keys(
     load.window.setProperty("place", "tracks")
     load()
     root = load.window.contentItem()
-    stop = _item(root, "matrixRowKeys")
-    rows = _item(root, "matrixRows")
-    # Tab alone reaches the rows, as one stop, though only some of the 40 rows exist.
+    _item(root, "matrix").setProperty("chosen", "all")  # every file, which scrolls sideways
+    load()
+    stop = _item(root, "numberKeys")
+    rows = _item(root, "trackRows")
+    # Tab alone reaches the numbers, as one stop, though only the numbers in view exist.
     for _ in range(80):
         if stop.property("activeFocus"):
             break
         QTest.keyClick(load.window, Qt.Key.Key_Tab)
     assert stop.property("activeFocus") is True
-    assert rows.property("currentIndex") == 0
+    assert stop.property("current") == 0
+    assert 0 < len(_items(root, "stripNumber")) < 40
 
     def marked() -> list[int]:
-        return [r.property("index") for r in _items(root, "matrixRow") if r.property("marked")]
+        return [n.property("at") for n in _items(root, "stripNumber") if n.property("current")]
 
     assert marked() == [0]
-    # Down and Up move row by row and scroll to keep the row in view.
+    # Right and Left move file by file and scroll to keep the file in view.
     for _ in range(25):
-        QTest.keyClick(load.window, Qt.Key.Key_Down)
-    assert rows.property("currentIndex") == 25
-    assert rows.property("contentY") > 0
-    assert marked() == [25]  # the marked row exists, scrolled into view
-    QTest.keyClick(load.window, Qt.Key.Key_Up)
-    assert rows.property("currentIndex") == 24
+        QTest.keyClick(load.window, Qt.Key.Key_Right)
+    assert stop.property("current") == 25
+    assert rows.property("contentX") > 0
+    assert marked() == [25]  # the marked number exists, scrolled into view
+    QTest.keyClick(load.window, Qt.Key.Key_Left)
+    assert stop.property("current") == 24
     QTest.keyClick(load.window, Qt.Key.Key_End)
-    assert rows.property("currentIndex") == 39
-    QTest.keyClick(load.window, Qt.Key.Key_Down)
-    assert rows.property("currentIndex") == 39  # stops at the last row
+    assert stop.property("current") == 39
+    QTest.keyClick(load.window, Qt.Key.Key_Right)
+    assert stop.property("current") == 39  # stops at the last file
     QTest.keyClick(load.window, Qt.Key.Key_Home)
-    assert (rows.property("currentIndex"), rows.property("contentY")) == (0, rows.property("originY"))
-    # The current row is marked, and Enter focuses its file in the Inspector as a click does.
-    QTest.keyClick(load.window, Qt.Key.Key_Down)
-    QTest.keyClick(load.window, Qt.Key.Key_Down)
+    assert (stop.property("current"), rows.property("contentX")) == (0, 0)
+    # Enter opens the current file in the Inspector as a click does.
+    QTest.keyClick(load.window, Qt.Key.Key_Right)
+    QTest.keyClick(load.window, Qt.Key.Key_Right)
     QTest.keyClick(load.window, Qt.Key.Key_Return)
     assert controller.focus_path == str(show.items[2].file.path)
     assert controller.inspector["file"] == show.items[2].file.path.name
-    # A click on a row takes the keyboard there, and the arrows go on from it.
-    _click(load.window, next(r for r in _items(root, "matrixRow") if r.property("index") == 5))
-    assert (rows.property("currentIndex"), controller.focus_path) == (5, str(show.items[5].file.path))
-    QTest.keyClick(load.window, Qt.Key.Key_Down)
+    # A click on a number takes the keyboard there, and the arrows go on from it.
+    _click(load.window, next(n for n in _items(root, "stripNumber") if n.property("at") == 5))
+    assert (stop.property("current"), controller.focus_path) == (5, str(show.items[5].file.path))
+    QTest.keyClick(load.window, Qt.Key.Key_Right)
     assert marked() == [6]
-    # Tab leaves the matrix after the one stop; no row takes the focus on its own.
+    # Tab leaves the numbers after the one stop.
     QTest.keyClick(load.window, Qt.Key.Key_Tab)
     assert stop.property("activeFocus") is False
-    assert not any(r.property("activeFocus") for r in _items(root, "matrixRow"))
     assert load() == []
     assert qt_warnings() == []
 
@@ -867,13 +872,13 @@ def test_every_string_key_the_qml_asks_for_exists() -> None:
     keys |= {f"panel.tab.{tab}" for tab in tabs}
     keys |= {f"panel.placeholder.{tab}.{part}" for tab in tabs for part in ("title", "lead")}
     keys |= {f"drawer.placeholder.{tab}.{part}" for tab in ("player", "jobs", "log") for part in ("title", "lead")}
-    # Keys built from a batch kind, a track kind, a flag and the matrix legend.
+    # Keys built from a batch kind, a track kind, a flag and the key of the track strip.
     keys |= {f"overview.title.{kind}" for kind in BatchKind}
     keys |= {f"matrix.group.{kind}" for kind in ("audio", "subtitle")}
     keys |= {f"tracks.flag_tip.{flag}" for flag in ("default", "forced")}
     keys |= {f"tokens.editor.kind.{kind}" for kind in names.KINDS}
     keys |= {f"tokens.editor.source.{source}" for source in names.SOURCES}
-    keys |= {f"matrix.legend.{entry}" for entry in re.findall(r'"(\w+)"', _legend(text))}
+    keys |= {f"matrix.key.{entry}" for entry in re.findall(r'"mark": "\w+", "key": "(\w+)"', text)}
     # Keys built from a Settings section, a choice of a segmented control, a base colour and a palette result.
     keys |= {
         f"prefs.appearance.base.{base}{part}" for base in ("neutral", "primary", "accent") for part in ("", ".hint")
@@ -882,13 +887,6 @@ def test_every_string_key_the_qml_asks_for_exists() -> None:
     keys = {key for key in keys if not key.endswith(".")}
     assert sorted(key for key in keys if key not in catalog) == []
     assert sorted(key for key in plurals if f"{key}.one" not in catalog or f"{key}.other" not in catalog) == []
-
-
-def _legend(text: str) -> str:
-    """The legend's list of entries in the matrix."""
-    found = re.search(r'model: \[("kept"[^\]]*)\]', text)
-    assert found is not None
-    return found.group(1)
 
 
 def test_qml_files_hold_no_literal_colors_or_text() -> None:
@@ -1327,7 +1325,7 @@ def _grips(root: QQuickItem, name: str, axis: str) -> list[QQuickItem]:
     return sorted(grips, key=lambda g: getattr(g.mapToScene(QPointF()), axis)())
 
 
-def test_matrix_columns_move_by_drag_and_by_keyboard(
+def test_track_rows_move_by_drag_and_by_keyboard(
     load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
 ) -> None:
     load()
@@ -1340,44 +1338,34 @@ def test_matrix_columns_move_by_drag_and_by_keyboard(
     root = load.window.contentItem()
     codes = lambda: [h["code"] for h in controller.matrix["headers"]]  # noqa: E731
     assert codes()[:4] == ["ENG", "TUR", "ENG", "ENG"]
-    grips = _grips(root, "columnGrip", "x")
-    # Every column of the sample has a grip: each kind has more than one.
+    grips = _grips(root, "trackGrip", "y")
+    # Every row of the sample has a grip: each kind has more than one.
     assert len(grips) == len(controller.matrix["headers"])
     assert grips[1].property("activeFocusOnTab") is True
-    # Drag the Turkish column one column to the left.
-    _drag_from(load.window, qtbot, grips[1], -_items(root, "matrixHeader")[0].width(), 0)
+    # Drag the Turkish row one row up.
+    _drag_from(load.window, qtbot, grips[1], 0, -(SIZES["row_lg"] + SIZES["space_xs"]))
     load()
     assert codes()[:2] == ["TUR", "ENG"]
-    # Ctrl+Right on the focused grip moves it one place, and the focus follows the column.
-    grips = _grips(root, "columnGrip", "x")
+    # Ctrl+Down on the focused grip moves it one place, and the focus follows the row.
+    grips = _grips(root, "trackGrip", "y")
     grips[0].forceActiveFocus()
-    QTest.keyClick(load.window, Qt.Key.Key_Right, Qt.KeyboardModifier.ControlModifier)
+    QTest.keyClick(load.window, Qt.Key.Key_Down, Qt.KeyboardModifier.ControlModifier)
     load()
     assert codes()[:2] == ["ENG", "TUR"]
-    grips = _grips(root, "columnGrip", "x")
+    grips = _grips(root, "trackGrip", "y")
     assert grips[1].hasActiveFocus()
-    QTest.keyClick(load.window, Qt.Key.Key_Right, Qt.KeyboardModifier.ControlModifier)
+    QTest.keyClick(load.window, Qt.Key.Key_Down, Qt.KeyboardModifier.ControlModifier)
     load()
     assert codes()[:3] == ["ENG", "ENG", "TUR"]
-    assert _grips(root, "columnGrip", "x")[2].hasActiveFocus()
-    # Without Ctrl the arrow moves nothing.
-    QTest.keyClick(load.window, Qt.Key.Key_Left)
+    assert _grips(root, "trackGrip", "y")[2].hasActiveFocus()
+    # Without Ctrl the arrow moves nothing, and a row never leaves its kind.
+    QTest.keyClick(load.window, Qt.Key.Key_Up)
     load()
     assert codes()[:3] == ["ENG", "ENG", "TUR"]
-    # A column moved by keyboard past the right edge of a narrow window is scrolled into view.
-    load.window.setWidth(1024)
-    load()
-    first_subtitle = len([h for h in controller.matrix["headers"] if h["kind"] == "audio"])
-    _grips(root, "columnGrip", "x")[first_subtitle].forceActiveFocus()
     for _ in range(3):
-        QTest.keyClick(load.window, Qt.Key.Key_Right, Qt.KeyboardModifier.ControlModifier)
+        QTest.keyClick(load.window, Qt.Key.Key_Down, Qt.KeyboardModifier.ControlModifier)
         load()
-    rows = _item(root, "matrixRows")
-    focused = next(g for g in _items(root, "columnGrip") if g.hasActiveFocus())
-    left = focused.mapToItem(rows, QPointF()).x()
-    assert rows.property("contentX") > 0
-    assert left >= 0
-    assert left + focused.width() <= rows.width()
+    assert [h["kind"] for h in controller.matrix["headers"]][:4] == ["audio"] * 4
     assert load() == []
     assert qt_warnings() == []
 

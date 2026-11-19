@@ -3,7 +3,7 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
-// Overview of a season, a show or a selection: the batch's tracks as chips by kind, then one row per file with
+// Overview of a season, a show or a selection: the batch's tracks as rows by kind, then one row per file with
 // what its plans leave of its tracks and a warning where it does not follow the batch.
 Item {
     id: overview
@@ -149,11 +149,12 @@ Item {
                                     }
                                 }
 
-                                Flow {
+                                // One row per track, one under the other, so the codecs, marks and flags form columns.
+                                Column {
                                     id: chipRow
 
                                     Layout.fillWidth: true
-                                    spacing: Theme.space_md
+                                    spacing: Theme.space_xs
 
                                     Repeater {
                                         model: modelData.chips.length
@@ -162,10 +163,8 @@ Item {
                                             required property int index
                                             readonly property var entry: modelData.chips[index]
 
-                                            // No wider than the row: a long track name is cut short instead. A chip
-                                            // that is open may widen up to the row for its names; the Flow places the
-                                            // chips after it again.
-                                            width: Math.min(implicitWidth, chipRow.width)
+                                            width: chipRow.width
+                                            form: chipRow.width < Theme.track_row_two_lines_below ? "lines" : "row"
                                             chip: entry
                                             namesOpen: overview.openColumn === entry.id
                                             rows: namesOpen ? overview.openNames : []

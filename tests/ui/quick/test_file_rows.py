@@ -1,5 +1,6 @@
-"""A chip's tracks without a name: one line per file under the opened chip, a click making that file's own choice at
-the file's own place; the chip's expand button, the drag handle, the legend row and the D mark that go with it."""
+"""A track without a name: one line per file under the opened row, a click making that file's own choice at the file's
+own place, as a click on the file's cell of the Tracks strip does; the row's Files button, the strip's toolbar and the D
+mark that go with it."""
 
 from __future__ import annotations
 
@@ -7,8 +8,9 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from PySide6.QtCore import QPointF
+from PySide6.QtCore import QObject, QPoint, QPointF
 from PySide6.QtQuick import QQuickItem
+from PySide6.QtTest import QTest
 from pytestqt.qtbot import QtBot
 
 from showrunner.app.batches.batch import BatchKey
@@ -19,7 +21,7 @@ from showrunner.ui.theme.tokens import SIZES
 
 from .conftest import neutral_library
 from .test_choices import COMMENTARY, open_season, settle
-from .test_name_rows import _click, _items, _visible, name_rows, season_of, states
+from .test_name_rows import _click, _visible, name_rows, season_of, states
 
 
 def _unnamed(library: Library, upto: int) -> Library:
@@ -164,8 +166,11 @@ def test_opening_a_chip_does_not_make_it_wider_and_a_click_on_a_line_makes_the_f
     root = _open_window(load, controller, library, qtbot)
     closed = _chip(root).width()
     button = _visible(_chip(root), "namesButton")[0]
-    # The button spans the chip, and it is no flag or header of the chip.
-    assert button.width() >= closed - 2 * SIZES["space_sm"]
+    # The button ends the row, its own column, as far as it can be from the box that keeps or drops.
+    box = _visible(_chip(root), "keepBox")[0]
+    assert button.width() == SIZES["track_files_width"]
+    assert button.mapToItem(_chip(root), QPointF(button.width(), 0)).x() <= closed
+    assert box.mapToItem(button, QPointF(box.width(), 0)).x() < 0
     _click(load.window, button)
     load()
     assert _chip(root).width() == closed
@@ -192,30 +197,76 @@ def test_the_expand_button_is_not_the_chip_keep_or_drop(
     assert controller.rules == []
 
 
-# Tracks: the drag handle, the legend and the D mark.
+# Tracks: a cell of the strip, the toolbar and the D mark.
 
 
-def test_the_drag_handle_runs_the_header_full_height_on_its_left_edge(
-    load: Any, controller: WindowController, library: Library, qtbot: QtBot
+def _cell(root: QQuickItem, column: int, at: int) -> QQuickItem:
+    """The cell of file `at` under the track row of `column`."""
+    (line,) = (i for i in _visible(root, "trackLine") if i.property("index") == column)
+    return next(c for c in _visible(line, "stripCell") if c.property("at") == at)
+
+
+def test_a_click_on_a_cell_is_that_file_own_choice_and_a_second_takes_it_back(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
 ) -> None:
     root = _open_window(load, controller, library, qtbot, "tracks")
-    header = _visible(root, "matrixHeader")[0]
-    grip = next(g for g in _items(header, "columnGrip") if g.isVisible())
-    edge = SIZES["space_xs"]
-    assert grip.height() == pytest.approx(header.height() - 2 * edge)
-    assert grip.mapToItem(header, QPointF()).x() == pytest.approx(edge)
-    title = _items(header, "headerTitle")[0]
-    assert title.mapToItem(header, QPointF()).x() >= grip.width() + edge  # the text clears the handle
+    assert controller.matrix["headers"][COMMENTARY]["id"] == COMMENTARY  # the rows stand in the files' order
+    _click(load.window, _cell(root, COMMENTARY, 1))
+    settle(controller, qtbot)
+    load()
+    assert [r.verdict.value for r in file_rules(controller, library, 2)] == ["drop"]
+    assert controller.rules == []
+    assert _cell(root, COMMENTARY, 1).property("mark") == "own_drop"
+    # A track with a name is a file's own choice too, where the Overview row lists it by its name.
+    _click(load.window, _cell(root, COMMENTARY, 4))
+    settle(controller, qtbot)
+    load()
+    assert [r.verdict.value for r in file_rules(controller, library, 5)] == ["drop"]
+    assert states(controller) == ["kept", "dropped", "kept", "kept", "dropped"] + ["kept"] * 5
+    _click(load.window, _cell(root, COMMENTARY, 1))
+    _click(load.window, _cell(root, COMMENTARY, 4))
+    settle(controller, qtbot)
+    load()
+    assert file_rules(controller, library, 2) == file_rules(controller, library, 5) == []
+    # A file without the track, and a paired file nobody adds, take no click.
+    _click(load.window, _cell(root, 1, 6))  # Episode Seven has no Turkish audio
+    _click(load.window, _cell(root, len(controller.matrix["headers"]) - 1, 0))
+    settle(controller, qtbot)
+    assert all(file_rules(controller, library, n) == [] for n in range(1, 11))
+    assert controller.rules == []
+    assert qt_warnings() == []
 
 
-def test_the_legend_items_share_a_line_and_the_help_comes_last(
+def test_the_pointer_over_a_cell_shows_what_it_means(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    root = _open_window(load, controller, library, qtbot, "tracks")
+    controller.toggle_file_track(COMMENTARY, path_of(library, 5))
+    settle(controller, qtbot)
+    load()
+    cell = _cell(root, COMMENTARY, 4)
+    assert cell.property("mark") == "own_drop"
+    centre = cell.mapToScene(QPointF(cell.width() / 2, cell.height() / 2)).toPoint()
+    QTest.mouseMove(load.window, centre - QPoint(SIZES["strip_pitch"] * 2, 0))  # onto the strip, then the cell
+    QTest.mouseMove(load.window, centre)
+    (line,) = (i for i in _visible(root, "trackLine") if i.property("index") == COMMENTARY)
+    shown = lambda: [t for t in line.findChildren(QObject, "cellTip") if t.property("visible")]  # noqa: E731
+    qtbot.waitUntil(lambda: shown() != [])
+    (tip,) = shown()
+    assert tip.property("text") == controller.cell_tip(COMMENTARY, path_of(library, 5))
+    assert tip.property("text").startswith("05 · Episode Five\n")
+    assert tip.property("text").endswith("Click to follow its track again.")
+    assert qt_warnings() == []
+
+
+def test_the_toolbar_shares_a_line_and_the_help_comes_last(
     load: Any, controller: WindowController, library: Library, qtbot: QtBot
 ) -> None:
     load.window.setWidth(1920)
     root = _open_window(load, controller, library, qtbot, "tracks")
-    items = [*_visible(root, "legendItem"), *_visible(root, "writeImpliedFlags"), *_visible(root, "firstKeptTip")]
+    items = [*_visible(root, "stripFiles"), *_visible(root, "writeImpliedFlags"), *_visible(root, "firstKeptTip")]
     centres = {round(i.mapToScene(QPointF(0, i.height() / 2)).y()) for i in items}
-    assert len(items) == 8
+    assert len(items) == 3
     assert len(centres) == 1
     (write,) = _visible(root, "writeImpliedFlags")
     (tip,) = _visible(root, "firstKeptTip")

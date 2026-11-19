@@ -1,5 +1,5 @@
 """A whole show of 300 episodes: what one place shows is built only while it shows or when read, a focus click
-rebuilds no rows, and the track matrix creates rows only as they scroll into view and keeps its place."""
+rebuilds no rows, and the Tracks strip builds only the files in view and keeps its place."""
 
 from __future__ import annotations
 
@@ -102,18 +102,29 @@ def test_the_window_builds_only_the_place_it_shows(
     settle(controller, qtbot)
     assert (built["names"], built["review"]) == (0, 0)  # Overview shows: no hidden place reads its data
     root.setProperty("place", "tracks")
+    root.findChild(QQuickItem, "matrix").setProperty("chosen", "all")
     qtbot.wait(50)
-    rows = root.findChild(QQuickItem, "matrixRows")
-    assert rows.property("count") == 300
-    assert 0 < len(rows.property("contentItem").childItems()) < 100  # rows are created as they scroll into view
-    rows.setProperty("contentY", 3000.0)
-    controller.pause_rule(0, True)  # a choice gives the matrix new rows of the same batch
+    rows = root.findChild(QQuickItem, "trackRows")
+    assert rows.property("count") == len(controller.matrix["headers"])
+    assert len(controller.matrix["strip"]["all"]["files"]) == 300
+    assert 0 < len(_named(rows, "stripNumber")) < 100  # only the files in view are built
+    rows.setProperty("contentX", 3000.0)
+    controller.pause_rule(0, True)  # a choice gives the strip new cells of the same batch
     settle(controller, qtbot)
     qtbot.wait(50)
-    assert rows.property("contentY") == 3000.0
+    assert rows.property("contentX") == 3000.0
+    assert 0 < len(_named(rows, "stripNumber")) < 100
     assert (built["names"], built["review"]) == (0, 0)
     root.close()
     engine.deleteLater()
+
+
+def _named(root: QQuickItem, name: str) -> list[QQuickItem]:
+    """Items called `name` under `root` in the visual tree, where delegates live."""
+    found = [root] if root.objectName() == name else []
+    for child in root.childItems():
+        found += _named(child, name)
+    return found
 
 
 def _bars(view: QQuickItem) -> list[QQuickItem]:
@@ -155,8 +166,8 @@ def test_long_lists_show_a_scrollbar_and_keep_their_place(controller: WindowCont
     assert named.property("contentY") == 3000.0
     root.setProperty("place", "tracks")
     qtbot.wait(50)
-    matrix = root.findChild(QQuickItem, "matrixRows")
-    assert [bar.isVisible() for bar in _bars(matrix)][:1] == [True]
+    matrix = root.findChild(QQuickItem, "trackRows")
+    assert any(bar.isVisible() for bar in _bars(matrix))  # the strip of 300 files scrolls sideways
     root.close()
     engine.deleteLater()
 
@@ -171,19 +182,22 @@ def test_another_batch_with_as_many_rows_starts_at_the_top(controller: WindowCon
     for season in seasons:  # Names lists rows only under a template
         controller.select(season)
         controller.start_template("title_template")
-    for place, name in (("overview", "overviewRows"), ("tracks", "matrixRows"), ("review", "reviewFiles"),
-                        ("names", "nameRows")):  # fmt: skip
+    root.findChild(QQuickItem, "matrix").setProperty("chosen", "all")
+    # The Tracks strip runs sideways: another batch starts at its first file.
+    for place, name, axis in (("overview", "overviewRows", "contentY"), ("tracks", "trackRows", "contentX"),
+                              ("review", "reviewFiles", "contentY"), ("names", "nameRows", "contentY")):  # fmt: skip
         root.setProperty("place", place)
         controller.select(seasons[0])
         settle(controller, qtbot)
         qtbot.wait(50)
         view = root.findChild(QQuickItem, name)
-        top = view.property("contentY")
-        view.setProperty("contentY", top + 600.0)
+        top = view.property(axis)
+        view.setProperty(axis, top + 100.0)
+        assert view.property(axis) == top + 100.0, place
         controller.select(seasons[1])
         settle(controller, qtbot)
         qtbot.wait(50)
-        assert view.property("contentY") == top, place
+        assert view.property(axis) == top, place
     root.close()
     engine.deleteLater()
 

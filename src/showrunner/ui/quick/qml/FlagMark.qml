@@ -2,8 +2,8 @@ import QtQuick
 import Showrunner
 
 // The D (default) or F (forced) badge of a track. Filled when the choice sets the flag (`on`), filled and muted when the
-// file has it without a choice making it so (`held`), an outline when it is neither (a toggle that is off). `tone`
-// colours a filled badge that is not the ink.
+// file has it without a choice making it so (`held`), only a faint letter when it is neither (a toggle that is off), so
+// a badge stands only where a flag is set. `tone` colours a filled badge that is not the ink.
 Rectangle {
     id: mark
 
@@ -16,8 +16,6 @@ Rectangle {
     implicitHeight: Theme.icon_md
     radius: Theme.radius_sm
     color: on ? tone : held ? Theme.muted : "transparent"
-    border.width: on ? 0 : Theme.stroke
-    border.color: Theme.faint
 
     UiText {
         anchors.centerIn: parent

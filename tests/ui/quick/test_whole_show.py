@@ -227,14 +227,17 @@ def test_a_click_inside_the_foldout_never_keeps_or_drops(
         load()
     assert controller.rules == []
     assert len(_open_lists(root)) == 1
-    # The header, outside the arrow, still does.
+    # Nor does the rest of the row: only its box keeps or drops.
     header = _item(chip, "chipHeader")
     QTest.mouseClick(
         load.window,
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,
-        header.mapToScene(QPointF(header.width() / 3, header.height() / 2)).toPoint(),
+        header.mapToScene(QPointF(header.width() / 2, header.height() / 2)).toPoint(),
     )
+    load()
+    assert controller.rules == []
+    _click(load.window, _item(chip, "keepBox"))
     load()
     assert len(controller.rules) == 1
     assert _items(root, "chipNameRows")
