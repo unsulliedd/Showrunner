@@ -163,6 +163,7 @@ Item {
             implicitHeight: Theme.row_sm
             iconName: "x"
             label: Strings.t("tracks.drop")
+            tip: Strings.t("tip.track_drop")
             onClicked: app.toggle_keep(card.track.id)
         }
 

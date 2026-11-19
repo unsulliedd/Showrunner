@@ -67,6 +67,7 @@ Rectangle {
                 implicitHeight: Theme.row_sm
                 iconName: "x"
                 label: Strings.t("tokens.editor.close")
+                tip: Strings.t("tip.token_close")
                 onClicked: editor.custom ? app.edit_token(-1) : app.edit_builtin("")
             }
         }

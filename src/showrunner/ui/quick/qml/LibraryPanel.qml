@@ -37,6 +37,7 @@ Panel {
                 anchors.verticalCenter: parent.verticalCenter
                 iconName: "plus"
                 label: Strings.t("library.add")
+                tip: Strings.t("tip.library_add")
                 onClicked: app.choose_folder()
             }
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from showrunner.app.jobs.counts import count_changes, track_changes
+from showrunner.app.jobs.counts import count_changes, implied_flags, tab_counts, track_changes
 from showrunner.app.jobs.groups import ChangeGroup
 from showrunner.app.jobs.preview import preview
 from showrunner.app.jobs.stages import MetadataStage, TracksStage
@@ -111,3 +111,31 @@ def test_a_new_order_is_one_change_beside_the_new_file() -> None:
     assert track_changes(plan) == 2  # the new file and its order
     # The default stays on the English track wherever it stands.
     assert [k.track.id for k in plan.kept if k.flags.default] == [1]
+
+
+def test_a_tab_counts_only_what_it_shows(profile: Profile) -> None:
+    named = Track(4, TrackKind.SUBTITLE, "S_TEXT/UTF8", Language("eng"), "SDH", subtitle=SubtitleProperties())
+    item = replace(ITEM, file=replace(ITEM.file, tracks=(*TRACKS, named)))
+    naming = replace(
+        profile.for_stage("naming"),
+        title_template="{title}",
+        video_track_template="",
+        audio_track_template="Audio",
+        subtitle_track_template="",
+    )
+    implied = replace(profile.for_stage("metadata"), write_implied_flags=True)
+    turkish_audio = in_language(KindTest.AUDIO, "tr", default=FlagShape.FIRST)
+    planned = (
+        profile.with_options("naming", naming)
+        .with_options("metadata", implied)
+        .with_options("tracks", rules(turkish_audio))
+    )
+    (file,) = preview([item], planned, STAGES, stamped=False).files
+    # The title and two track names are Names'; the default that moves and the flag the name implies are Tracks'.
+    assert tab_counts(file) == {"tracks": 2, "names": 3}
+    assert implied_flags(file) == 1
+    assert sum(tab_counts(file).values()) == sum(count_changes(file).values())
+    # With the option off nothing is implied, and the tabs still add up to the groups.
+    plain = planned.with_options("metadata", replace(implied, write_implied_flags=False))
+    (file,) = preview([item], plain, STAGES, stamped=False).files
+    assert (tab_counts(file), implied_flags(file)) == ({"tracks": 1, "names": 3}, 0)

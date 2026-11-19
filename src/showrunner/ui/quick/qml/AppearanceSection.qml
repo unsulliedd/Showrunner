@@ -78,6 +78,11 @@ SettingsPage {
                                            {"name": Strings.t("prefs.appearance.base." + base.modelData.key)})
                 onClicked: page.look.pick_base(base.modelData.key)
 
+                Tip {
+                    visible: parent.hovered
+                    text: parent.Accessible.name
+                }
+
                 background: Rectangle {
                     radius: Theme.radius_md
                     // The swatch shows the colour being chosen, so its fill is that colour rather than a role.

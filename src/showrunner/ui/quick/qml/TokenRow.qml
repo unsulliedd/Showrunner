@@ -76,6 +76,7 @@ Item {
         implicitHeight: Theme.row_sm
         iconName: "sliders"
         label: Strings.f("tokens.edit", {"token": entry.token.label})
+        tip: Strings.t("tip.token_edit")
         // A built-in token opens for its value map only.
         onClicked: entry.token.index >= 0 ? app.edit_token(entry.token.index) : app.edit_builtin(entry.token.name)
     }

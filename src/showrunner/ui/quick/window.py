@@ -40,7 +40,7 @@ from showrunner.app.batches.leave_out import LeftOut
 from showrunner.app.batches.workspace import load_batches, save_batches
 from showrunner.app.dependencies.service import check, mkvpropedit_from, probe_file, programs_from
 from showrunner.app.jobs.blocked import blocked_stages
-from showrunner.app.jobs.counts import count_changes
+from showrunner.app.jobs.counts import implied_flags, tab_counts
 from showrunner.app.jobs.groups import TITLE_TEMPLATE, TRACK_TEMPLATES, ChangeGroup, without
 from showrunner.app.jobs.preview import FileOutcome, FilePreview, Preview, preview_each
 from showrunner.app.jobs.run import JobResult, Read, StalePreviewError, create_job
@@ -153,6 +153,7 @@ class _Applying:
     profiles: dict[Path, Profile]  # each file's options
     stages: tuple[Stage, ...]
     out: frozenset[Path]
+    key: BatchKey  # the place that was applied
     # Each file's plans in the run plan on screen; None for a place added to the queue, which may be queued from the
     # library's menu before its plan arrived and keeps the plans made now.
     live: dict[Path, Any] | None
@@ -727,8 +728,8 @@ class WindowController(QObject):
     def workspace_tabs(self) -> list[dict[str, Any]]:
         counts = self._shown.get("counts", {})
         per_place = {
-            "tracks": counts.get(ChangeGroup.TRACKS, 0),
-            "names": counts.get(ChangeGroup.NAMES, 0),
+            "tracks": counts.get("tracks", 0),
+            "names": counts.get("names", 0),
             "review": self.change_count,
         }
         return [
@@ -1338,6 +1339,14 @@ class WindowController(QObject):
             return
         self._set_tracks(replace(self._own_tracks(), flags_from_names=on))
 
+    @Property(bool, notify=plans_changed)
+    def implied_nothing(self) -> bool:
+        """With "Write flags the names imply" on, whether no track of the open place lacks a flag its name implies.
+        False while the plan is not current, and without MKVToolNix, which plans no names."""
+        status = (self._statuses or {}).get("mkvtoolnix")
+        found = status is not None and status.state is State.FOUND
+        return found and self.write_implied_flags and self._shown.get("implied") == 0
+
     @Slot(bool)
     def set_write_implied_flags(self, on: bool) -> None:
         if self._key is None or self.locked or on == self.write_implied_flags:
@@ -1720,12 +1729,19 @@ class WindowController(QObject):
             self._view = BatchView.build(
                 self._items, tracks, files, self._failures(), self._received(), self._file_rules()
             )
-            counts = dict.fromkeys(ChangeGroup, 0)
+            counts = dict.fromkeys(("tracks", "names"), 0)
+            implied = 0
             for file in files:
                 if file.item.file.path not in self._excluded_files:
-                    for group, count in count_changes(file).items():
-                        counts[group] += count
-            self._shown = {"rules": self._view.rules(), "counts": counts, "inspector": self._inspector()}
+                    for tab, count in tab_counts(file).items():
+                        counts[tab] += count
+                    implied += implied_flags(file)
+            self._shown = {
+                "rules": self._view.rules(),
+                "counts": counts,
+                "implied": implied if files else None,  # None while no plan is current
+                "inspector": self._inspector(),
+            }
             if self._key.kind is BatchKind.MOVIE and self._items:
                 groups = self._view.card_groups(self._items[0])
                 self._shown["movie"] = {"video": video_summary(self._items[0]), "groups": groups}
@@ -1946,6 +1962,7 @@ class WindowController(QObject):
             profiles=profiles,
             stages=stages,
             out=self._files_out() | {i.file.path for i in items if i.file.path in self._excluded_files},
+            key=self._key,
             live=live,
             name=tr("common.list_separator").join((head.over, head.title))
             if self._key.season or self._key.kind in (BatchKind.EXTRAS, BatchKind.EXTRA)
@@ -2005,6 +2022,9 @@ class WindowController(QObject):
                 message = tr("review.refused.plans")
             else:
                 self.jobs.start(job_id, given.name)
+                # The run took what was unticked; the next one starts with every box ticked.
+                self.left_out.clear(given.key)
+                self._replan()
         if given.live is None:
             if message:
                 self._queue.refuse(message)

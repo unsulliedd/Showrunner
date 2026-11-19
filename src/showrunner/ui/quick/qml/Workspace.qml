@@ -130,7 +130,8 @@ Panel {
             Layout.leftMargin: Theme.space_lg + Theme.space_sm
             Layout.rightMargin: Theme.space_lg + Theme.space_sm
             model: app.workspace_tabs.map(tab => Object.assign({}, tab, {
-                label: Strings.t("workspace.tab." + tab.key)
+                label: Strings.t("workspace.tab." + tab.key),
+                tip: tab.later ? "" : Strings.t("workspace.tab_tip." + tab.key)
             }))
             current: workspace.place
             onPicked: key => workspace.placePicked(key)

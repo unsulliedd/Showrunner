@@ -67,6 +67,7 @@ Item {
         IconButton {
             iconName: "panel_bottom"
             label: Strings.t("top.drawer")
+            tip: Strings.t("tip.top_drawer")
             active: bar.drawerOpen
             onClicked: bar.drawerToggled()
         }
@@ -75,6 +76,7 @@ Item {
             objectName: "settingsButton"
             iconName: "sliders"
             label: Strings.t("top.settings")
+            tip: Strings.t("tip.top_settings")
             onClicked: bar.settingsAsked()
         }
 

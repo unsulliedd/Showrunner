@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from showrunner.app.batches.batch import BatchKey, Media
+from showrunner.app.batches.choices import TrackChoice, choose
 from showrunner.app.jobs.blocked import blocked_stages
 from showrunner.app.jobs.groups import ChangeGroup
 from showrunner.app.jobs.preview import preview
@@ -18,11 +19,12 @@ from showrunner.app.profiles.profile import Profile
 from showrunner.app.profiles.store import ProfileStore
 from showrunner.core.media import MediaItem
 from showrunner.stages.mux.options import MuxOptions, Original
-from showrunner.stages.tracks import TrackMatch, TrackRule, TracksOptions
+from showrunner.stages.tracks import TrackMatch, TrackRule, TracksOptions, Verdict
 from showrunner.tools.probe import Programs
 from showrunner.ui.quick.review import ReviewInput, parts, review, totals
+from showrunner.ui.quick.tracks import columns
 
-from .test_tracks_view import STAGES, chosen
+from .test_tracks_view import SDH, STAGES, TURKISH, chosen
 
 
 @pytest.fixture
@@ -69,18 +71,21 @@ def test_the_changes_are_grouped_by_kind_and_add_up(season: list[MediaItem]) -> 
     assert lines(names) == [("Titles", 10)]
     assert (shown["count"], shown["files"]) == (39, 10)
     assert shown["title"] == "39 changes in 10 files"
-    assert shown["apply_text"] == "Apply 39 changes to 10 files"
+    assert shown["apply_text"] == "Apply 2 of 2 kinds to 10 files"
+    assert [g["label"] for g in shown["groups"]] == ["Tracks and new files · 10 files", "Names and flags · 10 files"]
     assert tracks["original_text"] == "Originals: Recycle Bin"
     assert shown["stays"] == ["File names", "Chapters", "Attachments", "Artwork"]
 
 
-def test_a_left_out_group_says_what_it_would_do_and_counts_nothing(season: list[MediaItem]) -> None:
+def test_an_unticked_kind_says_what_it_would_do_and_counts_nothing(season: list[MediaItem]) -> None:
     shown = built(season, profile_for(season), groups_out={ChangeGroup.NAMES})
     _tracks, names = shown["groups"]
     assert names["in_run"] is False
     assert lines(names) == [("Titles", 10)]  # drawn struck: what it would do
-    assert names["note"] == "Not this time. The templates stay with this batch for the next run."
+    assert names["note"] == "Unticked. The templates stay with this batch and are planned again next time."
+    assert names["label"] == "Names and flags · 10 files"  # what it would change, ticked or not
     assert shown["count"] == 29
+    assert shown["apply_text"] == "Apply 1 of 2 kinds to 10 files"
     first = shown["rows"][0]
     assert [m["key"] for m in first["marks"]] == ["tracks", "names"]
     assert [(m["on"], m["out"]) for m in first["marks"]] == [(True, False), (False, True)]
@@ -88,15 +93,16 @@ def test_a_left_out_group_says_what_it_would_do_and_counts_nothing(season: list[
     assert (title["after"], title["out"]) == ("Show Name - S01E01", True)
 
 
-def test_a_left_out_file_stays_listed_and_leaves_the_counts(season: list[MediaItem]) -> None:
+def test_an_unticked_file_stays_listed_and_leaves_the_counts(season: list[MediaItem]) -> None:
     profile = profile_for(season)
     ninth = season[8].file.path
     shown = built(season, profile, files_out={ninth})
     assert (shown["count"], shown["files"]) == (35, 9)
-    assert [f["count"] for f in shown["filters"]] == [10, 9, 1, 1]
+    assert shown["apply_text"] == "Apply 2 of 2 kinds to 9 files"
+    assert [(f["key"], f["count"]) for f in shown["filters"]] == [("all", 10), ("look", 1)]
     row = next(r for r in shown["rows"] if r["path"] == str(ninth))
     assert row["state"] == "out"
-    assert built(season, profile, files_out={ninth}, filter="out")["rows"] == [row]
+    assert row["summary"].startswith("4 changes")  # still planned
     looks = built(season, profile, filter="look")["rows"]
     assert [r["title"] for r in looks] == ["Episode Seven"]  # no Turkish audio: English takes the default
     assert looks[0]["warning"] == "No Turkish audio: English audio becomes the default"
@@ -117,7 +123,7 @@ def test_a_file_card_shows_its_tracks_defaults_file_and_title_before_and_after(s
     first = built(season, profile_for(season, original=Original.KEEP))["rows"][0]
     assert first["summary"] == "4 changes · new file, 2 flags, title"
     detail = {d["label"]: d for d in first["detail"]}
-    assert list(detail) == ["Audio", "Subtitles", "Default", "File", "Title"]
+    assert list(detail) == ["Audio", "Subtitles", "Default", "File", "Title", "Flags", ""]
     audio = detail["Audio"]
     assert [p["code"] for p in audio["before"]] == ["ENG", "TUR", "ENG"]
     assert [(p["code"], p["state"], p["default"]) for p in audio["after"]] == [
@@ -157,7 +163,15 @@ def test_nothing_set_up_says_so(season: list[MediaItem]) -> None:
 
 def test_parts_add_up_to_the_counts(season: list[MediaItem]) -> None:
     file = preview(season[:1], profile_for(season), STAGES, stamped=False).files[0]
-    assert parts(file) == {"new_file": 1, "order": 0, "flags": 2, "titles": 1, "names": 0, "other": 0}
+    assert parts(file) == {
+        "new_file": 1,
+        "order": 0,
+        "flags": 2,
+        "titles": 1,
+        "names": 0,
+        "languages": 0,
+        "implied": 0,
+    }
     assert parts(None) == dict.fromkeys(parts(file), 0)
     assert Path(file.item.file.path).name == "Show.Name.S01E01.mkv"
 
@@ -168,3 +182,53 @@ def test_changes_no_program_can_write_are_not_offered_to_apply(season: list[Medi
     assert {r["state"] for r in shown["rows"]} == {"look"}
     assert shown["rows"][0]["warning"] == "Needs MKVToolNix to write the new file"
     assert shown["groups"][0]["lines"] == []
+
+
+def test_an_excluded_file_is_not_an_unticked_one(season: list[MediaItem]) -> None:
+    profile = profile_for(season)
+    shown = built(season, profile, excluded={season[2].file.path}, files_out={season[3].file.path})
+    states = {r["title"]: r["state"] for r in shown["rows"]}
+    assert (states["Episode Three"], states["Episode Four"]) == ("excluded", "out")
+    assert shown["apply_text"] == "Apply 2 of 2 kinds to 8 files"
+    assert [g["label"] for g in shown["groups"]] == ["Tracks and new files · 8 files", "Names and flags · 8 files"]
+
+
+def with_implied_flags(items: list[MediaItem], *, remux: bool) -> Profile:
+    """Turkish audio default and the commentary kept, whose name implies a flag it lacks. With `remux` the SDH
+    subtitles are dropped, which needs a new file; without it the headers are edited in place."""
+    cols = columns(items)
+    options = choose(TracksOptions(), cols[TURKISH].signature, TrackChoice(Verdict.KEEP, default=True))
+    if remux:
+        options = choose(options, cols[SDH].signature, TrackChoice(Verdict.DROP))
+    profile = profile_for(items).with_options("tracks", options)
+    return profile.with_options("metadata", replace(profile.for_stage("metadata"), write_implied_flags=True))
+
+
+def edits(row: dict[str, Any]) -> list[tuple[str, str, bool]]:
+    return [(d["label"], d["text"], d["out"]) for d in row["detail"] if d["text"]]
+
+
+NAMED = [
+    ("Flags", "Default flag removed from “English”", False),
+    ("", "Default flag set on “Turkish”", False),
+    ("", "Commentary flag set on “Commentary”", False),
+]
+
+
+@pytest.mark.parametrize(("remux", "summary"), [(False, "3 changes"), (True, "4 changes")])
+def test_every_flag_change_is_named_by_track_and_flag(season: list[MediaItem], remux: bool, summary: str) -> None:
+    # In place Metadata writes the flags the rules move; in a new file the track plan does. Each is named once.
+    shown = built(season, with_implied_flags(season, remux=remux))
+    row = shown["rows"][0]
+    assert row["summary"].startswith(summary)
+    assert row["summary"].endswith("1 implied flag")
+    assert edits(row) == NAMED
+    assert shown["groups"][1]["lines"][-1] == {"label": "Flags the names imply", "count": 10}
+
+
+def test_flag_lines_of_an_unticked_kind_are_marked_out(season: list[MediaItem]) -> None:
+    profile = with_implied_flags(season, remux=False)
+    names = edits(built(season, profile, groups_out={ChangeGroup.NAMES})["rows"][0])
+    assert [out for _label, _text, out in names] == [False, False, True]  # the rules' flags are the Tracks kind's
+    tracks = edits(built(season, profile, groups_out={ChangeGroup.TRACKS})["rows"][0])
+    assert [out for _label, _text, out in tracks] == [True, True, False]

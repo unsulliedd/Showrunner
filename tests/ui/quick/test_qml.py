@@ -648,7 +648,7 @@ def test_a_show_and_a_selection_keep_their_batch_when_a_row_is_picked(
 def test_review_apply_and_the_job_offer_draw_without_warnings(
     qapp: QApplication, qtbot: QtBot, tmp_path: Path, qt_warnings: Any
 ) -> None:
-    """Review with a group and a file left out driven by clicks, Apply from its button, the job in the drawer while
+    """Review with a kind and a file unticked by clicks, Apply from its button, the job in the drawer while
     it holds half way, then finished, and the offer of a cancelled job in a second window."""
     from .conftest import program_statuses
     from .test_apply import COMMENTARY, StandInMux, make_setup
@@ -668,8 +668,10 @@ def test_review_apply_and_the_job_offer_draw_without_warnings(
     _click(window, _item(root, "inRun_names"))
     qtbot.waitUntil(lambda: not controller.planning and not controller.review["groups"][1]["in_run"])
     qtbot.wait(50)
-    _click(window, _items(root, "notThisTime")[1])
+    _click(window, _items(root, "tickFile")[1])
     assert controller._files_out() == {made.season[1]}
+    assert [b.property("ticked") for b in _items(root, "tickFile")[:3]] == [True, False, True]
+    assert _item(root, "inRun_names").property("ticked") is False
     qtbot.wait(50)
     _click(window, _items(root, "expand")[0])
     qtbot.wait(50)
@@ -696,6 +698,9 @@ def test_review_apply_and_the_job_offer_draw_without_warnings(
     qtbot.wait(100)
     assert [r["state"] for r in controller.jobs.view["rows"]] == ["done"] * 9
     assert warnings == []
+    # The boxes are ticked again in what the window draws, not only in the data behind it.
+    qtbot.waitUntil(lambda: all(b.property("ticked") for b in _items(root, "tickFile")))
+    assert _item(root, "inRun_names").property("ticked") is True
     controller.toggle_keep(COMMENTARY)  # unlocked again
     window.close()
     engine.deleteLater()

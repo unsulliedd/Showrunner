@@ -253,8 +253,10 @@ def test_the_implied_flags_switch_writes_into_the_working_copy(
     assert controller.batches.profile(controller._key).for_stage("metadata").write_implied_flags
     settle(controller, qtbot)
     tabs = {tab["key"]: tab["count"] for tab in controller.workspace_tabs}
-    # Each fixture file has a track whose name implies a flag it does not have.
-    assert (tabs["names"], tabs["review"]) == (10, 10)
+    # Each fixture file has a track whose name implies a flag it does not have: the change shows on Tracks and in
+    # Review's flag lines, and Names, which shows no template changing, counts none.
+    assert (tabs["tracks"], tabs["names"], tabs["review"]) == (10, 0, 10)
+    assert not controller.implied_nothing
     controller.set_write_implied_flags(False)
     assert controller.batches.own(controller._key) == {}
 

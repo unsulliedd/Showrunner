@@ -46,6 +46,8 @@ Rectangle {
     }
 
     MouseArea {
+        id: area
+
         anchors.fill: parent
         enabled: badge.pickable
         hoverEnabled: true
@@ -54,5 +56,10 @@ Rectangle {
             badge.forceActiveFocus()
             badge.picked()
         }
+    }
+
+    Tip {
+        visible: area.containsMouse && badge.pickable
+        text: Strings.f("language.change", {"code": badge.code})
     }
 }

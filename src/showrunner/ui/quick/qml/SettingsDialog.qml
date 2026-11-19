@@ -82,6 +82,7 @@ Popup {
                 objectName: "closeSettings"
                 iconName: "x"
                 label: Strings.t("prefs.close")
+                tip: Strings.t("tip.settings_close")
                 onClicked: dialog.close()
             }
         }

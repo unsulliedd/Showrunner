@@ -1,10 +1,10 @@
-"""What the Review place draws, as plain lists and dicts for QML: the run's changes grouped by kind, each group in or
-out of the run, and one card per file with what changes in it.
+"""What the Review place draws, as plain lists and dicts for QML: the run's changes grouped by kind, each kind ticked
+or not for this run, and one card per file with what changes in it.
 
-Two plans come in. `run` is planned with the left-out groups emptied, as Apply will run it; `full` with every group
-in, so a left-out group can still show what it would do. Files out of the run are in both plans and only out of the
-counts here and of the job (`create_job(left_out_files=...)`): the excluded ones, saved with the workspace, and the
-ones left out of this run alone.
+Two plans come in. `run` is planned with the unticked kinds emptied, as Apply will run it; `full` with every kind in,
+so an unticked kind can still show what it would do. Files out of the run are in both plans and only out of the counts
+here and of the job (`create_job(left_out_files=...)`): the excluded ones, saved with the workspace, and the unticked
+ones, skipped this time only.
 """
 
 from __future__ import annotations
@@ -15,13 +15,15 @@ from pathlib import Path
 
 from showrunner.app.batches.batch import Media
 from showrunner.app.jobs.blocked import StageBlock, blocked_stages
-from showrunner.app.jobs.counts import name_changes, track_changes
+from showrunner.app.jobs.counts import name_parts, ruled_flags, track_changes
 from showrunner.app.jobs.groups import ChangeGroup
 from showrunner.app.jobs.preview import FileOutcome, FilePreview
 from showrunner.app.profiles.profile import Profile
+from showrunner.core.language import Language
 from showrunner.core.media import MediaItem
-from showrunner.core.track import TrackFlags, TrackKind
+from showrunner.core.track import Track, TrackFlags, TrackKind
 from showrunner.stages.metadata import MetadataPlan
+from showrunner.stages.metadata.plan import FLAG_FIELDS
 from showrunner.stages.mux.options import MuxOptions
 from showrunner.stages.tracks import NO_LANGUAGE, TrackPlan, TracksOptions
 from showrunner.tools.mkvtoolnix.propedit import Property
@@ -43,11 +45,11 @@ from showrunner.ui.quick.tracks import (
 # The kinds of change of each group, in the order its card lists them.
 LINES: dict[ChangeGroup, tuple[str, ...]] = {
     ChangeGroup.TRACKS: ("new_file", "order", "flags"),
-    ChangeGroup.NAMES: ("titles", "names", "other"),
+    ChangeGroup.NAMES: ("titles", "names", "languages", "implied"),
 }
 GROUP_ICONS = {ChangeGroup.TRACKS: "audio", ChangeGroup.NAMES: "names"}
-FILTERS = ("all", "run", "look", "out")
-# A file's state in Review: in the run, in it but needing a look, left out of this run alone, or excluded.
+FILTERS = ("all", "look")
+# A file's state in Review: in the run, in it but needing a look, unticked (skipped this time), or excluded.
 OUT_STATES = ("out", "excluded")
 # What no stage of this version changes, listed under "Stays as it is".
 STAYS = ("chapters", "attachments", "artwork")
@@ -75,7 +77,8 @@ class ReviewInput:
 
 def parts(file: FilePreview | None) -> dict[str, int]:
     """A file's changes by kind: the new file, its track order and the flags the rules move (Tracks and new files),
-    then titles, track names and every other header edit (Names and flags). They add up to `count_changes`."""
+    then titles, track names, languages and the flags a name implies (Names and flags). They add up to
+    `count_changes`."""
     found = dict.fromkeys((key for keys in LINES.values() for key in keys), 0)
     if file is None:
         return found
@@ -87,9 +90,7 @@ def parts(file: FilePreview | None) -> dict[str, int]:
         found["flags"] = track_changes(tracks) - found["new_file"] - found["order"]
     stage = file.plan_for("metadata")
     if stage is not None and isinstance(stage.plan, MetadataPlan):
-        found["titles"] = sum(c.prop is Property.TITLE for c in stage.plan.changes)
-        found["names"] = sum(c.prop is Property.NAME for c in stage.plan.changes)
-        found["other"] = name_changes(stage.plan, tracks) - found["titles"] - found["names"]
+        found.update(name_parts(stage.plan, tracks))
     return found
 
 
@@ -124,12 +125,7 @@ def review(given: ReviewInput) -> dict[str, object]:
     run_view = BatchView.build(given.items, given.tracks, given.run, given.failures)
     full_view = BatchView.build(given.items, given.tracks, given.full, given.failures)
     rows = [_row(given, item, run_view, full_view, run_parts[item.file.path]) for item in given.items]
-    counts = {
-        "all": len(rows),
-        "run": sum(r["state"] not in OUT_STATES for r in rows),
-        "look": sum(r["state"] == "look" for r in rows),
-        "out": sum(r["state"] in OUT_STATES for r in rows),
-    }
+    counts = {"all": len(rows), "look": sum(r["state"] == "look" for r in rows)}
     stays = ([tr("review.stays.file_names")] if not given.mux.suffix else []) + [tr(f"review.stays.{k}") for k in STAYS]
     return {
         "count": changes,
@@ -139,10 +135,19 @@ def review(given: ReviewInput) -> dict[str, object]:
         "stays": stays,
         "filters": [{"key": key, "label": tr(f"review.filter.{key}"), "count": counts[key]} for key in FILTERS],
         "rows": [r for r in rows if _shown(given.filter, str(r["state"]))],
-        "apply_text": tr("review.apply", changes=tr_plural("top.changes", changes), files=tr_plural("top.files", files))
-        if changes
-        else tr("review.apply_none"),
+        "apply_text": _apply_text(given, full_parts, changes, files) if changes else tr("review.apply_none"),
     }
+
+
+def _apply_text(given: ReviewInput, full_parts: dict[Path, dict[str, int]], changes: int, files: int) -> str:
+    """ "Apply 2 of 3 kinds to 33 files": the kinds that plan a change anywhere, and those of them still ticked."""
+    planned = [
+        group
+        for group in ChangeGroup
+        if any(_group_count(full_parts[i.file.path], group) for i in given.items if i.file.path not in given.excluded)
+    ]
+    ticked = sum(group not in given.groups_out for group in planned)
+    return tr_plural("review.apply", len(planned), ticked=ticked, files=tr_plural("top.files", files))
 
 
 def _changes_in(changes: int, files: int) -> str:
@@ -150,10 +155,6 @@ def _changes_in(changes: int, files: int) -> str:
 
 
 def _shown(which: str, state: str) -> bool:
-    if which == "run":
-        return state not in OUT_STATES
-    if which == "out":
-        return state in OUT_STATES
     return which in ("all", state)
 
 
@@ -165,7 +166,8 @@ def _group(
     run_parts: dict[Path, dict[str, int]],
     full_parts: dict[Path, dict[str, int]],
 ) -> dict[str, object]:
-    """A group's card: in the run its lines count the run plan; left out they count what it would do, struck."""
+    """A kind's card: ticked, its lines count the run plan; unticked they count what it would do, struck. Its box
+    says how many files it changes."""
     out = group in given.groups_out
     source, files = (full_parts, included) if out else (run_parts, writing)
     lines = [
@@ -173,6 +175,8 @@ def _group(
         for key in LINES[group]
         if (count := sum(source[i.file.path][key] for i in files))
     ]
+    changed = sum(_group_count(source[i.file.path], group) > 0 for i in files)
+    title = tr(f"review.group.{group.value}")
     problems = _problems(given, group)
     if out:
         note = tr(f"review.left_out.{group.value}")
@@ -183,7 +187,8 @@ def _group(
     card: dict[str, object] = {
         "key": group.value,
         "icon": GROUP_ICONS[group],
-        "title": tr(f"review.group.{group.value}"),
+        "title": title,
+        "label": tr("review.group_files", title=title, files=tr_plural("top.files", changed)) if changed else title,
         "in_run": not out,
         "lines": lines,
         "note": note,
@@ -356,11 +361,74 @@ def _detail(
     named = full_file if names_out else run_file
     if title := new_title(named):
         rows.append(_line("title", item.file.title or tr("inspector.title_empty"), title, names_out, mono=True))
-    if renamed := new_names(named):
+    renamed = new_names(named)
+    if renamed:
         tracks = {t.id: t for t in item.file.tracks}
         before_names = [tracks[i].name for i in renamed if i in tracks]
         rows.append(_line("names", _joined(before_names), _joined(list(renamed.values())), names_out))
+    rows += _edits(item, full_file if tracks_out else run_file, named, renamed, tracks_out, names_out)
     return rows
+
+
+def _edits(
+    item: MediaItem,
+    tracks_file: FilePreview | None,
+    named: FilePreview | None,
+    renamed: dict[int, str],
+    tracks_out: bool,
+    names_out: bool,
+) -> list[dict[str, object]]:
+    """One sentence per flag or language a plan changes, by track: the flags the track rules move, then what
+    Metadata writes (the flags a name implies, languages). The pills show a track by its language and its default and
+    forced marks only, so these say what the rows cannot."""
+    stage = tracks_file.plan_for("tracks") if tracks_file is not None else None
+    plan = stage.plan if stage is not None and isinstance(stage.plan, TrackPlan) else None
+    found: list[tuple[str, str, bool]] = []  # kind, sentence, left out
+    for kept in plan.kept if plan is not None else ():
+        for change in kept.flag_changes:
+            found.append(("flag", _flag_sentence(change.flag.value, change.value, kept.track, ""), tracks_out))
+    stage = named.plan_for("metadata") if named is not None else None
+    if stage is not None and isinstance(stage.plan, MetadataPlan):
+        own = named.plan_for("tracks") if named is not None else None
+        ruled = ruled_flags(own.plan if own is not None and isinstance(own.plan, TrackPlan) else None)
+        tracks = {t.id: t for t in item.file.tracks}
+        for change in stage.plan.changes:
+            track = tracks.get(change.track_id) if change.track_id is not None else None
+            if track is None:
+                continue
+            name = renamed.get(track.id, "")
+            if change.prop in FLAG_FIELDS and (change.prop, track.id) not in ruled:
+                sentence = _flag_sentence(FLAG_FIELDS[change.prop], bool(change.new), track, name)
+                found.append(("flag", sentence, names_out))
+            elif change.prop is Property.LANGUAGE:
+                language = Language.parse(str(change.new)) if change.new else None
+                sentence = tr(
+                    "review.edit.language",
+                    language=language.name if language is not None else tr("tracks.no_language"),
+                    track=_track_label(track, name),
+                )
+                found.append(("language", sentence, names_out))
+    shown: set[str] = set()
+    rows = []
+    for kind, sentence, out in found:
+        label = "" if kind in shown else tr(f"review.detail.{kind}")
+        shown.add(kind)
+        rows.append({**_line("file", "", "", out), "label": label, "text": sentence})
+    return rows
+
+
+def _flag_sentence(flag: str, on: bool, track: Track, name: str) -> str:
+    return tr(
+        "review.edit.flag_on" if on else "review.edit.flag_off",
+        flag=tr(f"review.flag.{flag}"),
+        track=_track_label(track, name),
+    )
+
+
+def _track_label(track: Track, name: str) -> str:
+    """The name the track has, else the one it gets; without either, "English audio"."""
+    language = track.language.ietf if track.language else NO_LANGUAGE
+    return track.name or name or language_kind(language, track.kind)
 
 
 def _joined(names: list[str]) -> str:
@@ -377,6 +445,7 @@ def _line(
         "out": out,
         "pills": pills,
         "mono": mono,
+        "text": "",  # a sentence in place of before and after
     }
 
 

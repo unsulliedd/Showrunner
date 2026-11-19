@@ -38,6 +38,7 @@ Panel {
                 anchors.verticalCenter: parent.verticalCenter
                 iconName: "down"
                 label: Strings.t("drawer.fold")
+                tip: Strings.t("tip.drawer_fold")
                 onClicked: drawer.folded()
             }
         }

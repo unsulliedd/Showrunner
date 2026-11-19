@@ -3,9 +3,10 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
-// One file in Review: what changes in it, a mark per group, and Not this time or Put back, or Include for an
-// excluded file. Opened, it shows its tracks, defaults, file, title and track names before and after; a row of a
-// left-out group says so and is muted.
+// One file in Review: a tick box (unticked, the file is skipped this time and stays planned), what changes in it
+// and a mark per kind. An excluded file has no box: it is dashed, greyed, marked with the no-entry sign and has
+// Include. Opened, the card shows its tracks, defaults, file, title, track names, flags and languages before and
+// after; a row of an unticked kind says so and is muted.
 Item {
     id: card
 
@@ -14,6 +15,7 @@ Item {
     property bool locked: false
     readonly property bool excluded: file.state === "excluded"
     readonly property bool out: file.state === "out" || excluded
+    readonly property bool unticked: file.state === "out"
 
     signal toggled()
 
@@ -21,7 +23,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        visible: !card.out
+        visible: !card.excluded
         radius: Theme.radius_lg
         color: Theme.panel_2
         border.width: Theme.stroke
@@ -30,7 +32,7 @@ Item {
 
     DashedFrame {
         anchors.fill: parent
-        visible: card.out
+        visible: card.excluded
     }
 
     ColumnLayout {
@@ -48,12 +50,29 @@ Item {
             Layout.fillWidth: true
             spacing: Theme.space_md
 
+            Tick {
+                objectName: "tickFile"
+                visible: !card.excluded
+                ticked: !card.unticked
+                enabled: !card.locked
+                label: card.file.title
+                tip: Strings.t("review.tick_file")
+                onFlipped: on => app.set_file_in_run(card.file.path, on)
+            }
+
+            Item {
+                visible: card.excluded
+                implicitWidth: Theme.row_sm
+                implicitHeight: Theme.row_sm
+            }
+
             IconButton {
                 objectName: "expand"
                 implicitWidth: Theme.row_sm
                 implicitHeight: Theme.row_sm
                 iconName: card.expanded ? "down" : "right"
                 label: card.expanded ? Strings.t("review.fold") : Strings.t("review.open")
+                tip: card.expanded ? Strings.t("tip.review_fold") : Strings.t("tip.review_open")
                 onClicked: card.toggled()
             }
 
@@ -67,7 +86,7 @@ Item {
 
             UiText {
                 text: card.file.title
-                color: card.out ? Theme.muted : Theme.ink
+                color: card.excluded ? Theme.faint : card.unticked ? Theme.muted : Theme.ink
                 font.weight: Font.DemiBold
             }
 
@@ -87,8 +106,8 @@ Item {
 
             UiText {
                 Layout.fillWidth: true
-                text: card.excluded ? Strings.t("review.file.excluded") : card.out ? Strings.t("review.file.left_out") : card.file.summary
-                color: Theme.muted
+                text: card.excluded ? Strings.t("review.file.excluded") : card.file.summary
+                color: card.excluded ? Theme.faint : Theme.muted
                 font.pixelSize: Theme.text_sm
             }
 
@@ -111,19 +130,25 @@ Item {
             }
 
             ActionButton {
-                objectName: card.excluded ? "includeFile" : "notThisTime"
-                kind: card.out ? "outline" : "ghost"
+                objectName: "includeFile"
+                visible: card.excluded
+                kind: "outline"
                 size: Theme.row_sm
                 enabled: !card.locked
-                text: card.excluded ? Strings.t("workspace.include") : card.out ? Strings.t("review.put_back") : Strings.t("review.not_this_time")
+                text: Strings.t("workspace.include")
                 Accessible.description: card.file.title
-                onClicked: card.excluded ? app.exclude_file(card.file.path, false) : app.set_file_in_run(card.file.path, card.out)
+                onClicked: app.exclude_file(card.file.path, false)
+
+                Tip {
+                    visible: parent.hovered
+                    text: Strings.t("workspace.include_tip")
+                }
             }
         }
 
         UiText {
             Layout.fillWidth: true
-            Layout.leftMargin: Theme.row_sm + Theme.space_md
+            Layout.leftMargin: 2 * Theme.row_sm + 2 * Theme.space_md
             visible: card.file.warning !== "" && !card.out
             text: card.file.warning
             color: Theme.change
@@ -138,7 +163,7 @@ Item {
                 required property var modelData
 
                 Layout.fillWidth: true
-                Layout.leftMargin: Theme.row_sm + Theme.space_md
+                Layout.leftMargin: 2 * Theme.row_sm + 2 * Theme.space_md
                 spacing: Theme.space_lg
 
                 Row {
@@ -173,9 +198,20 @@ Item {
                     }
                 }
 
+                UiText {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    visible: modelData.text !== ""
+                    text: modelData.text
+                    color: modelData.out ? Theme.faint : Theme.change
+                    font.pixelSize: Theme.text_sm
+                    wrapMode: Text.WordWrap
+                }
+
                 Loader {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
+                    visible: modelData.text === ""
                     sourceComponent: modelData.pills ? pillsBefore : textBefore
 
                     Component {
@@ -212,6 +248,7 @@ Item {
 
                 UiText {
                     Layout.alignment: Qt.AlignTop
+                    visible: modelData.text === ""
                     text: Strings.t("inspector.becomes")
                     color: Theme.faint
                 }
@@ -219,6 +256,7 @@ Item {
                 Loader {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
+                    visible: modelData.text === ""
                     sourceComponent: modelData.pills ? pillsAfter : textAfter
 
                     Component {

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from showrunner.app.batches.batch import BatchKey, BatchKind, Media
 from showrunner.app.batches.leave_out import LeftOut
 from showrunner.app.jobs.groups import ChangeGroup
@@ -33,4 +35,28 @@ def test_not_this_time_is_a_value_of_the_file_s_place() -> None:
     assert out.file_out(EPISODE)
     assert not out.file_out(OTHER)
     out.set_file(EPISODE, False)
+    assert out.empty
+
+
+def test_clearing_a_place_ticks_everything_inside_it_again() -> None:
+    out = LeftOut()
+    out.set_group(SEASON, ChangeGroup.NAMES, True)
+    out.set_group(EPISODE, ChangeGroup.TRACKS, True)
+    out.set_file(EPISODE, True)
+    out.set_file(MOVIE, True)
+    out.clear(SEASON)
+    assert out.groups_of(EPISODE) == frozenset()
+    assert not out.file_out(EPISODE)
+    assert out.file_out(MOVIE)  # another place, untouched
+
+
+def test_clearing_a_place_puts_back_what_a_place_above_leaves_out() -> None:
+    out = LeftOut()
+    out.set_group(SHOW, ChangeGroup.NAMES, True)
+    out.clear(SEASON)
+    assert out.groups_of(SEASON) == out.groups_of(EPISODE) == frozenset()
+    # The show and the seasons beside this one still leave it out.
+    assert out.groups_of(SHOW) == {ChangeGroup.NAMES}
+    assert out.groups_of(replace(SEASON, season=2)) == {ChangeGroup.NAMES}
+    out.clear(SHOW)
     assert out.empty

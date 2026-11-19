@@ -3,8 +3,8 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
-// Review: the run's changes grouped by kind, each group in or out of the run, what stays as it is, and
-// the one Apply button; beside them one card per file, filtered, with Not this time and Put back.
+// Review: the run's changes grouped by kind, each with a tick box, what stays as it is, and the one Apply button;
+// beside them one card per file with its own tick box, filtered to all or those that need a look.
 Item {
     id: place
 
@@ -62,6 +62,18 @@ Item {
                         card: modelData
                         locked: app.locked
                     }
+                }
+
+                UiText {
+                    objectName: "skipNote"
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Theme.space_lg
+                    Layout.rightMargin: Theme.space_lg
+                    Layout.topMargin: -Theme.space_sm
+                    text: Strings.t("review.skip_note")
+                    color: Theme.muted
+                    font.pixelSize: Theme.text_sm
+                    wrapMode: Text.WordWrap
                 }
 
                 UiText {
@@ -126,6 +138,11 @@ Item {
                     enabled: app.can_apply
                     text: app.applying ? Strings.t("review.applying") : (place.review.apply_text || "")
                     onClicked: app.apply()
+
+                    Tip {
+                        visible: parent.hovered
+                        text: Strings.t("review.apply_tip")
+                    }
                 }
             }
         }
@@ -160,6 +177,11 @@ Item {
                         checked: app.review_filter === modelData.key
                         text: modelData.label + " " + modelData.count
                         onClicked: app.review_filter = modelData.key
+
+                        Tip {
+                            visible: parent.hovered
+                            text: Strings.t("review.filter_tip." + modelData.key)
+                        }
                     }
                 }
 
@@ -181,6 +203,11 @@ Item {
                     onClicked: {
                         open = !open
                         place.opened = ({})
+                    }
+
+                    Tip {
+                        visible: parent.hovered
+                        text: Strings.t("review.expand_tip")
                     }
                 }
             }

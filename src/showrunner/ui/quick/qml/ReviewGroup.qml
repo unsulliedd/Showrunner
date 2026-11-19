@@ -3,8 +3,9 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
-// One group of planned change in Review: its lines with their counts, "In this run", what is in the way, and for
-// Tracks where the originals go. A left-out group is dashed and its lines struck: they say what it would do.
+// One kind of planned change in Review: a tick box with its name and the files it changes, its lines with their
+// counts, what is in the way, and for Tracks where the originals go. An unticked kind is dashed and its lines struck:
+// they say what it would do.
 Item {
     id: group
 
@@ -40,6 +41,15 @@ Item {
             Layout.fillWidth: true
             spacing: Theme.space_md
 
+            Tick {
+                objectName: "inRun_" + group.card.key
+                ticked: group.card.in_run
+                enabled: !group.locked
+                label: group.card.label
+                tip: Strings.t("review.tick_kind")
+                onFlipped: on => app.set_in_run(group.card.key, on)
+            }
+
             Rectangle {
                 Layout.preferredWidth: Theme.row_md
                 Layout.preferredHeight: Theme.row_md
@@ -55,22 +65,9 @@ Item {
 
             UiText {
                 Layout.fillWidth: true
-                text: group.card.title
+                text: group.card.label
                 color: group.card.in_run ? Theme.ink : Theme.muted
                 font.weight: Font.DemiBold
-            }
-
-            ActionButton {
-                objectName: "inRun_" + group.card.key
-                kind: "outline"
-                size: Theme.row_sm
-                checkable: true
-                checked: group.card.in_run
-                enabled: !group.locked
-                iconName: checked ? "check" : ""
-                text: checked ? Strings.t("review.in_run") : Strings.t("review.not_this_time")
-                Accessible.description: Strings.t("review.in_run_help")
-                onToggled: app.set_in_run(group.card.key, checked)
             }
         }
 
@@ -81,7 +78,7 @@ Item {
                 required property var modelData
 
                 Layout.fillWidth: true
-                Layout.leftMargin: Theme.row_md + Theme.space_md
+                Layout.leftMargin: Theme.row_sm + Theme.row_md + 2 * Theme.space_md
 
                 UiText {
                     Layout.fillWidth: true
@@ -100,7 +97,7 @@ Item {
 
         UiText {
             Layout.fillWidth: true
-            Layout.leftMargin: Theme.row_md + Theme.space_md
+            Layout.leftMargin: Theme.row_sm + Theme.row_md + 2 * Theme.space_md
             visible: group.card.note !== ""
             text: group.card.note
             color: Theme.muted
@@ -115,7 +112,7 @@ Item {
                 required property var modelData
 
                 Layout.fillWidth: true
-                Layout.leftMargin: Theme.row_md + Theme.space_md
+                Layout.leftMargin: Theme.row_sm + Theme.row_md + 2 * Theme.space_md
                 spacing: Theme.space_sm
 
                 Icon {
@@ -136,7 +133,7 @@ Item {
         }
 
         RowLayout {
-            Layout.leftMargin: Theme.row_md + Theme.space_md
+            Layout.leftMargin: Theme.row_sm + Theme.row_md + 2 * Theme.space_md
             spacing: Theme.space_md
 
             ActionButton {
@@ -160,6 +157,11 @@ Item {
                 text: group.card.original_text || ""
                 Accessible.role: Accessible.ButtonMenu
                 onClicked: menu.open()
+
+                Tip {
+                    visible: originals.hovered && !menu.visible
+                    text: Strings.t("review.originals_tip")
+                }
 
                 Menu {
                     id: menu

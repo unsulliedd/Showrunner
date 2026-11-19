@@ -80,6 +80,11 @@ Item {
                 text: Strings.t("rules.flags_from_names")
                 Accessible.description: Strings.t("prefs.profiles.flags_hint")
                 onToggled: app.set_flags_from_names(checked)
+
+                Tip {
+                    visible: parent.hovered
+                    text: Strings.t("prefs.profiles.flags_hint")
+                }
             }
 
             PlaceMark {
@@ -266,6 +271,7 @@ Item {
                             iconName: entry.rule.enabled ? "pause" : "play"
                             active: !entry.rule.enabled
                             label: entry.rule.enabled ? Strings.t("rules.pause") : Strings.t("rules.resume")
+                            tip: entry.rule.enabled ? Strings.t("tip.rule_pause") : Strings.t("tip.rule_resume")
                             onClicked: app.pause_rule(entry.index, entry.rule.enabled)
                         }
 
@@ -277,6 +283,7 @@ Item {
                             implicitHeight: Theme.row_sm
                             iconName: "edit"
                             label: Strings.t("rules.edit")
+                            tip: Strings.t("tip.rule_edit")
                             onClicked: {
                                 panel.opener = this
                                 app.rule_editor.open_rule(entry.index)
@@ -291,6 +298,7 @@ Item {
                             implicitHeight: Theme.row_sm
                             iconName: "x"
                             label: Strings.t("rules.delete")
+                            tip: Strings.t("tip.rule_delete")
                             onClicked: app.remove_rule(entry.index)
                         }
                     }

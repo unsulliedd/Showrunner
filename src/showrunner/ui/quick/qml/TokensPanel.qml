@@ -30,6 +30,7 @@ Item {
                 objectName: "addToken"
                 iconName: "plus"
                 label: Strings.t("tokens.add")
+                tip: Strings.t("tip.token_add")
                 onClicked: app.add_token()
             }
         }

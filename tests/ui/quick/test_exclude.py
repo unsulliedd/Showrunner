@@ -150,7 +150,7 @@ def test_discard_changes_removes_choices_and_leaves_exclusion(
     assert not controller.can_discard
 
 
-def test_review_lists_an_excluded_file_apart_from_one_left_out_this_time(
+def test_review_lists_an_excluded_file_apart_from_an_unticked_one(
     controller: WindowController, library: Library, qtbot: QtBot
 ) -> None:
     open_season(controller, library, qtbot)
@@ -162,11 +162,9 @@ def test_review_lists_an_excluded_file_apart_from_one_left_out_this_time(
     rows = {r["path"]: r for r in controller.review["rows"]}
     assert (rows[path_of(library, 2)]["state"], rows[path_of(library, 3)]["state"]) == ("excluded", "out")
     assert controller.change_count < every
-    filters = {f["key"]: f["count"] for f in controller.review["filters"]}
-    assert (filters["run"], filters["out"]) == (8, 2)
-    controller.review_filter = "out"
-    assert {r["path"] for r in controller.review["rows"]} == {path_of(library, 2), path_of(library, 3)}
-    # Not this time is not saved and no part of exclusion: putting the file back leaves the excluded one out.
+    assert [f["key"] for f in controller.review["filters"]] == ["all", "look"]  # no filter by the run any more
+    assert controller.review["apply_text"] == "Apply 1 of 1 kind to 8 files"
+    # Unticking is not saved and no part of exclusion: putting the file back leaves the excluded one out.
     controller.set_file_in_run(path_of(library, 3), True)
     assert controller.left_out.empty
     assert marked(controller, path_of(library, 2))

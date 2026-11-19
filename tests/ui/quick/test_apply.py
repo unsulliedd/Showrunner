@@ -175,6 +175,24 @@ def test_a_left_out_group_is_not_written_and_its_options_stay(setup: Setup, qtbo
     assert not controller.can_apply  # nothing else is planned: Names has no template here
 
 
+def test_every_box_is_ticked_again_after_apply(setup: Setup, qtbot: QtBot) -> None:
+    controller, ninth = setup.controller, setup.season[8]
+    controller.set_file_in_run(str(ninth), False)
+    controller.set_in_run("names", False)
+    qtbot.waitUntil(lambda: not controller.planning)
+    shown = controller.review
+    assert shown["apply_text"] == "Apply 1 of 1 kind to 9 files"  # Names plans nothing here
+    assert [g["in_run"] for g in shown["groups"]] == [True, False]
+    assert next(r for r in shown["rows"] if r["path"] == str(ninth))["state"] == "out"
+    with qtbot.waitSignal(controller.jobs.ended, timeout=10_000):
+        controller.apply()
+    qtbot.waitUntil(lambda: not controller.planning)
+    assert controller.left_out.empty
+    assert [g["in_run"] for g in controller.review["groups"]] == [True, True]
+    assert all(r["state"] != "out" for r in controller.review["rows"])
+    assert ninth.read_bytes() == b"original"  # skipped this time, and planned again now
+
+
 def test_a_failed_check_leaves_the_original_and_is_worded(qapp: QApplication, qtbot: QtBot, tmp_path: Path) -> None:
     made = make_setup(qtbot, tmp_path, fail="S01E03")
     with qtbot.waitSignal(made.controller.jobs.ended, timeout=10_000):

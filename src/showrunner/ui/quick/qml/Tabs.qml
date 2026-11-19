@@ -3,7 +3,8 @@ import QtQuick.Controls.Basic
 import Showrunner
 
 // A row of tabs over a hairline. Each entry of `model` has a `key` and `label`, and may have `icon`, `count` (-1 for
-// none), `change` (false for a neutral count rather than an amber one) and `later` (a place that does not exist yet).
+// none), `change` (false for a neutral count rather than an amber one), `later` (a place that does not exist yet)
+// and `tip` (said under the tab on hover).
 Item {
     id: tabs
 
@@ -69,6 +70,11 @@ Item {
                     Accessible.role: Accessible.PageTab
                     Accessible.name: entry.modelData.label
                     onClicked: tabs.picked(entry.modelData.key)
+
+                    Tip {
+                        visible: tab.hovered && (entry.modelData.tip ?? "") !== ""
+                        text: entry.modelData.tip ?? ""
+                    }
 
                     background: Item {
                         Rectangle {

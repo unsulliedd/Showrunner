@@ -143,6 +143,7 @@ Rectangle {
             implicitHeight: Theme.row_sm
             iconName: "x"
             label: Strings.f("names.chip.remove", {"token": chip.token.label})
+            tip: Strings.t("tip.chip_remove")
             onClicked: app.rail_remove(chip.token.at)
         }
     }

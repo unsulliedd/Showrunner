@@ -49,6 +49,11 @@ Item {
         cursorShape: grip.active ? Qt.ClosedHandCursor : Qt.OpenHandCursor
     }
 
+    Tip {
+        visible: hover.hovered && !grip.active && grip.label !== ""
+        text: grip.label
+    }
+
     Icon {
         anchors.centerIn: parent
         name: "grip"

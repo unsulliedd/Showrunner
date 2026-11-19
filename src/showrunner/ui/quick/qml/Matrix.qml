@@ -235,6 +235,7 @@ Item {
                     implicitHeight: Theme.pill
                     iconName: "down"
                     label: Strings.t("tracks.names.open")
+                    tip: Strings.t("tip.names_open")
                     active: head.names !== null && head.names.opened && head.names.column === head.column.id
                     onClicked: head.names.toggle(headNames, head.column.id)
                 }
@@ -675,6 +676,12 @@ Item {
                 text: Strings.t("matrix.write_implied_flags")
                 Accessible.description: Strings.t("matrix.write_implied_flags_help")
                 onToggled: app.set_write_implied_flags(checked)
+
+                Tip {
+                    objectName: "impliedTip"
+                    visible: parent.hovered
+                    text: Strings.t("matrix.write_implied_flags_help")
+                }
             }
 
             PlaceMark {
@@ -690,6 +697,18 @@ Item {
                 Layout.alignment: Qt.AlignVCenter
                 topic: "first_kept"
             }
+        }
+
+        // Under the legend, not in its row: beside the switch it would squeeze the legend into a column.
+        UiText {
+            objectName: "impliedNothing"
+            Layout.fillWidth: true
+            visible: app.implied_nothing
+            text: Strings.t("matrix.implied_nothing")
+            color: Theme.muted
+            font.pixelSize: Theme.text_sm
+            horizontalAlignment: Text.AlignRight
+            wrapMode: Text.WordWrap
         }
 
         UiText {
