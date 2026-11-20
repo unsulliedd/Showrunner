@@ -27,14 +27,23 @@ _VARIANT = re.compile(r"[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}")
 # Codes of languages babelfish lacks (mostly ISO 639-5 collective codes) and their names, given by the app when a
 # program that lists them is installed. A code finds them, never a name, so a word of a file name is no language.
 _extra: dict[str, str] = {}
+_given = 0  # how often `add_languages` ran
 
 
 def add_languages(extra: Mapping[str, str]) -> None:
     """Make the codes of `extra` (code to English name) valid languages, in place of any given before."""
+    global _given
     _extra.clear()
     _extra.update({code: name for code, name in extra.items() if code not in _LANGUAGE_CODES})
+    _given += 1
     languages.cache_clear()
     _parse.cache_clear()
+
+
+def languages_given() -> int:
+    """How often the extra languages were given: what a code parses to may differ after each, so a result kept from
+    parsing codes holds only while this stays the same."""
+    return _given
 
 
 @dataclass(frozen=True, slots=True)

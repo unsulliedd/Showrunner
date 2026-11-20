@@ -131,13 +131,13 @@ Item {
                 }
 
                 UiText {
-                    text: app.jobs.view.count || ""
+                    text: app.jobs.count
                     color: Theme.muted
                 }
 
                 ProgressLine {
                     Layout.preferredWidth: Theme.progress_width
-                    value: app.jobs.view.fraction || 0
+                    value: app.jobs.fraction
                 }
             }
         }

@@ -342,10 +342,19 @@ class Jobs(QObject):
         self._now = now
         self._runner: JobRunner | None = None
         self._progress: JobProgress | None = None
+        # What `view` gives until the next change: every progress tick of a remux is a change, and the drawer, the top
+        # bar, the status bar and the queue each read the view, which holds a row per file.
+        self._view: dict[str, Any] | None = None
         self._offers: list[tuple[JobSummary, bool]] = []  # (job, can be resumed)
         self._timer = QTimer(self)
         self._timer.setInterval(REFRESH_MS)
-        self._timer.timeout.connect(self.changed)
+        self._timer.timeout.connect(self._changed)
+        # Progress reports that wait together, as while the GUI thread is busy, are drawn once: a timer of 0 ms fires
+        # once the events already waiting are handled.
+        self._reported = QTimer(self)
+        self._reported.setSingleShot(True)
+        self._reported.setInterval(0)
+        self._reported.timeout.connect(self._changed)
 
     # Running
 
@@ -369,6 +378,7 @@ class Jobs(QObject):
         job = self.store.load(job_id)
         stages, read = self._pipeline()
         self._progress = JobProgress(job, name, datetime.now(), self._names, queued=queued)
+        self._view = None  # `started` is heard before `_changed`
         runner = JobRunner(self.store, stages, read, self)
         # Bound methods: the runner emits from the pool thread, and Qt queues each signal to this object's thread.
         runner.step_changed.connect(self._on_step)
@@ -379,7 +389,7 @@ class Jobs(QObject):
         runner.start(job_id)
         self._timer.start()
         self.started.emit()
-        self.changed.emit()
+        self._changed()
 
     @Slot()
     def cancel(self) -> None:
@@ -399,12 +409,13 @@ class Jobs(QObject):
     def _on_step(self, record: StepRecord) -> None:
         if self._progress is not None:
             self._progress.step_changed(record, self._now())
-            self.changed.emit()
+            self._changed()
 
     def _on_fraction(self, path: Path, stage: str, fraction: float) -> None:
         if self._progress is not None:
             self._progress.step_progress(path, stage, fraction)
-            self.changed.emit()
+            if not self._reported.isActive():  # a restart would put the drawing off for as long as reports come
+                self._reported.start()
 
     def _on_finished(self, result: JobResult) -> None:
         if self._progress is not None:
@@ -422,7 +433,7 @@ class Jobs(QObject):
             self._runner.deleteLater()
         self._runner = None
         self._timer.stop()
-        self.changed.emit()
+        self._changed()
         self.ended.emit(result)
 
     @Slot()
@@ -430,7 +441,7 @@ class Jobs(QObject):
         """Take a finished job off the drawer."""
         if self._runner is None:
             self._progress = None
-            self.changed.emit()
+            self._changed()
 
     @Property(bool, notify=changed)
     def running(self) -> bool:
@@ -438,15 +449,33 @@ class Jobs(QObject):
 
     @Property("QVariantMap", notify=changed)
     def view(self) -> dict[str, Any]:
-        return self._progress.view(self._now()) if self._progress is not None else {}
+        if self._progress is None:
+            return {}
+        if self._view is None:
+            self._view = self._progress.view(self._now())
+        return self._view
+
+    def _changed(self) -> None:
+        """Every change of the job: the kept view is forgotten before anyone hears of it. A slot of `changed` would
+        come too late, as QML's bindings hear the signal first."""
+        self._view = None
+        self.changed.emit()
+
+    # The top bar's part of the view on their own: QML converts the whole view, a row per file, on each read of it.
+    @Property(str, notify=changed)
+    def count(self) -> str:
+        return self.view.get("count", "")
+
+    @Property(float, notify=changed)
+    def fraction(self) -> float:
+        return self.view.get("fraction", 0.0)
 
     @Property(str, notify=changed)
     def status(self) -> str:
         """The status bar's "Applying Season 1 · 4 of 10"."""
         if self._progress is None or self._runner is None:
             return ""
-        view = self._progress.view(self._now())
-        return tr("jobs.status", title=self._progress.name, count=view["count"])
+        return tr("jobs.status", title=self._progress.name, count=self.view["count"])
 
     # Unfinished jobs from an earlier run
 

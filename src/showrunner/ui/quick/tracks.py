@@ -676,14 +676,16 @@ class BatchView:
 
     def rows(self) -> list[dict[str, object]]:
         kinds = [c.signature.kind for c in self.cols]
+        codes = [_shown_code(col.signature, self.choice(index)) for index, col in enumerate(self.cols)]
         rows = []
         for item in self.items:
             cells = self.cells(item)
             pills = [
-                {**c, "code": _shown_code(col.signature, self.choice(index)), "added": col.paired is not None}
-                for index, (c, col) in enumerate(zip(cells, self.cols, strict=True))
+                {**c, "code": code, "added": col.paired is not None}
+                for c, col, code in zip(cells, self.cols, codes, strict=True)
                 if c["state"] not in ("missing", "paired")
             ]
+            pill_kinds = _pill_kinds(cells, kinds)
             changes = self.changes(item)
             rows.append(
                 {
@@ -691,11 +693,8 @@ class BatchView:
                     "number": item_number(item),
                     "title": item_title(item),
                     "file": item.file.path.stem,
-                    "cells": cells,
-                    "audio": [p for p, k in zip(pills, _pill_kinds(cells, kinds), strict=True) if k is TrackKind.AUDIO],
-                    "subtitles": [
-                        p for p, k in zip(pills, _pill_kinds(cells, kinds), strict=True) if k is TrackKind.SUBTITLE
-                    ],
+                    "audio": [p for p, k in zip(pills, pill_kinds, strict=True) if k is TrackKind.AUDIO],
+                    "subtitles": [p for p, k in zip(pills, pill_kinds, strict=True) if k is TrackKind.SUBTITLE],
                     "changes": changes,
                     "changes_text": tr_plural("tracks.changes", changes)
                     if changes
@@ -728,8 +727,7 @@ class BatchView:
         if file is not None and file.outcome is FileOutcome.UNWRITTEN:
             return tr("tracks.warning.unwritten")
         tracks = seen(item, file)
-        firsts = _first_defaults(self.options, self.cols)
-        for kind, first in firsts.items():
+        for kind, first in self.firsts.items():
             if any(self.grouping.signature(s.track) == first for s in tracks if s.external is None):
                 continue
             column = next(c for c in self.cols if c.signature == first)

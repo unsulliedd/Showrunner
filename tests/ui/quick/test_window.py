@@ -6,6 +6,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
 from PySide6.QtCore import QByteArray, QUrl
 from PySide6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
@@ -16,6 +17,7 @@ from showrunner.app.profiles.store import ProfileStore
 from showrunner.app.settings.app_settings import load_settings, save_settings
 from showrunner.app.storage.paths import workspace_path
 from showrunner.tools.probe import Programs
+from showrunner.ui.quick import window
 from showrunner.ui.quick.library import KIND, LABEL, NUMBER, PROBLEM, ROW_ID, SUMMARY
 from showrunner.ui.quick.window import WindowController, local_paths
 
@@ -73,7 +75,7 @@ def test_an_episode_opens_its_own_place(controller: WindowController, library: L
     assert controller.batch_kind == "episode"
     assert controller.batch["over"] == "Show Name (2020) · Season 1"
     assert controller.batch["title"] == "Episode Three"
-    assert len(controller.matrix["rows"]) == 1
+    assert len(controller.overview["rows"]) == 1
     assert controller.selected == str(library.items[2].file.path)
     assert controller.selected_index.isValid()
     assert controller.side_tabs("overview") == [
@@ -97,6 +99,24 @@ def test_groups_open_their_batch(controller: WindowController, library: Library)
     assert controller.batch_kind == "movie"
     controller.select(movie.parent())
     assert (controller.batch_kind, controller.batch["title"]) == ("movies", "Movies")
+
+
+def test_the_header_is_built_once_per_selection(
+    controller: WindowController, library: Library, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built: list[str] = []
+    heading = window.heading
+    monkeypatch.setattr(window, "heading", lambda key, items: (built.append(key.kind.value), heading(key, items))[1])
+    controller.model.set_library(library)
+    season = controller.tree.index_of(str(library.items[0].file.path)).parent()
+    controller.select(season)
+    first = controller.batch
+    controller.toggle_keep(2)  # an edit: QML reads the header again, which stays as it was
+    assert controller.batch == first
+    assert built.count("season") == 1
+    controller.select(season.parent())
+    assert controller.batch["title"] == "Show Name (2020)"
+    assert built.count("show") == 1
 
 
 def test_the_pill_switches_the_selected_batch(controller: WindowController, library: Library) -> None:

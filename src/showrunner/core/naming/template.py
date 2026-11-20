@@ -17,6 +17,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import lru_cache
 
 from showrunner.core.naming.custom import CustomKind, CustomToken, PatternSource
 from showrunner.core.naming.tokens import TOKENS, NamingContext
@@ -103,6 +104,8 @@ def preview(template: str, context: NamingContext) -> Preview:
     return parse(template).render(context)
 
 
+# A plan renders the same few templates for every file and track; the parsed template is immutable, so it is shared.
+@lru_cache(maxsize=256)
 def parse(text: str) -> Template:
     problems: list[Problem] = []
     # Open groups as (position of its `[`, its nodes); the first entry is the template itself.

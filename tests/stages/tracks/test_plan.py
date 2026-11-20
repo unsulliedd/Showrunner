@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from showrunner.core.language import add_languages
 from showrunner.core.media import MediaItem, SubtitleFile
 from showrunner.core.track import ObjectAudio
 from showrunner.stages.tracks import (
@@ -327,3 +328,28 @@ def test_a_rule_drops_a_subtitle_by_where_it_comes_from(
     drop = TrackRule(match=TrackMatch(kind=KindTest.SUBTITLE, languages=["tr"], source=source), verdict=Verdict.DROP)
     plan = planned(plan_tracks(media, adding(media, options(drop))))
     assert kept_ids(plan) == left
+
+
+def test_the_same_item_and_options_give_the_last_plan_again_and_other_options_a_new_one(b: SimpleNamespace) -> None:
+    media = b.item(b.video(), b.audio(1, language=b.en), b.audio(2, language=b.tr))
+    chosen = options(drop(languages=["tr"]))
+    first = plan_tracks(media, chosen)
+    # The stages of one file's plan ask again with the same objects: the plan is not made again.
+    assert plan_tracks(media, chosen) is first
+    # Equal options in another object, and other options, are planned anew.
+    again = plan_tracks(media, replace(chosen))
+    assert again is not first
+    assert again == first
+    assert kept_ids(planned(plan_tracks(media, options(drop(languages=["en"]))))) == [0, 2]
+
+
+def test_a_plan_is_made_again_once_other_languages_are_known(b: SimpleNamespace) -> None:
+    media = b.item(b.video(), b.audio(1, language=b.en))
+    chosen = options(drop(languages=["roa"]))
+    first = plan_tracks(media, chosen)
+    # A code the rule names may mean a language only once a program has listed it.
+    add_languages({"roa": "Romance languages"})
+    try:
+        assert plan_tracks(media, chosen) is not first
+    finally:
+        add_languages({})

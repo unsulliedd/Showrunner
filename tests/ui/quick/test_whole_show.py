@@ -28,7 +28,7 @@ from showrunner.core.track import (
 )
 from showrunner.ui.quick.window import WindowController
 
-from .conftest import GB
+from .conftest import GB, cells
 from .test_choices import settle
 from .test_qml import _click, _item, _items, _open_lists
 
@@ -104,8 +104,8 @@ def label(index: int) -> str:
 
 
 def tracks_kept(controller: WindowController) -> list[list[str]]:
-    """Per file, the state of each column's tracks as Overview's rows have them."""
-    return [[cell["state"] for cell in row["cells"]] for row in controller.overview["rows"]]
+    """Per file, the state of each column's tracks."""
+    return [[cell["state"] for cell in row] for row in cells(controller)]
 
 
 def test_a_chip_drops_at_once_and_keeps_saying_so_where_the_plan_keeps_the_track(

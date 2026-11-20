@@ -152,6 +152,13 @@ def program_statuses() -> dict[str, DependencyStatus]:
     }
 
 
+def cells(controller: WindowController) -> list[list[dict[str, Any]]]:
+    """Per file of the batch, what each track column holds for it, as the views build their marks from."""
+    view = controller._view
+    assert view is not None
+    return [view.cells(item) for item in view.items]
+
+
 @pytest.fixture
 def library() -> Library:
     return neutral_library()

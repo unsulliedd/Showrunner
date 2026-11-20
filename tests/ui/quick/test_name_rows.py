@@ -16,7 +16,7 @@ from showrunner.app.library.library import Library
 from showrunner.core.media import Episode
 from showrunner.ui.quick.window import WindowController
 
-from .conftest import neutral_library
+from .conftest import cells, neutral_library
 from .test_choices import COMMENTARY, ENGLISH, TURKISH, open_season, rules, settle
 
 DIRECTOR = "Commentary with the director"
@@ -40,7 +40,7 @@ def library() -> Library:
 
 
 def states(controller: WindowController, column: int = COMMENTARY) -> list[str]:
-    return [str(row["cells"][column]["state"]) for row in controller.matrix["rows"]]
+    return [str(row[column]["state"]) for row in cells(controller)]
 
 
 def name_rows(controller: WindowController, column: int = COMMENTARY) -> list[dict[str, Any]]:
@@ -232,7 +232,7 @@ def test_a_name_rule_changes_no_flag_of_the_chip(controller: WindowController, l
     assert (rule.default.value, rule.forced.value) == ("leave", "leave")
     settle(controller, qtbot)
     # The stars stay where they were in every file; only the commentary of the first three files is dropped.
-    assert [row["cells"][ENGLISH]["default"] for row in controller.matrix["rows"]] == [True] * 10
+    assert [row[ENGLISH]["default"] for row in cells(controller)] == [True] * 10
     assert states(controller) == ["dropped"] * 3 + ["kept"] * 7
 
 

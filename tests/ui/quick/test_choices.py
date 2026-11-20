@@ -16,6 +16,8 @@ from showrunner.stages.tracks import Verdict
 from showrunner.ui.quick.library import PLANNED
 from showrunner.ui.quick.window import WindowController
 
+from .conftest import cells
+
 ENGLISH, TURKISH, COMMENTARY, STEREO, SDH, ENGLISH_SUBS, FORCED, SRT = range(8)
 
 
@@ -72,7 +74,7 @@ def test_a_show_s_choice_reaches_its_season_and_episode_marked_and_each_can_over
     assert [r["inherited"] for r in controller.rules] == [False]
     assert rules(controller) == ["Leave audio in ENG Dolby Digital 2.0 flagged commentary as it is"]
     assert controller.matrix["headers"][COMMENTARY]["short"] == "Own choice"
-    assert all(row["cells"][COMMENTARY]["state"] == "kept" for row in controller.matrix["rows"])
+    assert all(row[COMMENTARY]["state"] == "kept" for row in cells(controller))
     # One episode: its own place, which follows the season and can drop the track for itself alone.
     controller.select(controller.tree.index_of(str(library.items[2].file.path)))
     settle(controller, qtbot)
@@ -86,7 +88,7 @@ def test_a_show_s_choice_reaches_its_season_and_episode_marked_and_each_can_over
     assert controller.matrix["headers"][at]["over"] == "Overrides the season"
     controller.select(season)
     settle(controller, qtbot)
-    states = [row["cells"][COMMENTARY]["state"] for row in controller.matrix["rows"]]
+    states = [row[COMMENTARY]["state"] for row in cells(controller)]
     assert states[2] == "dropped"
     assert states.count("dropped") == 1
 
@@ -273,7 +275,7 @@ def test_a_drop_the_plan_refuses_is_undone_by_a_second_click(
     header = controller.matrix["headers"][STEREO]
     assert header["state"] == "dropped"
     assert header["count"].endswith("not dropped in 1 file")
-    assert all(row["cells"][STEREO]["state"] != "dropped" for row in controller.matrix["rows"])
+    assert all(row[STEREO]["state"] != "dropped" for row in cells(controller))
     controller.toggle_keep(STEREO)
     settle(controller, qtbot)
     assert rules(controller) == [

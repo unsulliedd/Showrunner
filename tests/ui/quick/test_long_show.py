@@ -139,9 +139,9 @@ def test_long_lists_show_a_scrollbar_and_keep_their_place(controller: WindowCont
     tree = root.findChild(QQuickItem, "libraryTree")
     QMetaObject.invokeMethod(tree, "expandRecursively", Q_ARG(int, -1), Q_ARG(int, -1))
     rows = root.findChild(QQuickItem, "overviewRows")
-    qtbot.wait(50)
+    # Expanding 300 rows is laid out over a few frames, more of them on a busy machine.
     for view in (tree, rows):
-        assert [bar.isVisible() for bar in _bars(view)] == [True], view.objectName()
+        qtbot.waitUntil(lambda view=view: [bar.isVisible() for bar in _bars(view)] == [True], timeout=5_000)
     rows.setProperty("contentY", 3000.0)
     controller.toggle_keep(COMMENTARY)  # a choice gives Overview new rows of the same batch
     settle(controller, qtbot)

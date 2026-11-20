@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 
+from showrunner.core.language import languages_given
 from showrunner.core.media import MediaItem, SubtitleFile
 from showrunner.core.naming.names import channel_layout, codec_display
 from showrunner.core.track import ObjectAudio, SubtitleProperties, Track, TrackFlags, TrackKind
@@ -56,6 +58,8 @@ class PlannedTrack:
     @property
     def flags(self) -> TrackFlags:
         """The flags after the changes."""
+        if not self.flag_changes:
+            return self.track.flags
         return replace(self.track.flags, **{change.flag.value: change.value for change in self.flag_changes})
 
 
@@ -112,6 +116,21 @@ def describe_track(track: Track) -> str:
 
 def plan_tracks(item: MediaItem, options: TracksOptions) -> TrackPlan | PlanRefused:
     """Apply the rules to the tracks of the file and to the paired subtitle files chosen to be added."""
+    # Each stage of one file's plan asks for its track plan again, with the same item and the same options; the plan
+    # is immutable and depends on nothing else but the languages known, so the last one made on this thread is given
+    # again. Options are replaced, never edited.
+    last, given = getattr(_last, "plan", None), languages_given()
+    if last is not None and last[0] is item and last[1] is options and last[2] == given:
+        return last[3]
+    plan = _plan_tracks(item, options)
+    _last.plan = (item, options, given, plan)
+    return plan
+
+
+_last = threading.local()  # the last track plan of each thread, with what it was made of
+
+
+def _plan_tracks(item: MediaItem, options: TracksOptions) -> TrackPlan | PlanRefused:
     entries: list[tuple[Track, SubtitleFile | None]] = [(track, None) for track in item.file.tracks]
     # A stand-in keeps the number of its place among all paired files, so a choice on one file renumbers no other.
     entries += [

@@ -253,6 +253,29 @@ def test_the_batch_is_locked_while_its_job_runs_and_others_stay_open(setup: Setu
     qtbot.waitUntil(lambda: not controller.jobs.running, timeout=10_000)
 
 
+def test_the_job_view_is_built_once_per_change_and_the_top_bar_reads_its_parts(setup: Setup, qtbot: QtBot) -> None:
+    controller = setup.controller
+    setup.hold.clear()
+    controller.apply()
+    qtbot.waitUntil(lambda: controller.jobs.running and controller.jobs.view["rows"][0]["phases"][0]["percent"] == 50)
+    jobs = controller.jobs
+    view = jobs.view
+    # Every reader of one change shares one view, a row per file; the next change builds it anew, also for a reader
+    # that hears of it first, as QML's bindings do.
+    assert jobs.view is view
+    assert (jobs.count, jobs.fraction) == (view["count"], view["fraction"])
+    heard: list[dict] = []
+    jobs.changed.connect(lambda: heard.append(jobs.view))
+    with qtbot.waitSignal(jobs.changed, timeout=5_000):  # the clock's tick
+        pass
+    assert heard[0] is not view
+    assert heard[0]["rows"][0]["phases"] == view["rows"][0]["phases"]
+    setup.hold.set()
+    qtbot.waitUntil(lambda: not jobs.running, timeout=10_000)
+    assert heard[-1]["rows"][0]["state"] == "done"
+    assert jobs.count == jobs.view["count"]
+
+
 def test_cancel_stops_mid_step_and_the_job_is_offered_at_the_next_start(
     setup: Setup, qapp: QApplication, qtbot: QtBot, tmp_path: Path
 ) -> None:
@@ -394,3 +417,20 @@ def test_a_real_file_is_remuxed_checked_and_its_original_kept(
     qtbot.waitUntil(lambda: not controller.planning)
     assert controller.change_count == 0
     controller.deleteLater()
+
+
+def test_progress_reports_that_wait_together_are_drawn_once(setup: Setup, qtbot: QtBot) -> None:
+    controller = setup.controller
+    setup.hold.clear()
+    controller.apply()
+    qtbot.waitUntil(lambda: controller.jobs.running and controller.jobs.view["rows"][0]["phases"][0]["percent"] == 50)
+    jobs = controller.jobs
+    heard: list[int] = []
+    jobs.changed.connect(lambda: heard.append(jobs.view["rows"][0]["phases"][0]["percent"]))
+    path = setup.season[0]
+    for fraction in (0.6, 0.7, 0.8):  # as the pool thread's reports wait while the GUI thread is busy
+        jobs._on_fraction(path, "mux", fraction)
+    qtbot.waitUntil(lambda: bool(heard))
+    assert heard[0] == 80  # not 60, then 70: the three reports were drawn as one
+    setup.hold.set()
+    qtbot.waitUntil(lambda: not jobs.running, timeout=10_000)

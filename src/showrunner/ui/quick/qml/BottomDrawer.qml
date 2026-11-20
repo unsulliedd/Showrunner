@@ -49,7 +49,8 @@ Panel {
             objectName: "jobsPanel"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: drawer.tab === "jobs" && app.jobs.view.title !== undefined
+            // Its own copy of the view: each read of `app.jobs.view` converts every file's row.
+            visible: drawer.tab === "jobs" && jobsPanel.job.title !== undefined
         }
 
         QueuePanel {

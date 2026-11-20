@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QApplication
 from showrunner.app.library.library import Library, LibraryLoad, Mark
 from showrunner.core.media import Episode, Extra, MediaItem
 from showrunner.ui.i18n.catalog import tr
-from showrunner.ui.library.model import Kind, LibraryModel
+from showrunner.ui.library.model import DOT_ROLE, Kind, LibraryModel
 
 
 @pytest.fixture
@@ -28,6 +28,17 @@ def rows(model: LibraryModel, parent: QModelIndex | None = None) -> list[tuple[s
         index = model.index(row, 0, parent)
         found.append((index.data(), model.index(row, 1, parent).data(), model.mark(index)))
         found += rows(model, index)
+    return found
+
+
+def parent_names(model: LibraryModel, parent: QModelIndex | None = None) -> list[str]:
+    """The names of the rows that have rows below them, under `parent`."""
+    parent = QModelIndex() if parent is None else parent
+    found = []
+    for row in range(model.rowCount(parent)):
+        index = model.index(row, 0, parent)
+        if model.rowCount(index):
+            found += [index.data(), *parent_names(model, index)]
     return found
 
 
@@ -184,3 +195,19 @@ def test_extras_follow_the_seasons_in_their_own_group_and_count_in_the_show(
     assert model.kind(leaf).is_video
     assert model.path(leaf) == Path("lib/Alpha/Bloopers.mkv")
     assert [p.name for p in model.video_paths(alpha)][-2:] == ["Bloopers.mkv", "Making Of.mkv"]
+
+
+def test_plan_dots_reach_every_parent_and_each_parent_is_summed_once(
+    model: LibraryModel, sample_library: Library, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    summed: list[str] = []
+    sum_up = model._sum_up
+    monkeypatch.setattr(model, "_sum_up", lambda parent: (summed.append(parent.text()), sum_up(parent)))
+    second_season = index_of(model, sample_library, "S02E01")
+    model.set_plan_marks({model.path(second_season): "control"})
+    season, show = second_season.parent(), second_season.parent().parent()
+    # The planned dot reaches its season; the show shows the worst of its rows, the unsure episode of season 1.
+    assert (season.data(DOT_ROLE), show.data(DOT_ROLE)) == ("control", "accent_ink")
+    assert sorted(summed) == sorted(parent_names(model))
+    model.set_plan_marks({})
+    assert season.data(DOT_ROLE) is None

@@ -98,7 +98,8 @@ class LibraryModel(QStandardItemModel):
         """Dots from a preview, by video path; an empty dict clears them."""
         self._plan = dict(marks)
         for path in self._order:
-            self._refresh_dot(path)
+            self._refresh_dot(path, bubble=False)
+        self._bubble_all(self._videos[path] for path in self._order)
         self.marks_changed.emit()
 
     def set_excluded(self, paths: Iterable[Path]) -> None:
@@ -106,8 +107,10 @@ class LibraryModel(QStandardItemModel):
         paths = frozenset(paths)
         changed = self._excluded ^ paths
         self._excluded = paths
-        for path in changed & self._videos.keys():
-            self._refresh_dot(path)
+        shown = changed & self._videos.keys()
+        for path in shown:
+            self._refresh_dot(path, bubble=False)
+        self._bubble_all(self._videos[path] for path in shown)
         if changed:
             self.marks_changed.emit()
 
@@ -249,8 +252,20 @@ class LibraryModel(QStandardItemModel):
         """Give each ancestor of `cell` the worst mark and the worst dot among its rows."""
         parent = cell.parent()
         while parent is not None:
-            marks = (Mark(parent.child(row, NAME_COLUMN).data(MARK_ROLE)) for row in range(parent.rowCount()))
-            self._set_mark(parent, max(marks, default=Mark.NONE))
-            dots = [parent.child(row, NAME_COLUMN).data(DOT_ROLE) for row in range(parent.rowCount())]
-            self._set_dot(parent, max(dots, key=lambda d: DOT_RANK.get(d, 0), default=None))
+            self._sum_up(parent)
             parent = parent.parent()
+
+    def _bubble_all(self, cells: Iterable[QStandardItem]) -> None:
+        """`_bubble_up` for many cells, each ancestor summed up once per level it is found at rather than once per
+        cell below it: an ancestor's last sum comes after every row below it was summed for the last time."""
+        level = {id(p): p for cell in cells if (p := cell.parent()) is not None}
+        while level:
+            for parent in level.values():
+                self._sum_up(parent)
+            level = {id(p): p for parent in level.values() if (p := parent.parent()) is not None}
+
+    def _sum_up(self, parent: QStandardItem) -> None:
+        marks = (Mark(parent.child(row, NAME_COLUMN).data(MARK_ROLE)) for row in range(parent.rowCount()))
+        self._set_mark(parent, max(marks, default=Mark.NONE))
+        dots = [parent.child(row, NAME_COLUMN).data(DOT_ROLE) for row in range(parent.rowCount())]
+        self._set_dot(parent, max(dots, key=lambda d: DOT_RANK.get(d, 0), default=None))

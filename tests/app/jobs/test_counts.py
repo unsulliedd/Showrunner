@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from showrunner.app.jobs.counts import count_changes, implied_flags, tab_counts, track_changes
+from showrunner.app.jobs.counts import count_changes, file_parts, implied_flags, tab_counts, track_changes
 from showrunner.app.jobs.groups import ChangeGroup
 from showrunner.app.jobs.preview import preview
 from showrunner.app.jobs.stages import MetadataStage, TracksStage
@@ -139,3 +139,14 @@ def test_a_tab_counts_only_what_it_shows(profile: Profile) -> None:
     plain = planned.with_options("metadata", replace(implied, write_implied_flags=False))
     (file,) = preview([item], plain, STAGES, stamped=False).files
     assert (tab_counts(file), implied_flags(file)) == ({"tracks": 1, "names": 3}, 0)
+
+
+def test_a_file_is_counted_once_per_plan_and_its_parts_add_up_to_the_groups(profile: Profile) -> None:
+    turkish_audio = in_language(KindTest.AUDIO, "tr", default=FlagShape.FIRST)
+    (file,) = preview([ITEM], profile.with_options("tracks", rules(turkish_audio)), STAGES, stamped=False).files
+    parts = file_parts(file)
+    assert file_parts(file) is parts
+    assert sum(parts.values()) == sum(count_changes(file).values())
+    # Another plan of the same file is counted for itself: without the rule no default moves.
+    (other,) = preview([ITEM], profile, STAGES, stamped=False).files
+    assert (parts["flags"], file_parts(other)["flags"]) == (1, 0)

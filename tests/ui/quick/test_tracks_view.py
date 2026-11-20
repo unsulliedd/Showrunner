@@ -142,13 +142,14 @@ def test_before_the_plan_arrives_the_files_show_their_tracks_as_they_are(season:
     unplanned = view(season, chosen(season), planned=False)
     # The chip shows the choice at once; the files, and the count of files that keep the track, wait for the plan.
     assert unplanned.headers()[COMMENTARY]["state"] == "dropped"
-    assert all(row["cells"][COMMENTARY]["state"] == "kept" for row in unplanned.rows())
+    assert all(unplanned.cells(item)[COMMENTARY]["state"] == "kept" for item in season)
     assert unplanned.headers()[COMMENTARY]["count"] == ""
     assert unplanned.rows()[0]["changes"] == 0
 
 
 def test_rows_carry_pills_changes_and_the_fallback_warning(season: list[MediaItem]) -> None:
-    rows = view(season, chosen(season)).rows()
+    built = view(season, chosen(season))
+    rows = built.rows()
     third, seventh = rows[2], rows[6]
     assert [(p["code"], p["state"], p["default"]) for p in third["audio"]] == [
         ("ENG", "kept", False),
@@ -159,9 +160,9 @@ def test_rows_carry_pills_changes_and_the_fallback_warning(season: list[MediaIte
     # A new file, the default audio and the default subtitles moving.
     assert (third["changes"], third["changes_text"], third["warning"]) == (3, "3 changes", "")
     assert seventh["warning"] == "No Turkish audio: English audio becomes the default"
-    assert seventh["cells"][ENGLISH]["fallback"] is True
-    assert third["cells"][ENGLISH]["fallback"] is False
-    assert seventh["cells"][TURKISH]["state"] == "missing"
+    assert built.cells(season[6])[ENGLISH]["fallback"] is True
+    assert built.cells(season[2])[ENGLISH]["fallback"] is False
+    assert built.cells(season[6])[TURKISH]["state"] == "missing"
 
 
 def test_rules_that_leave_no_audio_say_so_on_the_row(season: list[MediaItem]) -> None:

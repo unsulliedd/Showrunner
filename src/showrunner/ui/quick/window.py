@@ -79,7 +79,7 @@ from showrunner.tools.probe import probe
 from showrunner.ui.i18n.catalog import tr, tr_plural
 from showrunner.ui.library.model import Kind, LibraryModel
 from showrunner.ui.quick import names as rail
-from showrunner.ui.quick.facts import heading, video_summary, when
+from showrunner.ui.quick.facts import Heading, heading, video_summary, when
 from showrunner.ui.quick.jobs import Jobs
 from showrunner.ui.quick.languages import LanguagePicker
 from showrunner.ui.quick.library import LibraryTree
@@ -259,6 +259,7 @@ class WindowController(QObject):
         self._selected = ""  # the row id of the selected row
         self._key: BatchKey | None = None
         self._items: list[MediaItem] = []
+        self._head: tuple[BatchKey, list[MediaItem], Heading] | None = None  # see `_heading`
         self._focus: MediaItem | None = None  # the selected video inside the batch
         self._planner = LivePlanner(self)
         self._planner.planned.connect(self._on_planned)
@@ -722,8 +723,16 @@ class WindowController(QObject):
     def batch(self) -> dict[str, str]:
         if self._key is None:
             return {"over": "", "title": "", "facts": ""}
-        head = heading(self._key, self._items)
+        head = self._heading()
         return {"over": head.over, "title": head.title, "facts": head.facts}
+
+    def _heading(self) -> Heading:
+        """The open place's header, built once per selection: several bindings read it after every edit. A selection
+        sets a new list of items, never changes the list in place."""
+        assert self._key is not None
+        if self._head is None or self._head[0] != self._key or self._head[1] is not self._items:
+            self._head = (self._key, self._items, heading(self._key, self._items))
+        return self._head[2]
 
     @Property(int, notify=plans_changed)
     def change_count(self) -> int:
@@ -1441,11 +1450,11 @@ class WindowController(QObject):
 
     @Property("QVariantMap", notify=matrix_changed)
     def matrix(self) -> dict[str, Any]:
-        """The tracks as rows, each beside a strip of the files, and one row per file."""
+        """The tracks as rows, each beside a strip of the files."""
         headers = self._headers()
         view = self._view
         strip = self._part("strip", lambda: view.strip(headers)) if view is not None else _NO_STRIP
-        return {"headers": headers, "rows": self._rows(), "strip": strip}
+        return {"headers": headers, "strip": strip}
 
     @Slot(int, str, result=str)
     def cell_tip(self, column: int, path: str) -> str:
@@ -1687,7 +1696,7 @@ class WindowController(QObject):
                 template=self._template,
                 files=self._current_files(),
                 block=blocked_stages(profile).get("metadata"),
-                batch_title=heading(self._key, self._items).title,
+                batch_title=self._heading().title,
                 untagged=profile.for_stage("metadata").untagged_language,
                 profiles=self.batches.file_profiles(self._items, self._key),
             )
@@ -1803,7 +1812,7 @@ class WindowController(QObject):
                 self._shown["movie"] = {"video": video_summary(self._items[0]), "groups": groups}
             self._shown["review_input"] = given = self._review_input()
             self._shown["totals"] = totals(given)
-            self._shown["skipped"] = skipped(given)
+            self._shown["skipped"] = skipped(given, self._shown["totals"][0])
         self.plans_changed.emit()
         self.apply_changed.emit()
         self._signal_shown()

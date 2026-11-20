@@ -15,7 +15,7 @@ from pathlib import Path
 
 from showrunner.app.batches.batch import Media
 from showrunner.app.jobs.blocked import StageBlock, blocked_stages
-from showrunner.app.jobs.counts import name_parts, ruled_flags, track_changes
+from showrunner.app.jobs.counts import file_parts, ruled_flags
 from showrunner.app.jobs.groups import ChangeGroup
 from showrunner.app.jobs.preview import FileOutcome, FilePreview
 from showrunner.app.profiles.profile import Profile
@@ -82,19 +82,9 @@ def parts(file: FilePreview | None) -> dict[str, int]:
     """A file's changes by kind: the new file, its track order and the flags the rules move (Tracks and new files),
     then titles, track names, languages and the flags a name implies (Names and flags). They add up to
     `count_changes`."""
-    found = dict.fromkeys((key for keys in LINES.values() for key in keys), 0)
     if file is None:
-        return found
-    stage = file.plan_for("tracks")
-    tracks = stage.plan if stage is not None and isinstance(stage.plan, TrackPlan) else None
-    if tracks is not None:
-        found["new_file"] = int(tracks.needs_remux)
-        found["order"] = int(tracks.reordered)
-        found["flags"] = track_changes(tracks) - found["new_file"] - found["order"]
-    stage = file.plan_for("metadata")
-    if stage is not None and isinstance(stage.plan, MetadataPlan):
-        found.update(name_parts(stage.plan, tracks))
-    return found
+        return dict.fromkeys((key for keys in LINES.values() for key in keys), 0)
+    return dict(file_parts(file))
 
 
 def _group_count(found: dict[str, int], group: ChangeGroup) -> int:
@@ -119,8 +109,9 @@ def totals(given: ReviewInput) -> tuple[int, int]:
     return sum(per_file), sum(n > 0 for n in per_file)
 
 
-def skipped(given: ReviewInput) -> int:
-    """The planned changes this run leaves out with its unticked kinds and files; they stay planned."""
+def skipped(given: ReviewInput, written: int) -> int:
+    """The planned changes this run leaves out with its unticked kinds and files; they stay planned. `written` is
+    what Apply writes, the first of `totals`."""
     if not given.run:
         return 0
     full = _by_path(given.full)
@@ -129,7 +120,7 @@ def skipped(given: ReviewInput) -> int:
         for i in given.items
         if i.file.path not in given.excluded and (f := full.get(i.file.path)) is not None and f.writes
     )
-    return max(planned - totals(given)[0], 0)
+    return max(planned - written, 0)
 
 
 def review(given: ReviewInput) -> dict[str, object]:
