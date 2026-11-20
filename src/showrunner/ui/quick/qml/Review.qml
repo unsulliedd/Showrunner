@@ -230,18 +230,53 @@ Item {
                 readonly property string firstPath: (place.review.rows || []).length > 0 ? (place.review.rows || [])[0].path : ""
                 onFirstPathChanged: positionViewAtBeginning()
 
-                delegate: ReviewFile {
+                delegate: Column {
+                    id: entry
+
                     required property int index
                     readonly property var modelData: place.review.rows[index]
 
                     width: files.width
-                    file: modelData
-                    expanded: place.opened[modelData.path] ?? expandAll.open
-                    locked: app.locked
-                    onToggled: {
-                        const next = Object.assign({}, place.opened)
-                        next[modelData.path] = !expanded
-                        place.opened = next
+                    spacing: Theme.space_sm
+
+                    // A season's divider above the first of its episodes: its name between two rules.
+                    RowLayout {
+                        objectName: "seasonDivider"
+                        width: parent.width
+                        height: Theme.row_sm
+                        visible: entry.modelData.season !== ""
+                        spacing: Theme.space_sm
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: Theme.stroke
+                            color: Theme.line
+                        }
+
+                        UiText {
+                            text: entry.modelData.season
+                            color: Theme.muted
+                            font.pixelSize: Theme.text_xs
+                            font.weight: Font.DemiBold
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: Theme.stroke
+                            color: Theme.line
+                        }
+                    }
+
+                    ReviewFile {
+                        width: parent.width
+                        file: entry.modelData
+                        expanded: place.opened[entry.modelData.path] ?? expandAll.open
+                        locked: app.locked
+                        onToggled: {
+                            const next = Object.assign({}, place.opened)
+                            next[entry.modelData.path] = !expanded
+                            place.opened = next
+                        }
                     }
                 }
 

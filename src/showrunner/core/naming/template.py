@@ -3,6 +3,11 @@
 Syntax: `{token}`, `{token:00}` (zero padding, numbers only), `[optional group]`, and a backslash before
 any character to write it literally. A group is left out when a token directly inside it is empty.
 
+A template is a row of pieces: tokens, separators and typed text. The join character the template chose goes in
+by itself between two neighbouring pieces when the left one joins after it and the right one joins before it. A token
+joins on both sides, typed text on neither (it stays attached to what is next to it), and a separator has its own
+sides, see `SEPARATORS`. A space typed in the template is a space of the name, so it becomes the join character too.
+
 To write a literal `{`, `}`, `[` or `]`, put a backslash before it: `\\{`, `\\}`, `\\[`, `\\]`. A literal
 backslash is `\\\\`. Brackets cannot be doubled instead, since `[[` opens a group inside a group.
 
@@ -38,6 +43,7 @@ class ProblemKind(StrEnum):
     BAD_PATTERN = "bad-pattern"  # detail: the regular expression error
     PATTERN_WITHOUT_GROUP = "pattern-without-group"
     SHADOWS_BUILTIN = "shadows-builtin"  # detail: the name; the built-in is used
+    NOT_HERE = "not-here"  # detail: the name; a token the template it is typed in cannot use
     INVALID_NAME = "invalid-name"  # definitions only
     DUPLICATE_NAME = "duplicate-name"  # definitions only; the first definition is used
 
@@ -67,19 +73,53 @@ class _Group:
 
 type _Node = str | _Field | _Group
 
-# Parentheses left empty or padded by an empty token inside them.
+# The separators: the characters a template holds as separator chips, and whether the join character goes before and
+# after each. A run of literal text made of these characters only is one separator per character; a run with any other
+# character in it, a space included, is typed text.
+SEPARATORS: dict[str, tuple[bool, bool]] = {
+    "-": (True, True),
+    ".": (False, False),
+    "_": (False, False),
+    "(": (True, False),
+    "[": (True, False),
+    "{": (True, False),
+    ")": (False, True),
+    "]": (False, True),
+    "}": (False, True),
+}
+
+# What one piece writes and whether the join character may go before it and after it.
+type _Atom = tuple[str, bool, bool]
+# Stands where a token had no value or a group was left out, so that separators around it can see something was there.
+_NOTHING: _Atom = ("", False, False)
+_CLOSERS = {")": "(", "]": "[", "}": "{"}
+
+
+def separators_in(text: str) -> bool:
+    """Whether the literal `text` is made of separators alone."""
+    return bool(text) and all(char in SEPARATORS for char in text)
+
+
+# A typed space is written as this stand-in until the name is tidied, so that the join character the template
+# chose replaces it afterwards, and two spaces left side by side by an empty token still make one.
+_GAP = "\ue000"
+_BLANK = rf"[\s{_GAP}]"
+
+# Parentheses left empty or padded by an empty token inside them; blanks left side by side become one.
 _TIDY = (
-    (re.compile(r"\(\s+"), "("),
-    (re.compile(r"\s+\)"), ")"),
+    (re.compile(rf"\({_BLANK}+"), "("),
+    (re.compile(rf"{_BLANK}+\)"), ")"),
     (re.compile(r"\(\)"), ""),
-    (re.compile(r"\s{2,}"), " "),
+    (re.compile(rf"{_BLANK}{{2,}}"), lambda found: _GAP if _GAP in found[0] else " "),
 )
+_BLANK_ENDS = re.compile(rf"^{_BLANK}+|{_BLANK}+$")
 
 
-def _tidy(text: str) -> str:
+def _tidy(text: str, context: NamingContext) -> str:
+    """The name without the blanks and parentheses that empty tokens left, its gaps written with the join character."""
     for pattern, replacement in _TIDY:
         text = pattern.sub(replacement, text)
-    return text.strip()
+    return _BLANK_ENDS.sub("", text).replace(_GAP, context.space.character)
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,8 +135,8 @@ class Template:
 
     def render(self, context: NamingContext) -> Preview:
         problems = list(self.problems)
-        text, _ = _render(self.nodes, context, (), problems, None)
-        return Preview(_tidy(text), tuple(sorted(problems, key=lambda p: p.start)))
+        atoms, _ = _render(self.nodes, context, (), problems, None)
+        return Preview(_tidy(_assemble(atoms), context), tuple(sorted(problems, key=lambda p: p.start)))
 
 
 def preview(template: str, context: NamingContext) -> Preview:
@@ -168,6 +208,7 @@ def parse(text: str) -> Template:
 
 class PieceKind(StrEnum):
     TEXT = "text"
+    CHIP = "chip"  # a separator, see `SEPARATORS`
     TOKEN = "token"
     OPEN = "open"  # the `[` of a group
     CLOSE = "close"  # its `]`
@@ -178,7 +219,7 @@ class Piece:
     """One part of a template in a flat list, for an editor that shows the parts and edits the list."""
 
     kind: PieceKind
-    text: str = ""  # the literal text without escapes, or the token's name
+    text: str = ""  # the literal text without escapes (a separator's character), or the token's name
     padding: int = 0
 
 
@@ -190,7 +231,10 @@ def pieces(template: Template) -> list[Piece]:
     def walk(nodes: tuple[_Node, ...]) -> None:
         for node in nodes:
             if isinstance(node, str):
-                found.append(Piece(PieceKind.TEXT, node))
+                if separators_in(node):
+                    found.extend(Piece(PieceKind.CHIP, char) for char in node)
+                else:
+                    found.append(Piece(PieceKind.TEXT, node))
             elif isinstance(node, _Group):
                 found.append(Piece(PieceKind.OPEN))
                 walk(node.nodes)
@@ -210,7 +254,7 @@ def write(parts: Sequence[Piece]) -> str:
     bracket or a backslash."""
     out = []
     for part in parts:
-        if part.kind is PieceKind.TEXT:
+        if part.kind in (PieceKind.TEXT, PieceKind.CHIP):
             out.append(_SPECIAL.sub(r"\\\1", part.text))
         elif part.kind is PieceKind.TOKEN:
             out.append(f"{{{part.text}:{'0' * part.padding}}}" if part.padding else f"{{{part.text}}}")
@@ -237,30 +281,59 @@ def _render(
     active: tuple[str, ...],
     problems: list[Problem],
     span: tuple[int, int] | None,
-) -> tuple[str, bool]:
-    """The text, and whether every token directly in `nodes` had a value.
+) -> tuple[list[_Atom], bool]:
+    """The pieces' text, and whether every token directly in `nodes` had a value.
 
     `active` lists the composite tokens being expanded, to catch cycles. `span` is the field of the
     previewed template that started the expansion: problems found inside a composite are reported there.
     """
-    parts: list[str] = []
+    parts: list[_Atom] = []
     complete = True
     for node in nodes:
         if isinstance(node, str):
-            parts.append(node)
+            if separators_in(node):
+                parts.extend((char, *SEPARATORS[char]) for char in node)
+            else:
+                parts.append((node.replace(" ", _GAP), False, False))
         elif isinstance(node, _Group):
-            text, filled = _render(node.nodes, context, active, problems, span)
-            if filled:
-                parts.append(text)
+            inner, filled = _render(node.nodes, context, active, problems, span)
+            parts.extend(inner if filled else [_NOTHING])
         else:
             value = _read(node, context, active, problems, span or (node.start, node.end))
             if value is None or value == "":
                 complete = False
+                parts.append(_NOTHING)
             elif node.padding and isinstance(value, int):
-                parts.append(f"{value:0{node.padding}d}")
+                parts.append((f"{value:0{node.padding}d}", True, True))
             else:
-                parts.append(str(value))
-    return "".join(parts), complete
+                parts.append((str(value), True, True))
+    return parts, complete
+
+
+def _assemble(atoms: list[_Atom]) -> str:
+    """The pieces side by side, a join stand-in between each two that both ask for one. A pair of brackets with only
+    left-out pieces inside is dropped."""
+    kept: list[_Atom] = []
+    for atom in atoms:
+        opener = _CLOSERS.get(atom[0]) if atom[1:] == SEPARATORS.get(atom[0]) else None
+        if opener:
+            at = len(kept)
+            while at and kept[at - 1] == _NOTHING:
+                at -= 1
+            if at < len(kept) and at and kept[at - 1] == (opener, *SEPARATORS[opener]):
+                del kept[at - 1 :]
+                continue
+        kept.append(atom)
+    out: list[str] = []
+    joins = False
+    for text, before, after in kept:
+        if text == "":
+            continue
+        if out and joins and before:
+            out.append(_GAP)
+        out.append(text)
+        joins = after
+    return "".join(out)
 
 
 def _read(
@@ -276,12 +349,15 @@ def _read(
     defined = next((token for token in context.custom if token.name == name), None)
     builtin = TOKENS.get(name)
     if builtin:
+        if builtin.track_templates_only and context.file_title is None:
+            report(ProblemKind.NOT_HERE, name)
+            return None
         if defined:
             report(ProblemKind.SHADOWS_BUILTIN, name)
         if field.padding and not builtin.numeric:
             report(ProblemKind.BAD_FORMAT, "0" * field.padding)
         value = builtin.read(context)
-        spaced = True
+        spaced = builtin.joined
     elif defined:
         if field.padding:
             report(ProblemKind.BAD_FORMAT, "0" * field.padding)
@@ -292,7 +368,7 @@ def _read(
         report(ProblemKind.UNKNOWN_TOKEN, name)
         return None
     mapped = context.value_maps.get(name)
-    # The map matches the value as read and writes the text the user typed, so the space choice touches neither.
+    # The map matches the value as read and writes the text the user typed, so the join choice touches neither.
     if mapped and value not in (None, "") and str(value) in mapped:
         return mapped[str(value)]
     if spaced and isinstance(value, str):
@@ -314,8 +390,8 @@ def _read_defined(
             return None
         inner = parse(token.text)
         problems.extend(Problem(p.kind, *where, p.detail) for p in inner.problems)
-        text, _ = _render(inner.nodes, context, (*active, token.name), problems, where)
-        return _tidy(text)
+        atoms, _ = _render(inner.nodes, context, (*active, token.name), problems, where)
+        return _tidy(_assemble(atoms), context)
     try:
         regex = re.compile(token.text)
     except re.error as error:

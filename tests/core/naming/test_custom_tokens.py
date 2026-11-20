@@ -234,7 +234,7 @@ def test_first_definition_of_a_name_wins(episode_context: NamingContext) -> None
     [
         (r"\{{show}\}", "{Show Name}"),
         (r"\[{show}\]", "[Show Name]"),
-        (r"\[\]\{\}", "[]{}"),
+        (r"\[\]\{\}", "[] {}"),  # a closing and an opening bracket are separators, so the join goes between
         (r"{show} \\ x", "Show Name \\ x"),
         (r"[\[ {show}\] ]", "[ Show Name]"),
         (r"{show} (GRP)", "Show Name (GRP)"),

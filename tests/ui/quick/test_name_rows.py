@@ -47,6 +47,11 @@ def name_rows(controller: WindowController, column: int = COMMENTARY) -> list[di
     return list(controller.track_name_rows(column))
 
 
+def name_lines(controller: WindowController, column: int = COMMENTARY) -> list[dict[str, Any]]:
+    """The open chip's lines of its names, without the lines of their files and the seasons' dividers."""
+    return [r for r in name_rows(controller, column) if not r["file"] and not r["divider"]]
+
+
 def season_of(controller: WindowController, library: Library) -> Any:
     return controller.tree.index_of(str(library.items[2].file.path)).parent()
 
@@ -55,12 +60,17 @@ def test_a_chip_with_several_names_lists_each_name_with_the_files_that_use_it(
     controller: WindowController, library: Library, qtbot: QtBot
 ) -> None:
     open_season(controller, library, qtbot)
-    rows = name_rows(controller)
+    rows = name_lines(controller)
     assert [(r["text"], r["clickable"], r["dropped"]) for r in rows] == [
-        (f"01, 02, 03 · {DIRECTOR}", True, False),
-        (f"04, 05, 06, 07, 08, 09, 10 · {CAST}", True, False),
+        (f"{DIRECTOR} · every file with this name", True, False),
+        (f"{CAST} · every file with this name", True, False),
     ]
-    assert rows[0]["label"] == f"01, 02, 03 · {DIRECTOR} Kept"
+    assert rows[0]["label"] == f"{DIRECTOR} · every file with this name Kept"
+    # Each name is followed by a line per file that uses it, a click on which is that file's own choice.
+    every = name_rows(controller)
+    assert [r["text"] for r in every[1:4]] == [f"0{n} · {DIRECTOR}" for n in (1, 2, 3)]
+    assert all(r["clickable"] and r["file"] for r in every[1:4] + every[5:])
+    assert len(every) == 12
     # A chip whose tracks carry one name keeps its line per file, which no click acts on.
     plain = name_rows(controller, ENGLISH)
     assert len(plain) == 10
@@ -96,7 +106,7 @@ def test_a_click_on_a_name_drops_its_tracks_alone_and_a_second_click_gives_them_
     assert rules(controller) == [f"Drop audio in ENG Dolby Digital 2.0 flagged commentary named {DIRECTOR}"]
     rule = controller.rules[0]
     assert (rule["from_choice"], rule["source"], rule["inherited"]) == (True, "from a name", False)
-    rows = name_rows(controller)
+    rows = name_lines(controller)
     assert [r["dropped"] for r in rows] == [True, False]
     assert "Dropped" in str(rows[0]["label"])
     settle(controller, qtbot)
@@ -116,7 +126,7 @@ def test_a_name_is_kept_under_a_dropped_chip_and_the_chip_s_other_names_stay_dro
 ) -> None:
     open_season(controller, library, qtbot)
     controller.toggle_keep(COMMENTARY)
-    assert [r["dropped"] for r in name_rows(controller)] == [True, True]
+    assert [r["dropped"] for r in name_lines(controller)] == [True, True]
     controller.toggle_name(COMMENTARY, CAST)
     # The name's rule leads the chip's.
     assert rules(controller) == [
@@ -164,10 +174,10 @@ def test_the_rule_by_name_is_in_the_rules_panel_and_pausing_it_gives_the_name_ba
     open_season(controller, library, qtbot)
     controller.toggle_name(COMMENTARY, DIRECTOR)
     controller.pause_rule(0, True)
-    assert [r["dropped"] for r in name_rows(controller)] == [False, False]
+    assert [r["dropped"] for r in name_lines(controller)] == [False, False]
     controller.toggle_name(COMMENTARY, DIRECTOR)  # the paused rule is switched on again, in its place
     assert [(r["enabled"], r["source"]) for r in controller.rules] == [(True, "from a name")]
-    assert [r["dropped"] for r in name_rows(controller)] == [True, False]
+    assert [r["dropped"] for r in name_lines(controller)] == [True, False]
     controller.remove_rule(0)  # a rule by name goes by clicking its name, as a chip's does
     assert len(controller.rules) == 1
 
@@ -179,10 +189,10 @@ def test_a_show_s_name_reaches_its_season_marked_and_the_season_can_override_it_
     season = season_of(controller, library)
     controller.select(season.parent())
     controller.toggle_name(COMMENTARY, DIRECTOR)
-    assert [r["from"] for r in name_rows(controller)] == ["", ""]
+    assert [r["from"] for r in name_lines(controller)] == ["", ""]
     controller.select(season)
     settle(controller, qtbot)
-    rows = name_rows(controller)
+    rows = name_lines(controller)
     assert [(r["dropped"], r["from"]) for r in rows] == [(True, "From the show"), (False, "")]
     assert [(r["inherited"], r["from"]) for r in controller.rules] == [(True, "From the show")]
     assert controller.rules[0]["source"] == "from a name"
@@ -191,17 +201,17 @@ def test_a_show_s_name_reaches_its_season_marked_and_the_season_can_override_it_
     controller.toggle_name(COMMENTARY, DIRECTOR)
     settle(controller, qtbot)
     assert [(r["inherited"], r["enabled"]) for r in controller.rules] == [(False, True)]
-    assert [r["dropped"] for r in name_rows(controller)] == [False, False]
+    assert [r["dropped"] for r in name_lines(controller)] == [False, False]
     assert states(controller) == ["kept"] * 10
     # Discard changes takes it, and the season follows the show again.
     assert controller.can_discard
     controller.discard_changes()
     settle(controller, qtbot)
-    assert [(r["dropped"], r["from"]) for r in name_rows(controller)] == [(True, "From the show"), (False, "")]
+    assert [(r["dropped"], r["from"]) for r in name_lines(controller)] == [(True, "From the show"), (False, "")]
     assert states(controller) == ["dropped"] * 3 + ["kept"] * 7
     # The show's own choice is still there.
     controller.select(season.parent())
-    assert [r["dropped"] for r in name_rows(controller)] == [True, False]
+    assert [r["dropped"] for r in name_lines(controller)] == [True, False]
 
 
 def test_a_season_that_chose_the_chip_decides_before_the_show_s_name_rule(
@@ -215,7 +225,7 @@ def test_a_season_that_chose_the_chip_decides_before_the_show_s_name_rule(
     settle(controller, qtbot)
     controller.toggle_flag(COMMENTARY, "default")  # this season keeps the chip, with the star
     settle(controller, qtbot)
-    assert [r["dropped"] for r in name_rows(controller)] == [False, False]
+    assert [r["dropped"] for r in name_lines(controller)] == [False, False]
     assert states(controller) == ["kept"] * 10
 
 
@@ -269,26 +279,28 @@ def test_the_names_are_lines_of_the_open_chip_that_a_click_or_the_keyboard_acts_
     _click(load.window, _visible(chip, "namesButton")[0])
     load()
     lines = _visible(root, "chipNameRow")
-    assert len(lines) == 2
+    assert len(lines) == 12
     # A click drops the name: the line turns to the dropped look and a rule exists.
     _click(load.window, lines[0])
     settle(controller, qtbot)
     load()
-    assert [r["dropped"] for r in name_rows(controller)] == [True, False]
+    assert [r["dropped"] for r in name_lines(controller)] == [True, False]
     assert [r["source"] for r in controller.rules] == ["from a name"]
-    # The list is one tab stop: Down moves to the next name, Space acts on it.
+    # The list is one tab stop: Down moves a line at a time, past the first name's files to the second name, and
+    # Space acts on it.
     (rows,) = _visible(root, "chipNameRows")
     assert rows.property("activeFocusOnTab") is True
     rows.forceActiveFocus()
-    QTest.keyClick(load.window, Qt.Key.Key_Down)
+    for _ in range(4):
+        QTest.keyClick(load.window, Qt.Key.Key_Down)
     QTest.keyClick(load.window, Qt.Key.Key_Space)
     settle(controller, qtbot)
     load()
-    assert [r["dropped"] for r in name_rows(controller)] == [True, True]
-    assert rows.property("currentIndex") == 1
+    assert [r["dropped"] for r in name_lines(controller)] == [True, True]
+    assert rows.property("currentIndex") == 4
     # Another click goes back to the chip; the chip itself was never clicked.
     _click(load.window, _visible(root, "chipNameRow")[0])
-    _click(load.window, _visible(root, "chipNameRow")[1])
+    _click(load.window, _visible(root, "chipNameRow")[4])
     settle(controller, qtbot)
     assert controller.rules == []
     assert qt_warnings() == []

@@ -96,6 +96,21 @@ def reason_text(message: str) -> str:
     return message or tr("jobs.check.none")
 
 
+_HEADER_PARTS = ("title", "name", "language", "flag")
+
+
+def edited_text(result: ApplyResult) -> str:
+    """What an edit in place wrote to the file's header and found there when the file was read again."""
+    counts = dict.fromkeys(_HEADER_PARTS, 0)
+    for change in result.landed:
+        prop = change.prop.value
+        counts[prop if prop in counts else "flag"] += 1
+    parts = [tr_plural(f"jobs.result.part.{part}", count) for part, count in counts.items() if count]
+    if not parts:
+        return tr("jobs.result.edited_none")
+    return tr("jobs.result.edited", parts=tr("common.list_separator").join(parts))
+
+
 @dataclass
 class FileRun:
     """One file of the job: its steps by position, in order."""
@@ -246,6 +261,7 @@ class JobProgress:
             time_text = tr(f"jobs.state.{state}")
         return {
             "path": str(file.path),
+            "file": file.path.name,
             "number": file.number,
             "title": file.title,
             "state": state,
@@ -305,7 +321,7 @@ class JobProgress:
                 plan = step.plan.plan if isinstance(step.plan.plan, MuxPlan) else None
                 lines += mux_text(plan, record.detail)
             elif isinstance(record.detail, ApplyResult) and record.detail.ok:
-                lines.append(tr("jobs.result.edited"))
+                lines.append(edited_text(record.detail))
             elif record.state is StepState.DONE:
                 lines.append(tr("jobs.result.done"))
             else:

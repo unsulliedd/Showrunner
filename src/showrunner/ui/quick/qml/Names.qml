@@ -202,7 +202,8 @@ Item {
             }
         }
 
-        // What a space inside a token's value becomes in this template; the text typed between tokens is not changed.
+        // What this template joins its words with: every space, typed or inside a value. Other typed characters are
+        // not changed.
         RowLayout {
             objectName: "spaceChoice"
             Layout.fillWidth: true

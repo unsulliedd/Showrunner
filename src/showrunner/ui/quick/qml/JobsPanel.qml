@@ -113,7 +113,7 @@ Item {
                 border.width: modelData.state === "running" ? Theme.stroke : 0
                 border.color: Theme.line_strong
                 Accessible.role: Accessible.ListItem
-                Accessible.name: modelData.title + " " + modelData.time
+                Accessible.name: modelData.file + " " + modelData.time
 
                 ColumnLayout {
                     id: content
@@ -128,13 +128,19 @@ Item {
                         Layout.fillWidth: true
                         spacing: Theme.space_lg
 
-                        Row {
-                            Layout.preferredWidth: Theme.matrix_label
+                        // The file name takes the room the steps leave, so a wide window widens the name, not the
+                        // steps' lines.
+                        RowLayout {
+                            id: fileColumn
+
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: Theme.matrix_label
+                            Layout.preferredWidth: Theme.jobs_file
                             spacing: Theme.space_md
 
                             Icon {
-                                anchors.verticalCenter: parent.verticalCenter
-                                visible: row.modelData.state !== "waiting"
+                                // Kept in place while waiting, so every name starts at the same x.
+                                opacity: row.modelData.state !== "waiting" ? 1 : 0
                                 name: row.modelData.state === "done" ? "check"
                                     : row.modelData.state === "running" ? "resume" : "alert"
                                 size: Theme.icon_sm
@@ -144,19 +150,19 @@ Item {
                             }
 
                             UiText {
-                                anchors.verticalCenter: parent.verticalCenter
-                                visible: row.modelData.number !== ""
-                                mono: true
-                                text: row.modelData.number
-                                color: Theme.faint
-                                font.pixelSize: Theme.text_xs
-                            }
-
-                            UiText {
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: Theme.matrix_label - Theme.space_2xl - Theme.space_lg
-                                text: row.modelData.title
+                                Layout.fillWidth: true
+                                text: row.modelData.file
+                                elide: Text.ElideMiddle
                                 font.weight: Font.Medium
+
+                                HoverHandler {
+                                    id: fileHover
+                                }
+
+                                Tip {
+                                    visible: fileHover.hovered && parent.truncated
+                                    text: row.modelData.path
+                                }
                             }
                         }
 
@@ -166,8 +172,7 @@ Item {
                             delegate: ColumnLayout {
                                 required property var modelData
 
-                                Layout.fillWidth: true
-                                Layout.preferredWidth: 1
+                                Layout.preferredWidth: Theme.jobs_phase
                                 spacing: Theme.space_xs
 
                                 RowLayout {
@@ -224,7 +229,7 @@ Item {
                             required property var modelData
 
                             Layout.fillWidth: true
-                            Layout.leftMargin: Theme.matrix_label + Theme.space_lg
+                            Layout.leftMargin: fileColumn.width + Theme.space_lg
                             text: modelData
                             color: row.modelData.state === "failed" ? Theme.drop : Theme.muted
                             font.pixelSize: Theme.text_sm

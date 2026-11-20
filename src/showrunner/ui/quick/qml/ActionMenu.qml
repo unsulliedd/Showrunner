@@ -30,7 +30,13 @@ Menu {
             text: modelData.text
             tip: modelData.tip || ""
             enabled: modelData.enabled
-            onTriggered: menu.picked(modelData.key)
+            // Closed before the action runs: an action that changes the list removes this row, and the menu would
+            // stay open without the row that closes it.
+            onTriggered: {
+                const key = modelData.key
+                menu.close()
+                menu.picked(key)
+            }
         }
 
         onObjectAdded: (index, object) => menu.insertItem(index, object)

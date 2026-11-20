@@ -32,9 +32,9 @@ from showrunner.ui.theme.tokens import (
 
 _log = logging.getLogger(__name__)
 
-# The bases Appearance offers, in its order: the ground, the control colour and the change colour. The fourth base
-# (`secondary`) tints only the light set's selection and is left at its default.
-SHOWN_BASES: tuple[Base, ...] = (Base.NEUTRAL, Base.PRIMARY, Base.ACCENT)
+# The bases Appearance offers, in its order: the ground, the control colour, the change colour and the colours of a
+# default and a forced track. The `secondary` base tints only the light set's selection and is left at its default.
+SHOWN_BASES: tuple[Base, ...] = (Base.NEUTRAL, Base.PRIMARY, Base.ACCENT, Base.DEFAULT_TRACK, Base.FORCED_TRACK)
 # The derived roles drawn under the bases.
 SHOWN_ROLES: tuple[str, ...] = (
     "ground", "panel", "panel_3", "line", "ink", "muted", "faint", "select", "change", "drop", "add",
@@ -47,6 +47,8 @@ CONTRAST_PAIRS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("change", ("panel", "panel_2")),
     ("drop", ("panel", "panel_2")),
     ("add", ("panel", "panel_2")),
+    ("flag_default", ("panel_3", "panel")),
+    ("flag_forced", ("panel_3", "panel")),
     ("control_ink", ("control",)),
 )
 

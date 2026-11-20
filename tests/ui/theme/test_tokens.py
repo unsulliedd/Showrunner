@@ -98,7 +98,7 @@ APPROVED_DARK = {
     "line": "#22272F", "line_strong": "#353C47", "ink": "#E7EAEE", "muted": "#A2ABB7", "faint": "#7E8894",
     "control": "#8FA8FF", "control_ink": "#0B0D10", "control_soft": "#1B2236", "select": "#1D2540",
     "change": "#F4B544", "change_soft": "#2B2314", "drop": "#FF8077", "drop_soft": "#2C1817",
-    "add": "#62D6A5", "add_soft": "#13281F",
+    "add": "#62D6A5", "add_soft": "#13281F", "flag_default": "#5FCFE0", "flag_forced": "#E59AD8",
 }  # fmt: skip
 
 

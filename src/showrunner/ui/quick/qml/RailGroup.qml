@@ -8,7 +8,9 @@ Item {
 
     property var group: ({"parts": []})
 
-    implicitWidth: parts.implicitWidth + 2 * Theme.space_sm
+    // At least as wide as the note on its top edge, so a group of one short token does not leave the note hanging
+    // past the frame's corners.
+    implicitWidth: Math.max(parts.implicitWidth + 2 * Theme.space_sm, label.width + 2 * Theme.space_md)
     implicitHeight: parts.implicitHeight + 2 * Theme.space_sm
     Accessible.role: Accessible.Grouping
     Accessible.name: Strings.t("names.optional")
@@ -19,6 +21,8 @@ Item {
     }
 
     Rectangle {
+        id: label
+
         anchors.right: parent.right
         anchors.rightMargin: Theme.space_md
         anchors.verticalCenter: parent.top
@@ -39,7 +43,7 @@ Item {
     Row {
         id: parts
 
-        x: Theme.space_sm
+        x: (frame.width - width) / 2
         y: Theme.space_sm
 
         Repeater {

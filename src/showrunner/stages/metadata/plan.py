@@ -111,14 +111,18 @@ def naming_context(
     track: PlannedTrack | None,
     source: str = "",
     language: str = "",
+    file_title: str | None = None,
 ) -> NamingContext:
     """What a template reads for the file's title (`track` None) or for one kept track. `language` is the tag the
-    track gets when it changes (`language_after`)."""
+    track gets when it changes (`language_after`); `file_title` is the title the file gets, which a track's context
+    works out when it is not given."""
     # The flags and the language after the rules, so `{flags}` and `{language}` name what the track will be.
     named = replace(track.track, flags=track.flags) if track else None
     if named and language and (after := Language.parse(language)) is not None:
         named = replace(named, language=after)
     template = _TEMPLATES[named.kind] if named else "title_template"
+    if named and file_title is None:
+        file_title = _file_title(item, naming, tracks, source)
     return NamingContext(
         item,
         named,
@@ -128,7 +132,14 @@ def naming_context(
         flags_from_names=tracks.flags_from_names,
         space=naming.space_for(template),
         episode_code_format=naming.episode_code_format,
+        file_title=file_title,
     )
+
+
+def _file_title(item: MediaItem, naming: NamingOptions, tracks: TracksOptions, source: str) -> str:
+    """The title the file gets: the title template's, else the title it has."""
+    made = preview(naming.title_template, naming_context(item, naming, tracks, None, source)).text
+    return made or item.file.title
 
 
 def plan_metadata(
@@ -157,8 +168,9 @@ def plan_metadata(
 
     found: dict[str, dict[Problem, None]] = {}  # template option -> its problems, without repeats
 
-    def render(template: str, track: PlannedTrack | None, tag: str = "") -> str:
-        result = preview(getattr(naming, template), naming_context(item, naming, tracks, track, source, tag))
+    def render(template: str, track: PlannedTrack | None, tag: str = "", file_title: str | None = None) -> str:
+        context = naming_context(item, naming, tracks, track, source, tag, file_title)
+        result = preview(getattr(naming, template), context)
         found.setdefault(template, {}).update(dict.fromkeys(result.problems))
         return result.text
 
@@ -168,15 +180,17 @@ def plan_metadata(
 
     changes: list[HeaderChange] = []
     # An empty result leaves a title or name alone: a template never clears one by accident.
-    if (title := render("title_template", None)) and title != file.title:
+    title = render("title_template", None)
+    if title and title != file.title:
         changes.append(HeaderChange(Property.TITLE, file.title, title))
+    file_title = title or file.title
     # A subtitle file that is added is planned under its stand-in track's negative ID; only a remux adds files, so
     # those changes go into the remux and never to mkvpropedit.
     for planned in track_plan.kept:
         track = planned.track
         is_video = track.kind is TrackKind.VIDEO
         wanted = "" if is_video else _wanted_language(track, language, language_rules, from_names, given, invalid)
-        name = render(_TEMPLATES[track.kind], planned, wanted)
+        name = render(_TEMPLATES[track.kind], planned, wanted, file_title)
         if name and name != track.name:
             changes.append(HeaderChange(Property.NAME, track.name, name, track.id))
         if wanted:

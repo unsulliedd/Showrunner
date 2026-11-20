@@ -52,3 +52,11 @@ def test_a_broken_rule_blocks_tracks_only_while_it_is_on() -> None:
     assert list(blocks) == ["tracks"]
     assert blocks["tracks"].rules[0].detail == "egn"
     assert blocked_stages(profile(tracks={"rules": [replace(rule, enabled=False)]})) == {}
+
+
+def test_file_title_blocks_the_title_template_only() -> None:
+    blocks = blocked_stages(profile(naming={"title_template": "{file_title}", "audio_track_template": "{file_title}"}))
+    assert list(blocks["metadata"].templates) == ["title_template"]
+    (problem,) = blocks["metadata"].templates["title_template"]
+    assert (problem.kind, problem.detail) == (ProblemKind.NOT_HERE, "file_title")
+    assert blocked_stages(profile(naming={"title_template": "", "audio_track_template": "{file_title} {codec}"})) == {}

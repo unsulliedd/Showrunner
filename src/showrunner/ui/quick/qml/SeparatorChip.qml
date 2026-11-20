@@ -3,7 +3,7 @@ import QtQuick.Controls.Basic
 import Showrunner
 
 // One separator in the Tokens panel. Drag it onto the rail, or click it (Enter) to add it at the end of the template.
-// It goes in as typed text, so the template holds no new kind of part.
+// It goes in as a character of the template's text, so the template holds no new kind of part.
 Rectangle {
     id: chip
 

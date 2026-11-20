@@ -1,4 +1,4 @@
-"""How a template writes what tokens put in: the character for a space inside a value, and the episode code."""
+"""How a template writes its names: the character every space becomes, and the episode code."""
 
 from __future__ import annotations
 
@@ -6,7 +6,8 @@ from enum import StrEnum
 
 
 class SpaceStyle(StrEnum):
-    """What a space inside a token's value becomes. Typed text in a template is never changed."""
+    """What a template joins its words with: each space of the name, whether typed or inside a value. Any other typed
+    character is never changed."""
 
     SPACE = "space"
     DOT = "dot"

@@ -4,7 +4,15 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from showrunner.core.media import Episode, MediaItem
-from showrunner.core.naming import TOKENS, NamingContext, preview
+from showrunner.core.naming import (
+    TOKENS,
+    CustomKind,
+    CustomToken,
+    NamingContext,
+    ProblemKind,
+    SpaceStyle,
+    preview,
+)
 from showrunner.core.track import HdrKind, ObjectAudio, Track
 
 MakeItem = Callable[..., MediaItem]
@@ -123,3 +131,38 @@ def test_subtitle_track_tokens(make_item: MakeItem, video: Build, subtitle: Buil
     assert value("codec", context) == "SubRip"
     assert value("language", context) == "Turkish"
     assert value("channels", context) == ""
+
+
+# `{file_title}`: the title the file gets, for track names only
+
+
+def test_file_title_is_the_title_the_context_carries_and_empty_when_it_is_empty(
+    make_item: MakeItem, video: Build, subtitle: Build
+) -> None:
+    track = subtitle()
+    context = NamingContext(make_item(video(), track), track, file_title="Show Name - 1x05")
+    assert value("file_title", context) == "Show Name - 1x05"
+    assert value("file_title", replace(context, file_title="")) == ""
+
+
+def test_file_title_is_not_available_in_the_title_template(make_item: MakeItem, video: Build) -> None:
+    result = preview("{file_title}", NamingContext(make_item(video())))
+    assert result.text == ""
+    assert [(p.kind, p.start, p.end, p.detail) for p in result.problems] == [
+        (ProblemKind.NOT_HERE, 0, 12, "file_title")
+    ]
+    # A composite that holds it reports it where it is used.
+    custom = (CustomToken("same", CustomKind.COMPOSITE, "{file_title}"),)
+    used = preview("{show} {same}", NamingContext(make_item(video()), custom=custom))
+    assert [(p.kind, p.start, p.end) for p in used.problems] == [(ProblemKind.NOT_HERE, 7, 13)]
+
+
+def test_file_title_is_copied_as_it_is_while_the_track_template_joins_its_own_gaps_and_tokens(
+    make_item: MakeItem, subtitle: Build
+) -> None:
+    track = subtitle()
+    context = NamingContext(
+        make_item(track), track, space=SpaceStyle.UNDERSCORE, file_title="Show Name - 1x05 - Episode Name"
+    )
+    assert preview("{file_title} {language}", context).text == "Show Name - 1x05 - Episode Name_Turkish"
+    assert preview("{file_title} {codec} {language}", context).text == "Show Name - 1x05 - Episode Name_SubRip_Turkish"

@@ -39,7 +39,11 @@ class StageBlock:
 
 def template_problems(naming: NamingOptions, template: str) -> tuple[Problem, ...]:
     """The problems of one template, without a file."""
-    context = NamingContext(_NO_FILE, custom=tuple(naming.custom_tokens), value_maps=naming.value_maps)
+    # Only the title template has no title of the file to copy.
+    file_title = None if template == TITLE_TEMPLATE else ""
+    context = NamingContext(
+        _NO_FILE, custom=tuple(naming.custom_tokens), value_maps=naming.value_maps, file_title=file_title
+    )
     return preview(getattr(naming, template), context).problems
 
 

@@ -344,10 +344,11 @@ class BatchView:
     def name_rows(self, index: int) -> list[dict[str, object]]:
         """The lines of a chip's ▾ list. A track without a name has a line of its own per file, `clickable`: a click
         keeps or drops that file's track, as the file's own choice (see `file`). Where the chip's tracks carry two or
-        more names, one line per name, with the files that use it, also `clickable`: a click keeps or drops the tracks
-        with that name (a rule ahead of the chip's own choice). Else one line per file, as `names` has them, which no
-        click acts on (one name is the chip's own choice, and a chip told apart by name has only that name). Names
-        differing in case are one name, as the rule's name test ignores case."""
+        more names, a line per name, also `clickable`: a click keeps or drops the tracks with that name (a rule ahead of
+        the chip's own choice), followed by a clickable line per file that uses it; a name of one file has only the
+        file's line. Else one line per file, as `names` has them, which no click acts on (one name is the chip's own
+        choice, and a chip told apart by name has only that name). Names differing in case are one name, as the rule's
+        name test ignores case. Over more than one season, a `divider` line names the season before its first file."""
         if not 0 <= index < len(self.cols) or self.cols[index].paired is not None:
             return []
         column, one_season = self.cols[index], self._one_season()
@@ -356,21 +357,29 @@ class BatchView:
         for item, name in entries:
             groups.setdefault(name.casefold(), (name, []))[1].append(item)
         if len(groups) < 2 or column.signature.name is not None:
-            return [
-                self._file_row(index, item, one_season)
-                if not name
-                else _name_row(tr("tracks.names.row", number=file_label(item, one_season), name=name))
-                for item, name in entries
-            ]
+            return _with_seasons(
+                [
+                    (
+                        item,
+                        self._file_row(index, item, one_season)
+                        if not name
+                        else _name_row(tr("tracks.names.row", number=file_label(item, one_season), name=name)),
+                    )
+                    for item, name in entries
+                ],
+                one_season,
+            )
         options = self.options
         active = [(n, rule) for n, rule in enumerate(options.rules) if rule.enabled]
-        rows = []
+        lines: list[tuple[MediaItem | None, dict[str, object]]] = []
         for key, (name, items) in groups.items():
             if not name:
-                rows += [self._file_row(index, item, one_season) for item in items]
+                lines += [(item, self._file_row(index, item, one_season)) for item in items]
                 continue
-            number = tr("common.list_separator").join(file_label(i, one_season) for i in items)
-            text = tr("tracks.names.row" if name else "tracks.names.none", number=number, name=name)
+            if len(items) == 1:  # a name of one file needs no line of its own above the file's
+                lines.append((items[0], self._file_row(index, items[0], one_season, name)))
+                continue
+            text = tr("tracks.names.group", name=name)
             signature = named(column.signature, name)
             tracks = [
                 t
@@ -385,13 +394,15 @@ class BatchView:
             mark = self._mark(signature) if owned else {"from": "", "over": "", "short": ""}
             state = tr(f"tracks.state.{'dropped' if dropped else 'kept'}")
             label = f"{text} {state} {mark['from'] or mark['over']}".strip()
-            rows.append(_name_row(text, clickable=True, name=name, dropped=dropped, mark=mark, label=label))
-        return rows
+            lines.append((None, _name_row(text, clickable=True, name=name, dropped=dropped, mark=mark, label=label)))
+            lines += [(item, self._file_row(index, item, one_season, name)) for item in items]
+        return _with_seasons(lines, one_season)
 
-    def _file_row(self, index: int, item: MediaItem, one_season: bool) -> dict[str, object]:
-        """The line of one file's track without a name: a click makes that file's own choice. It is marked when the
-        file's own place holds a choice on the chip, which is not the case where the file is the open place itself."""
-        text = tr("tracks.names.none", number=file_label(item, one_season))
+    def _file_row(self, index: int, item: MediaItem, one_season: bool, name: str = "") -> dict[str, object]:
+        """The line of one file's track: a click makes that file's own choice. It is marked when the file's own place
+        holds a choice on the chip, which is not the case where the file is the open place itself."""
+        number = file_label(item, one_season)
+        text = tr("tracks.names.row", number=number, name=name) if name else tr("tracks.names.none", number=number)
         dropped = self.cells(item)[index]["state"] == "dropped"
         own = choice_index(list(self.file_rules.get(str(item.file.path), ())), self.cols[index].signature) is not None
         mark = tr("tracks.names.own") if own else ""
@@ -1016,7 +1027,25 @@ def _name_row(
         "dropped": dropped,
         **(mark or {"from": "", "over": "", "short": ""}),
         "label": label or text,
+        "divider": False,
     }
+
+
+def _with_seasons(lines: list[tuple[MediaItem | None, dict[str, object]]], one_season: bool) -> list[dict[str, object]]:
+    """The lines with a season's divider before the first file of each run of its files. A line without a file (a
+    name's) starts its files afresh."""
+    rows: list[dict[str, object]] = []
+    last: int | None = None
+    for item, line in lines:
+        season = item.identity.season if item is not None and isinstance(item.identity, Episode) else None
+        if item is None:
+            last = None
+        elif not one_season and season is not None and season != last:
+            text = tr("library.season", number=season)
+            rows.append({**_name_row(text), "divider": True})
+            last = season
+        rows.append(line)
+    return rows
 
 
 def file_label(item: MediaItem, one_season: bool) -> str:

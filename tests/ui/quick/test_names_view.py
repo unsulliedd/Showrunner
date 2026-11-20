@@ -20,6 +20,7 @@ from showrunner.core.naming import (
     NamingOptions,
     Problem,
     ProblemKind,
+    SpaceStyle,
     parse,
     preview,
 )
@@ -65,6 +66,21 @@ def test_rail_edits_write_templates_the_engine_reads() -> None:
     assert names.add_text("{show}{year}", 1, " (") == "{show} ({year}"
     for result in ("S{season}", r"{show} \[x\] {year}", "{show} ({year}"):
         assert parse(result).problems == ()
+
+
+def test_separators_move_and_go_like_tokens_and_braces_are_stored_escaped() -> None:
+    assert names.add_text("{show}", 1, "{") == r"{show}\{"
+    assert names.add_text(r"{show}\{", 2, "}") == r"{show}\{\}"
+    assert names.add_text("{show}", 1, "[") == r"{show}\["
+    assert names.remove_piece("{show}-{year}", 1) == "{show}{year}"
+    assert names.move_token("{show}-{year}", 1, 3) == "{show}{year}-"
+    assert names.move_token("{show}-{year}", 1, 0) == "-{show}{year}"
+    assert names.set_text("{show}-{year}", 1, "x") == "{show}-{year}"  # a separator is not typed text
+
+
+def test_a_token_made_optional_takes_the_separator_or_text_before_it() -> None:
+    assert names.toggle_optional("{show}-{episode_title}", 2) == "{show}[-{episode_title}]"
+    assert names.toggle_optional("{show}[-{episode_title}]", 3) == "{show}-{episode_title}"
 
 
 def test_a_token_made_optional_takes_the_text_before_it() -> None:
@@ -116,6 +132,16 @@ def test_a_new_token_takes_a_free_name() -> None:
 
 
 # The rail's parts
+
+
+def test_the_rail_shows_separators_as_chips_with_slots_around_them() -> None:
+    parts = names.rail("{show}-({year})", None, ())
+    kinds = ["slot", "token", "slot", "separator", "slot", "separator", "slot", "token", "slot", "separator", "slot"]
+    assert [p["kind"] for p in parts] == kinds
+    assert [(p["at"], p["text"]) for p in parts if p["kind"] == "separator"] == [(1, "-"), (2, "("), (4, ")")]
+    # Braces and brackets typed as chips are chips, not a token or a group.
+    braces = names.rail(r"\{\[", None, ())
+    assert [p["text"] for p in braces if p["kind"] == "separator"] == ["{", "["]
 
 
 def test_the_rail_shows_chips_text_groups_and_slots(library: Library) -> None:
@@ -262,17 +288,25 @@ def test_the_panel_lists_the_separators_as_typed_text_with_a_visible_label(libra
     items = season(library)
     (group,) = [g for g in names.tokens(given(items, NamingOptions()), "", -1)["groups"] if g["key"] == "separator"]
     assert group["label"] == "Separators"
-    assert [(s["name"], s["text"]) for s in group["tokens"]] == [
-        ("space", " "),
-        ("spaced_dash", " - "),
-        ("dot", "."),
-        ("underscore", "_"),
-        ("dash", "-"),
+    # Each chip inserts exactly what its label shows; there is no chip for a space, the pieces join themselves.
+    assert [(s["label"], s["text"]) for s in group["tokens"]] == [
+        (c, c) for c in ("-", ".", "_", "(", ")", "[", "]", "{", "}")
     ]
-    assert all(s["label"].strip() and s["tip"] for s in group["tokens"])  # a space is never a blank chip
-    assert group["tokens"][0]["label"] == "space"
+    assert all(s["tip"] for s in group["tokens"])
     found = names.tokens(given(items, NamingOptions()), "underscore", -1)["groups"]
     assert [t["name"] for g in found for t in g["tokens"]] == ["underscore"]
+
+
+def test_file_title_is_listed_for_track_names_and_not_for_the_title(library: Library) -> None:
+    items = season(library)
+
+    def listed(template: str) -> dict[str, str]:
+        groups = names.tokens(given(items, NamingOptions(title_template="{show} {episode_code}"), template), "", -1)
+        return {t["name"]: t["value"] for g in groups["groups"] if g["key"] != "separator" for t in g["tokens"]}
+
+    assert "file_title" not in listed("title_template")
+    assert listed("audio_track_template")["file_title"] == "Show Name S01E03"
+    assert names.token_label("file_title") == "File title"
 
 
 def test_separators_dropped_between_tokens_make_the_plain_text_name(library: Library) -> None:
@@ -337,3 +371,15 @@ def test_a_name_reads_the_language_the_plan_gives_the_track(library: Library) ->
     shown = [e.after for e in names.named(items, "audio_track_template", naming, tracks)]
     assert shown == ["en", "az", "en"]  # English, Turkish (now Azerbaijani) and the commentary
     assert [e.after for e in names.named(items, "audio_track_template", naming, TracksOptions())] == ["en", "tr", "en"]
+
+
+def test_the_join_choice_writes_the_gaps_and_the_underlined_parts_still_make_the_name(library: Library) -> None:
+    items = season(library)
+    naming = NamingOptions(title_template="{show} {episode_code} - {episode_title}", title_space=SpaceStyle.DOT)
+    entry = names.named(items, "title_template", naming, TracksOptions())[2]
+    assert entry.after == "Show.Name.S01E03.-.Episode.Three"
+    parts = names.segments(entry.text, entry.context)
+    assert "".join(p["text"] for p in parts) == entry.after
+    assert [p["text"] for p in parts if p["token"]] == ["Show.Name", "S01E03", "Episode.Three"]
+    choice = names.space_choice(naming, "title_template")
+    assert (choice["value"], [c["label"] for c in choice["choices"]]) == ("dot", ["Space", "Dot", "Underscore", "Dash"])

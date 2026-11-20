@@ -94,7 +94,7 @@ def test_each_template_has_its_own_space_choice_and_the_episode_code_its_format(
     assert changes(plan(episode, naming=naming)) == [
         (Property.TITLE, None, "Old Title", "Show Name 1x01"),
         (Property.NAME, 0, "", "Show_Name"),
-        (Property.NAME, 1, "AC-3 5.1", "Show.Name (Dolby.Digital)"),
+        (Property.NAME, 1, "AC-3 5.1", "Show.Name.(Dolby.Digital)"),
     ]
 
 
@@ -363,3 +363,69 @@ def test_the_language_a_plan_gives_is_what_the_names_place_reads(b: SimpleNamesp
     assert language_after(untagged, rule, True, "pt-BR") == "pt-BR"
     assert language_after(audio, [], True, "pt-BR") == ""  # it has a language: the untagged choice does not apply
     assert language_after(video, rule, True, "pt-BR") == ""
+
+
+# --- {file_title} ---
+
+TRACKS_WITH_TITLE = {
+    "video_track_template": "{file_title} {resolution}",
+    "audio_track_template": "{file_title} {codec}",
+    "subtitle_track_template": "{file_title} {language}",
+}
+
+
+def test_a_track_name_copies_the_title_the_title_template_makes(episode) -> None:
+    naming = NamingOptions(title_template="{show} - {episode_code}", **TRACKS_WITH_TITLE)
+    assert changes(plan(episode, naming=naming)) == [
+        (Property.TITLE, None, "Old Title", "Show Name - S01E01"),
+        (Property.NAME, 0, "", "Show Name - S01E01 1080p"),
+        (Property.NAME, 1, "AC-3 5.1", "Show Name - S01E01 Dolby Digital"),
+        (Property.NAME, 2, "English", "Show Name - S01E01 English"),
+    ]
+
+
+def test_a_track_name_copies_the_title_the_file_has_when_the_title_template_is_empty_or_gives_nothing(episode) -> None:
+    for title_template in ("", "{episode_title}"):
+        naming = NamingOptions(title_template=title_template, audio_track_template="{file_title} {codec}")
+        assert changes(plan(episode, naming=naming)) == [(Property.NAME, 1, "AC-3 5.1", "Old Title Dolby Digital")]
+
+
+def test_the_title_in_a_track_name_is_copied_as_it_is_and_the_rest_takes_the_track_templates_join_choice(
+    episode,
+) -> None:
+    naming = NamingOptions(
+        title_template="{show} - {episode_code}",
+        audio_track_template="{file_title} {codec}",
+        audio_track_space=SpaceStyle.DOT,
+        title_space=SpaceStyle.UNDERSCORE,
+    )
+    # The title is made with its own choice and copied unchanged; the track template joins its own gap and the
+    # spaces inside its other tokens.
+    assert changes(plan(episode, naming=naming))[1:] == [
+        (Property.NAME, 1, "AC-3 5.1", "Show_Name_-_S01E01.Dolby.Digital")
+    ]
+
+
+def test_a_file_without_a_title_gives_a_track_name_without_it(b: SimpleNamespace) -> None:
+    item = b.item(b.audio(1, "AC-3 5.1"), title="")
+    naming = NamingOptions(audio_track_template="[{file_title} ]{codec}")
+    assert changes(plan(item, naming=naming)) == [(Property.NAME, 1, "AC-3 5.1", "Dolby Digital")]
+
+
+def test_the_title_template_refuses_file_title(episode) -> None:
+    result = plan(episode, naming=NamingOptions(title_template="{file_title}"))
+    assert isinstance(result, MetadataRefused)
+    (problem,) = result.problems
+    assert (problem.template, [p.kind for p in problem.template_problems]) == ("title_template", [ProblemKind.NOT_HERE])
+
+
+def test_file_title_equals_the_planned_title_with_its_own_join_choice_and_replacements(episode) -> None:
+    naming = NamingOptions(
+        title_template="{show} {episode_code} - done",
+        audio_track_template="{file_title}",
+        title_space=SpaceStyle.DOT,
+        value_maps={"show": {"Show Name": "Other Name"}},
+    )
+    (_, _, _, title), (_, _, _, name) = changes(plan(episode, naming=naming))
+    assert title == "Other Name.S01E01.-.done"  # a replacement is written as typed
+    assert name == title

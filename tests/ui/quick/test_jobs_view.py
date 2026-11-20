@@ -12,7 +12,9 @@ from showrunner.app.jobs.store import StepState, StoredJob, StoredStep
 from showrunner.app.profiles.profile import Profile
 from showrunner.core.media import MediaFile, MediaItem, Movie
 from showrunner.stages.metadata.apply import ApplyResult
+from showrunner.stages.metadata.plan import HeaderChange
 from showrunner.stages.mux import Failure, MuxResult, VerifyProblem
+from showrunner.tools.mkvtoolnix.propedit import Property
 from showrunner.ui.quick.jobs import JobProgress, check_text, clock, mux_text, reason_text
 
 A, B, C = Path("a.mkv"), Path("b.mkv"), Path("c.mkv")
@@ -57,7 +59,12 @@ def test_a_remux_moves_through_its_phases_and_ends_worded() -> None:
     problems = (VerifyProblem("duration", planned="3134.000", found="12.000"),)
     job.step_changed(record(1, B, "mux", StepState.FAILED, MuxResult(failure=Failure.VERIFY, problems=problems)), 130.0)
     job.step_changed(record(2, C, "metadata", StepState.RUNNING), 130.0)
-    job.step_changed(record(2, C, "metadata", StepState.DONE, ApplyResult()), 131.0)
+    landed = (
+        HeaderChange(Property.NAME, "", "Commentary", 2),
+        HeaderChange(Property.FLAG_COMMENTARY, False, True, 2),
+        HeaderChange(Property.FLAG_DEFAULT, True, False, 2),
+    )
+    job.step_changed(record(2, C, "metadata", StepState.DONE, ApplyResult(landed)), 131.0)
     job.finish(JobResult(()), 131.0)
     rows = job.view(131.0)["rows"]
     assert [p["state"] for p in rows[1]["phases"]] == ["done", "failed", "waiting", "waiting"]
@@ -65,8 +72,9 @@ def test_a_remux_moves_through_its_phases_and_ends_worded() -> None:
         "The new file did not pass its check, so it was removed. The original was not touched.",
         "The new file lasts 12.000 s; the original 3134.000 s.",
     ]
-    assert [(p["label"], p["state"]) for p in rows[2]["phases"]] == [("Edit in place", "done")]
-    assert rows[2]["result"] == ["Edited in place and read back as planned."]
+    assert [(p["label"], p["state"]) for p in rows[2]["phases"]] == [("Update header", "done")]
+    assert rows[2]["result"] == ["Header updated without remuxing and verified: 1 track name, 2 flags."]
+    assert rows[2]["file"] == C.name
     assert job.view(131.0)["summary"] == "2 done, 1 failed, 0 not written."
 
 

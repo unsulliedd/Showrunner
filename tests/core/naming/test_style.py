@@ -27,16 +27,16 @@ def spaced(template: str, context: NamingContext, style: SpaceStyle) -> str:
     return preview(template, replace(context, space=style)).text
 
 
-# What a space inside a value becomes
+# What every space becomes: the choice reaches the values and the typed spaces, not other typed characters
 
 
 @pytest.mark.parametrize(
     ("style", "expected"),
     [
         (SpaceStyle.SPACE, "Show Name (Dolby Digital Plus)"),
-        (SpaceStyle.DOT, "Show.Name (Dolby.Digital.Plus)"),
-        (SpaceStyle.UNDERSCORE, "Show_Name (Dolby_Digital_Plus)"),
-        (SpaceStyle.DASH, "Show-Name (Dolby-Digital-Plus)"),
+        (SpaceStyle.DOT, "Show.Name.(Dolby.Digital.Plus)"),
+        (SpaceStyle.UNDERSCORE, "Show_Name_(Dolby_Digital_Plus)"),
+        (SpaceStyle.DASH, "Show-Name-(Dolby-Digital-Plus)"),
     ],
 )
 def test_a_space_inside_a_value_becomes_the_choice(
@@ -46,11 +46,50 @@ def test_a_space_inside_a_value_becomes_the_choice(
     assert spaced("{show} ({codec})", track_context, style) == expected
 
 
-def test_typed_text_keeps_its_spaces(episode_context: NamingContext) -> None:
-    assert spaced("{show} - {episode_title}", episode_context, SpaceStyle.DOT) == "Show.Name - Episode.Name"
+def test_typed_characters_other_than_spaces_stay_as_typed(episode_context: NamingContext) -> None:
+    assert spaced("{show} - {episode_title}", episode_context, SpaceStyle.DOT) == "Show.Name.-.Episode.Name"
+    assert spaced("{show}x{episode_title}", episode_context, SpaceStyle.DOT) == "Show.NamexEpisode.Name"
+    assert spaced("{show}._{year}", episode_context, SpaceStyle.DASH) == "Show-Name._2020"
 
 
-def test_the_space_choice_reaches_a_defined_pattern_but_not_a_constant_or_the_typed_text_of_a_composite(
+@pytest.mark.parametrize(
+    ("style", "expected"),
+    [
+        (SpaceStyle.SPACE, "Show Name S01E05 Episode Name"),
+        (SpaceStyle.DOT, "Show.Name.S01E05.Episode.Name"),
+        (SpaceStyle.UNDERSCORE, "Show_Name_S01E05_Episode_Name"),
+        (SpaceStyle.DASH, "Show-Name-S01E05-Episode-Name"),
+    ],
+)
+def test_a_typed_space_between_tokens_takes_the_choice_as_the_values_do(
+    episode_context: NamingContext, style: SpaceStyle, expected: str
+) -> None:
+    assert spaced("{show} {episode_code} {episode_title}", episode_context, style) == expected
+
+
+def test_the_dash_between_two_spaces_is_never_joined(episode_context: NamingContext) -> None:
+    template = "{show} {episode_code} - {episode_title}"
+    assert spaced(template, episode_context, SpaceStyle.SPACE) == "Show Name S01E05 - Episode Name"
+    assert spaced(template, episode_context, SpaceStyle.DOT) == "Show.Name.S01E05.-.Episode.Name"
+    assert spaced("{show} ({year})", episode_context, SpaceStyle.DOT) == "Show.Name.(2020)"
+
+
+def test_a_space_in_a_group_and_spaces_left_by_an_empty_token_are_joined_once(episode_context: NamingContext) -> None:
+    track_context = replace(episode_context, track=episode_context.item.file.audio_tracks[0])
+    # No HDR on this file: the group is left out, and two gaps meeting make one.
+    assert spaced("{show}[ {hdr}] {codec}", track_context, SpaceStyle.DOT) == "Show.Name.Dolby.Digital.Plus"
+    assert spaced("{show} {hdr} {codec}", track_context, SpaceStyle.DOT) == "Show.Name.Dolby.Digital.Plus"
+    assert spaced("{show} {hdr}", track_context, SpaceStyle.DOT) == "Show.Name"
+
+
+def test_a_defined_composite_joins_its_own_spaces(episode_context: NamingContext) -> None:
+    context = replace(episode_context, custom=(CustomToken("both", CustomKind.COMPOSITE, "{show} by {show}"),))
+    assert spaced("{both}", context, SpaceStyle.UNDERSCORE) == "Show_Name_by_Show_Name"
+    context = replace(episode_context, custom=(CustomToken("both", CustomKind.COMPOSITE, "{show} {year}"),))
+    assert spaced("{both}", context, SpaceStyle.UNDERSCORE) == "Show_Name_2020"
+
+
+def test_the_space_choice_reaches_a_defined_pattern_and_a_composite_but_not_a_constant(
     episode_context: NamingContext,
 ) -> None:
     custom = (
@@ -59,7 +98,7 @@ def test_the_space_choice_reaches_a_defined_pattern_but_not_a_constant_or_the_ty
         CustomToken("both", CustomKind.COMPOSITE, "{show} by {group}"),
     )
     context = replace(episode_context, custom=custom)
-    assert spaced("{group}|{found}|{both}", context, SpaceStyle.DOT) == "My Group|Show.Name|Show.Name by My Group"
+    assert spaced("{group}|{found}|{both}", context, SpaceStyle.DOT) == "My Group|Show.Name|Show.Name.by.My Group"
 
 
 def test_a_replacement_is_written_as_typed(episode_context: NamingContext) -> None:
@@ -76,6 +115,11 @@ def test_the_choice_of_each_template_is_its_own() -> None:
         SpaceStyle.SPACE,
         SpaceStyle.DOT,
     ]
+
+
+def test_a_saved_choice_loads_under_the_same_value() -> None:
+    loaded = from_sparse(NamingOptions, {"video_track_space": "dot", "title_space": "underscore"}, "naming", [])
+    assert (loaded.video_track_space, loaded.title_space) == (SpaceStyle.DOT, SpaceStyle.UNDERSCORE)
 
 
 def test_old_options_load_with_spaces_kept_and_a_choice_round_trips() -> None:

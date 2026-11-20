@@ -20,7 +20,7 @@ from showrunner.app.jobs.groups import ChangeGroup
 from showrunner.app.jobs.preview import FileOutcome, FilePreview
 from showrunner.app.profiles.profile import Profile
 from showrunner.core.language import Language
-from showrunner.core.media import MediaItem
+from showrunner.core.media import Episode, MediaItem
 from showrunner.core.track import Track, TrackFlags, TrackKind
 from showrunner.stages.metadata import MetadataPlan
 from showrunner.stages.metadata.plan import FLAG_FIELDS
@@ -141,9 +141,24 @@ def review(given: ReviewInput) -> dict[str, object]:
         "groups": [_group(given, group, included, writing, run_parts, full_parts) for group in ChangeGroup],
         "stays": stays,
         "filters": [{"key": key, "label": tr(f"review.filter.{key}"), "count": counts[key]} for key in FILTERS],
-        "rows": [r for r in rows if _shown(given.filter, str(r["state"]))],
+        "rows": _with_seasons(given.items, [r for r in rows if _shown(given.filter, str(r["state"]))]),
         "apply_text": _apply_text(given, full_parts, changes, files) if changes else tr("review.apply_none"),
     }
+
+
+def _with_seasons(items: Sequence[MediaItem], rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Each row with `season`: the season's divider above the first row of each run of its episodes, empty elsewhere
+    and where the batch holds one season or none."""
+    seasons = {str(i.file.path): i.identity.season for i in items if isinstance(i.identity, Episode)}
+    many = len({(i.identity.show, i.identity.season) for i in items if isinstance(i.identity, Episode)}) > 1
+    last: int | None = None
+    marked = []
+    for row in rows:
+        season = seasons.get(str(row["path"]))
+        divider = many and season is not None and season != last
+        marked.append({**row, "season": tr("library.season", number=season) if divider else ""})
+        last = season
+    return marked
 
 
 def _apply_text(given: ReviewInput, full_parts: dict[Path, dict[str, int]], changes: int, files: int) -> str:

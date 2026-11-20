@@ -37,7 +37,8 @@ def check_tokens(
     custom: Sequence[CustomToken], value_maps: Mapping[str, Mapping[str, str]] | None = None
 ) -> list[TokenProblem]:
     """Every problem in the definitions and in the value maps' token names; empty when all is well."""
-    context = NamingContext(_NO_FILE, custom=tuple(custom))
+    # A defined token may be used in any template, so one that holds `{file_title}` is not wrong where it is defined.
+    context = NamingContext(_NO_FILE, custom=tuple(custom), file_title="")
     found: list[TokenProblem] = []
     seen: set[str] = set()
 

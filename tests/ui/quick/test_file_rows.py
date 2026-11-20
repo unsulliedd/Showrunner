@@ -65,8 +65,8 @@ def test_tracks_without_a_name_have_a_line_per_file_and_a_name_keeps_its_line(
         ("01 · no name", True, path_of(library, 1)),
         ("02 · no name", True, path_of(library, 2)),
         ("03 · no name", True, path_of(library, 3)),
-        ("04, 05, 06, 07, 08, 09, 10 · Commentary", True, ""),
-    ]
+        ("Commentary · every file with this name", True, ""),
+    ] + [(f"{n:02} · Commentary", True, path_of(library, n)) for n in range(4, 11)]
     assert rows[1]["label"] == "02 · no name Kept"
 
 
@@ -102,7 +102,7 @@ def test_a_click_on_a_file_line_is_that_episode_own_choice_and_leaves_the_others
     assert file_rules(controller, library, 2) == []
     settle(controller, qtbot)
     assert states(controller) == ["kept"] * 10
-    assert [r["over"] for r in name_rows(controller)] == ["", "", "", ""]
+    assert [r["over"] for r in name_rows(controller)] == [""] * 11
 
 
 def test_an_episode_keeps_its_track_where_the_season_drops_the_chip_and_discard_takes_it_back(
@@ -175,7 +175,7 @@ def test_opening_a_chip_does_not_make_it_wider_and_a_click_on_a_line_makes_the_f
     load()
     assert _chip(root).width() == closed
     lines = _visible(root, "chipNameRow")
-    assert len(lines) == 4
+    assert len(lines) == 11
     assert all(line.width() <= closed for line in lines)
     _click(load.window, lines[1])
     settle(controller, qtbot)
@@ -281,3 +281,17 @@ def test_a_default_is_marked_d_like_forced_in_the_inspector_list(
     settle(controller, qtbot)
     changes = controller.inspector["changes"]
     assert [c["icon"] for c in changes if "Default" in str(c["text"])] == ["default"]
+
+
+def test_over_a_whole_show_a_divider_names_each_season_before_its_first_file(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    controller.select(season_of(controller, library).parent())
+    settle(controller, qtbot)
+    rows = name_rows(controller)
+    dividers = [(n, r["text"]) for n, r in enumerate(rows) if r["divider"]]
+    assert [text for _, text in dividers] == ["Season 1", "Season 2"] * 2  # the files without a name, then the name's
+    # A divider is no line to click, and the file after it is the first of its season.
+    assert not any(rows[n]["clickable"] for n, _ in dividers)
+    assert [rows[n + 1]["text"].split(" · ")[0] for n, _ in dividers] == ["S01E01", "S02E01", "S01E04", "S02E04"]

@@ -77,13 +77,19 @@ def test_separators_are_added_as_plain_text_between_tokens(
     open_season(controller, library, qtbot)
     controller.pick_template("title_template")
     group = next(g for g in controller.tokens["groups"] if g["key"] == "separator")
-    dash = next(s["text"] for s in group["tokens"] if s["name"] == "spaced_dash")
+    chips = {s["name"]: s["text"] for s in group["tokens"]}
     controller.rail_append("show")
-    controller.rail_append_text(dash)  # a click on the chip
+    controller.rail_append_text(chips["dash"])  # a click on the chip
     controller.rail_append("episode_code")
-    controller.rail_add_text(3, dash)  # a drop before the code's slot
+    controller.rail_append_text(chips["dash"])
     controller.rail_append("episode_title")
-    assert naming(controller).title_template == "{show} - {episode_code} - {episode_title}"
+    assert naming(controller).title_template == "{show}-{episode_code}-{episode_title}"
+    assert controller.names["problems"] == []
+    assert next(e for e in controller.names["rows"] if e["after"])["after"].count(" - ") == 2
+    controller.rail_remove(1)  # a separator is taken out like a token
+    assert naming(controller).title_template == "{show}{episode_code}-{episode_title}"
+    controller.rail_append_text(chips["open_brace"])
+    assert naming(controller).title_template.endswith(r"\{")
     assert controller.names["problems"] == []
     controller.pick_template("audio_track_template")
     controller.rail_append_text(".")
@@ -197,8 +203,8 @@ def test_the_space_choice_belongs_to_the_picked_template_and_changes_its_result(
     settle(controller, qtbot)
     assert naming(controller).title_space is SpaceStyle.DOT
     parts = controller.names["result"]["segments"]
-    assert "".join(p["text"] for p in parts) == "Show.Name - Episode.One"
-    assert controller.names["rows"][0]["after"] == "Show.Name - Episode.One"
+    assert "".join(p["text"] for p in parts) == "Show.Name.-.Episode.One"
+    assert controller.names["rows"][0]["after"] == "Show.Name.-.Episode.One"
 
     # Another template has its own choice, and a bad one changes nothing.
     controller.pick_template("audio_track_template")

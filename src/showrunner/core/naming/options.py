@@ -31,8 +31,9 @@ class NamingOptions:
     video_track_template: str = ""
     audio_track_template: str = ""
     subtitle_track_template: str = ""
-    # What a space inside a token's value becomes in each template; typed text is never changed. The field of a
-    # template is its name with `_template` replaced by `_space`.
+    # What each template joins its words with: every space it produces, typed or inside a token's value. Other typed
+    # characters are never changed. The field of a template is its name with
+    # `_template` replaced by `_space`; the name is kept so that saved profiles load unchanged.
     title_space: SpaceStyle = SpaceStyle.SPACE
     video_track_space: SpaceStyle = SpaceStyle.SPACE
     audio_track_space: SpaceStyle = SpaceStyle.SPACE

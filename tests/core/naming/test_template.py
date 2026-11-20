@@ -47,7 +47,7 @@ def test_bad_format_spec_is_reported(template: str, episode_context: NamingConte
 
 
 def test_token_names_ignore_case_and_spaces(episode_context: NamingContext) -> None:
-    assert text("{ Show }-{SEASON:00}", episode_context) == "Show Name-01"
+    assert text("{ Show }x{SEASON:00}", episode_context) == "Show Namex01"
 
 
 def test_optional_group_disappears_with_an_empty_token(make_item: MakeItem, video: Build) -> None:

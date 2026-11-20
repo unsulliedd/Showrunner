@@ -17,7 +17,7 @@ from showrunner.app.jobs.stages import pipeline
 from showrunner.app.library.library import Library
 from showrunner.app.profiles.profile import Profile
 from showrunner.app.profiles.store import ProfileStore
-from showrunner.core.media import MediaItem
+from showrunner.core.media import Episode, MediaItem
 from showrunner.stages.mux.options import MuxOptions, Original
 from showrunner.stages.tracks import TrackMatch, TrackRule, TracksOptions, Verdict
 from showrunner.tools.probe import Programs
@@ -232,3 +232,15 @@ def test_flag_lines_of_an_unticked_kind_are_marked_out(season: list[MediaItem]) 
     assert [out for _label, _text, out in names] == [False, False, True]  # the rules' flags are the Tracks kind's
     tracks = edits(built(season, profile, groups_out={ChangeGroup.TRACKS})["rows"][0])
     assert [out for _label, _text, out in tracks] == [True, True, False]
+
+
+def test_over_more_seasons_a_divider_names_each_season_above_its_first_file(library: Library) -> None:
+    first = library.items[0].identity
+    show = [i for i in library.items if isinstance(i.identity, Episode) and i.identity.show == first.show]
+    rows = built(show, profile_for(show))["rows"]
+    marked = [(n, r["season"]) for n, r in enumerate(rows) if r["season"]]
+    assert [text for _, text in marked] == ["Season 1", "Season 2"]
+    assert [n for n, _ in marked] == [0, 10]
+    # One season alone needs no divider.
+    season = [i for i in show if BatchKey.of(i) == BatchKey.of(show[0])]
+    assert all(r["season"] == "" for r in built(season, profile_for(season))["rows"])

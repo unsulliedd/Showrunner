@@ -1,7 +1,8 @@
 import QtQuick
 import Showrunner
 
-// One part of the builder rail: a token chip, typed text, an empty place to type, or an optional group. A token
+// One part of the builder rail: a token chip, a separator chip, typed text, an empty place to type, or an optional
+// group. A token
 // dropped on the left half of a part goes before it, on the right half after it; on an empty place, into it.
 Item {
     id: part
@@ -43,7 +44,7 @@ Item {
         id: loader
 
         anchors.verticalCenter: parent.verticalCenter
-        sourceComponent: part.kind === "token" ? chip : part.kind === "group" ? null : text
+        sourceComponent: part.kind === "token" ? chip : part.kind === "separator" ? separator : part.kind === "group" ? null : text
         Component.onCompleted: if (part.kind === "group") setSource("RailGroup.qml", {"group": part.modelData})
     }
 
@@ -52,6 +53,14 @@ Item {
 
         RailChip {
             token: part.modelData
+        }
+    }
+
+    Component {
+        id: separator
+
+        RailSeparator {
+            separator: part.modelData
         }
     }
 

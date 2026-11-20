@@ -151,9 +151,9 @@ def _item(root: QQuickItem, name: str) -> QQuickItem:
     return found
 
 
-def _click(window: Any, item: QQuickItem) -> None:
+def _click(window: Any, item: QQuickItem, button: Qt.MouseButton = Qt.MouseButton.LeftButton) -> None:
     point = item.mapToScene(QPointF(item.width() / 2, item.height() / 2)).toPoint()
-    QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, point)
+    QTest.mouseClick(window, button, Qt.KeyboardModifier.NoModifier, point)
 
 
 def test_chips_and_rules_answer_the_pointer(
@@ -926,24 +926,30 @@ def test_separators_drag_and_click_in_as_typed_text(
 
     assert template() == "{file_name}"
     # A drop on the left half of a chip goes before it; a click goes at the end. Both write plain text.
-    dash = _item(root, "separatorChip_spaced_dash")
+    dash = _item(root, "separatorChip_dash")
     _drag(load.window, qtbot, _centre(dash), _centre(_item(root, "railChip_file_name"), 0.2))
     load()
-    assert template() == " - {file_name}"
+    assert template() == "-{file_name}"
     _click(load.window, _item(root, "separatorChip_dot"))
     load()
-    assert template() == " - {file_name}."
-    # Every separator is a chip of its own, and the chip for a space is not blank.
-    assert (
-        len(
-            [
-                i
-                for k in ("space", "spaced_dash", "dot", "underscore", "dash")
-                for i in _items(root, f"separatorChip_{k}")
-            ]
-        )
-        == 5
-    )
+    assert template() == "-{file_name}."
+    # Each separator is a chip of its own; the pieces join themselves, so there is no chip for a space.
+    keys = ("dash", "dot", "underscore", "open_paren", "close_paren")
+    keys += ("open_bracket", "close_bracket", "open_brace", "close_brace")
+    assert [k for k in keys for i in _items(root, f"separatorChip_{k}")] == list(keys)
+    assert not _items(root, "separatorChip_space")
+    # A brace goes in escaped, and the rail shows it as a chip.
+    _click(load.window, _item(root, "separatorChip_open_brace"))
+    load()
+    assert template() == r"-{file_name}.\{"
+    assert [i.property("separator")["text"] for i in _items(root, "railSeparator")] == ["-", ".", "{"]
+    # A middle click on a separator or on a token takes it out of the template.
+    _click(load.window, _items(root, "railSeparator")[1], Qt.MouseButton.MiddleButton)
+    load()
+    assert template() == r"-{file_name}\{"
+    _click(load.window, _item(root, "railChip_file_name"), Qt.MouseButton.MiddleButton)
+    load()
+    assert template() == r"-\{"
     assert load() == []
 
 

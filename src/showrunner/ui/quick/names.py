@@ -63,9 +63,20 @@ TRACK_KIND = dict(zip(TRACK_TEMPLATES, (TrackKind.VIDEO, TrackKind.AUDIO, TrackK
 _ICON = {"video_track_template": "video", "audio_track_template": "audio", "subtitle_track_template": "subs"}
 # The token groups of the Tokens panel, in order; custom tokens come last.
 _SCOPES = (Scope.ITEM, Scope.VIDEO, Scope.TRACK)
-# The separators of the Tokens panel: key and the plain text a drop or click puts into the template. A separator is
-# typed text, so the template, the checks and Apply see nothing new.
-SEPARATORS = (("space", " "), ("spaced_dash", " - "), ("dot", "."), ("underscore", "_"), ("dash", "-"))
+# The separators of the Tokens panel: key and the character a drop or click puts into the template. A separator is a
+# character in the template's text, so the template, the checks and Apply see nothing new; `core.naming` knows which
+# sides of it the join goes on. Each one inserts exactly what its label shows.
+SEPARATORS = (
+    ("dash", "-"),
+    ("dot", "."),
+    ("underscore", "_"),
+    ("open_paren", "("),
+    ("close_paren", ")"),
+    ("open_bracket", "["),
+    ("close_bracket", "]"),
+    ("open_brace", "{"),
+    ("close_brace", "}"),
+)
 _PADDINGS = (0, 2, 3)  # what a click on a number chip's format steps through
 NEW_TOKEN = "token"
 
@@ -153,7 +164,7 @@ def move_token(template: str, source: int, target: int) -> str:
     """Move the token at `source` to before the piece now at `target` (`len` for the end)."""
 
     def change(parts: list[Piece]) -> None:
-        if not _is(parts, source, PieceKind.TOKEN) or not 0 <= target <= len(parts):
+        if not _is(parts, source, PieceKind.TOKEN, PieceKind.CHIP) or not 0 <= target <= len(parts):
             return
         piece = parts.pop(source)
         parts.insert(target - 1 if target > source else target, piece)
@@ -162,10 +173,10 @@ def move_token(template: str, source: int, target: int) -> str:
 
 
 def remove_piece(template: str, at: int) -> str:
-    """Take out a token or a typed text."""
+    """Take out a token, a separator or a typed text."""
 
     def change(parts: list[Piece]) -> None:
-        if _is(parts, at, PieceKind.TOKEN, PieceKind.TEXT):
+        if _is(parts, at, PieceKind.TOKEN, PieceKind.CHIP, PieceKind.TEXT):
             del parts[at]
 
     return _edit(template, change)
@@ -196,8 +207,8 @@ def add_text(template: str, at: int, text: str) -> str:
 
 
 def toggle_optional(template: str, at: int) -> str:
-    """A token in a group leaves the group (its brackets go); one outside goes into a new group with the text typed
-    just before it, the usual separator (" - " before an episode title)."""
+    """A token in a group leaves the group (its brackets go); one outside goes into a new group with the text or
+    separator just before it (a dash before an episode title)."""
 
     def change(parts: list[Piece]) -> None:
         if not _is(parts, at, PieceKind.TOKEN):
@@ -206,7 +217,7 @@ def toggle_optional(template: str, at: int) -> str:
             del parts[_closing(parts, opened)]
             del parts[opened]
             return
-        start = at - 1 if _is(parts, at - 1, PieceKind.TEXT) else at
+        start = at - 1 if _is(parts, at - 1, PieceKind.TEXT, PieceKind.CHIP) else at
         parts.insert(at + 1, Piece(PieceKind.CLOSE))
         parts.insert(start, Piece(PieceKind.OPEN))
 
@@ -332,7 +343,7 @@ def segments(template: str, context: NamingContext) -> list[dict[str, object]]:
     kept, _losses = _walk(parts, values)
     spans, cursor = [], 0
     for i, part in enumerate(parts):
-        if not kept[i] or part.kind in (PieceKind.OPEN, PieceKind.CLOSE):
+        if not kept[i] or part.kind in (PieceKind.OPEN, PieceKind.CLOSE, PieceKind.CHIP):
             continue
         needle = values[i] if part.kind is PieceKind.TOKEN else part.text.strip()
         at = text.find(needle, cursor) if needle else -1
@@ -404,6 +415,8 @@ def rail(template: str, context: NamingContext | None, custom: Sequence[CustomTo
                 continue
             if part.kind is PieceKind.TEXT:
                 found.append({"kind": "text", "at": i, "text": part.text})
+            elif part.kind is PieceKind.CHIP:
+                found.append({"kind": "separator", "at": i, "text": part.text})
             else:
                 found.append(
                     {
@@ -562,7 +575,7 @@ def place(given: NamesInput) -> dict[str, object]:
 
 
 def space_choice(naming: NamingOptions, template: str) -> dict[str, object]:
-    """What a space inside a token's value becomes in the picked template, with the choices."""
+    """What the picked template joins its words with, with the choices."""
     return {
         "value": naming.space_for(template).value,
         "field": f"naming.{template.removesuffix('_template')}_space",
@@ -722,7 +735,9 @@ def tokens(given: NamesInput, query: str, editing: int, builtin: str = "") -> di
         entries = [
             {"name": t.name, "label": token_label(t.name), "value": value(t.name, scope), "index": -1}
             for t in TOKENS.values()
-            if t.scope is scope and _matches(query, t.name, token_label(t.name))
+            if t.scope is scope
+            and not (t.track_templates_only and given.template == TITLE_TEMPLATE)
+            and _matches(query, t.name, token_label(t.name))
         ]
         if entries:
             groups.append({"key": scope.value, "label": tr(f"tokens.group.{scope.value}"), "tokens": entries})

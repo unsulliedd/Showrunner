@@ -392,6 +392,25 @@ def test_the_library_menu_lists_remove_and_close_with_tips_and_remove_takes_the_
     assert load() == []
 
 
+def test_the_library_menu_closes_after_close_folder_empties_the_list(
+    load: Any, controller: WindowController, folders: tuple[Path, Path], qtbot: QtBot
+) -> None:
+    show, _ = folders
+    load()
+    open_folders(controller, qtbot, show)
+    load()
+    window, root = load.window, load.window.contentItem()
+    menu = _named(window, "libraryMenu")
+    index = controller.tree.index(0, 0)
+    _click(window, _row(root, controller.tree.row_id(index)), Qt.MouseButton.RightButton)
+    qtbot.waitUntil(lambda: bool(menu.property("visible")))
+    count = int(menu.property("count"))
+    entries = {_evaluate(menu, f"itemAt({i})").property("text"): _evaluate(menu, f"itemAt({i})") for i in range(count)}
+    _click(window, entries["Close folder"])
+    qtbot.waitUntil(lambda: not controller.loaded)
+    qtbot.waitUntil(lambda: not menu.property("visible"))
+
+
 def test_the_home_button_in_the_top_bar_shows_home_and_back_to_the_library_returns(
     load: Any, controller: WindowController, folders: tuple[Path, Path], qtbot: QtBot
 ) -> None:

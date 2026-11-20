@@ -1568,7 +1568,7 @@ class WindowController(QObject):
 
     @Slot(str)
     def set_space(self, style: str) -> None:
-        """What a space inside a token's value becomes in the picked template."""
+        """What the picked template joins its words with."""
         if self._key is not None and style in SpaceStyle:
             field = self._template.removesuffix("_template") + "_space"
             self._set_naming(replace(self._naming(), **{field: SpaceStyle(style)}))

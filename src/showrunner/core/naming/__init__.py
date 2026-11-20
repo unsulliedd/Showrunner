@@ -6,6 +6,7 @@ from showrunner.core.naming.names import DEFAULT_CODEC_NAMES, DEFAULT_HDR_NAMES,
 from showrunner.core.naming.options import SUGGESTED_TEMPLATES, NamingOptions
 from showrunner.core.naming.style import EpisodeCodeFormat, SpaceStyle, episode_code
 from showrunner.core.naming.template import (
+    SEPARATORS,
     Piece,
     PieceKind,
     Preview,
@@ -22,6 +23,7 @@ from showrunner.core.naming.tokens import TOKENS, NamingContext, Scope, Token
 __all__ = [
     "DEFAULT_CODEC_NAMES",
     "DEFAULT_HDR_NAMES",
+    "SEPARATORS",
     "SUGGESTED_TEMPLATES",
     "TOKENS",
     "CustomKind",

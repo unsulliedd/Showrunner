@@ -44,9 +44,12 @@ class NamingContext:
     value_maps: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     # `{flags}` also names the flags the track's name implies, as the track rules read them.
     flags_from_names: bool = True
-    # How tokens are written: what a space inside a value becomes, and the spelling of `{episode_code}`.
+    # How tokens are written: what every space of the name becomes (typed gaps and spaces inside values), and the
+    # spelling of `{episode_code}`.
     space: SpaceStyle = SpaceStyle.SPACE
     episode_code_format: EpisodeCodeFormat = EpisodeCodeFormat.UPPER
+    # The title the file gets, for `{file_title}`; None in the title template, which has no title to copy.
+    file_title: str | None = None
 
     @property
     def video(self) -> Track | None:
@@ -68,6 +71,10 @@ class Token:
     read: Callable[[NamingContext], str | int | None]
     # Numbers accept a zero-padding format such as `{season:00}`; text does not.
     numeric: bool = False
+    # Usable in the track templates only; the title template reports it.
+    track_templates_only: bool = False
+    # False for a value that is copied as it is: the template's join choice does not touch its spaces.
+    joined: bool = True
 
 
 def _show(c: NamingContext) -> str | None:
@@ -205,6 +212,15 @@ _TOKENS = (
     Token("language_code", Scope.TRACK, "tr", _language_code),
     Token("track_name", Scope.TRACK, "Original Name", _track_name),
     Token("flags", Scope.TRACK, "Forced", _flags),
+    # The title the file gets from the title template, else the title it has; `{title}` is the show's or the movie's.
+    Token(
+        "file_title",
+        Scope.TRACK,
+        "Show Name - 1x05 - Episode Name",
+        lambda c: c.file_title,
+        track_templates_only=True,
+        joined=False,
+    ),
 )
 
 TOKENS: dict[str, Token] = {token.name: token for token in _TOKENS}

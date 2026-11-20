@@ -4,8 +4,8 @@ import Showrunner
 
 // A token in the builder rail: its name, and for a number its format as the value it gives (a click steps through
 // 1, 01, 001). Once focused (a click or Tab) it offers to leave it out when empty and to take it out; on focus
-// rather than hover, so the rail does not reflow under the pointer. Drag it to move it; Delete takes it out, Ctrl
-// with Left or Right moves it one place.
+// rather than hover, so the rail does not reflow under the pointer. Drag it to move it; Delete or a middle click
+// takes it out, Ctrl with Left or Right moves it one place.
 Rectangle {
     id: chip
 
@@ -38,6 +38,11 @@ Rectangle {
 
     TapHandler {
         onTapped: chip.forceActiveFocus()
+    }
+
+    TapHandler {
+        acceptedButtons: Qt.MiddleButton
+        onTapped: app.rail_remove(chip.token.at)
     }
 
     TokenDrag {

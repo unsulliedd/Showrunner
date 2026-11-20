@@ -43,6 +43,8 @@ class Base(StrEnum):
     SECONDARY = "secondary"  # the light set's selection; Appearance does not offer it
     ACCENT = "accent"  # the change color: whatever a run will change
     NEUTRAL = "neutral"  # the neutral the window ground, panels, lines and text levels are tinted from
+    DEFAULT_TRACK = "default_track"  # the code of a track that has the default flag
+    FORCED_TRACK = "forced_track"  # the frame of a track's code where the track has the forced flag
 
 
 class ColorSet(StrEnum):
@@ -55,6 +57,8 @@ DEFAULT_BASES: dict[Base, str] = {
     Base.SECONDARY: "#6fc3d8",
     Base.ACCENT: "#f4b544",
     Base.NEUTRAL: "#0b0d10",
+    Base.DEFAULT_TRACK: "#5fcfe0",
+    Base.FORCED_TRACK: "#e59ad8",
 }
 
 
@@ -199,6 +203,17 @@ ROLES: tuple[Role, ...] = (
     # An added file or a program that was found, and the fill behind it.
     Role("add", "#1d7a52", "#62d6a5"),
     Role("add_soft", lambda v: mix(v["add"], v["panel"], 0.12), "#13281f"),
+    # A track's flags drawn on its code chip: the default flag colours the code, the forced flag frames it.
+    Role(
+        "flag_default",
+        lambda v: readable(at_most(v["default_track"], 0.55), v["panel_3"], v["panel"], darker=True),
+        lambda v: readable(at_least(v["default_track"], 0.72), v["panel_3"], v["panel"], darker=False),
+    ),
+    Role(
+        "flag_forced",
+        lambda v: readable(at_most(v["forced_track"], 0.55), v["panel_3"], v["panel"], darker=True),
+        lambda v: readable(at_least(v["forced_track"], 0.72), v["panel_3"], v["panel"], darker=False),
+    ),
     # Notices and warnings drawn as text.
     Role(
         "accent_ink",
@@ -213,7 +228,7 @@ ROLE: dict[str, Role] = {role.key: role for role in ROLES}
 QUICK_ROLES: tuple[str, ...] = (
     "ground", "panel", "panel_2", "panel_3", "well", "line", "line_strong", "ink", "muted", "faint",
     "control", "control_ink", "control_soft", "select", "change", "change_soft", "drop", "drop_soft",
-    "add", "add_soft",
+    "add", "add_soft", "flag_default", "flag_forced",
 )  # fmt: skip
 
 
@@ -314,6 +329,8 @@ SIZES: dict[str, int] = {
     "list_row": 46,  # an episode row of Overview, a file row of the track matrix
     "pill": 20,  # a track pill in an episode row, a code badge
     "matrix_label": 150,  # the narrowest the matrix's file names get; Overview, Review and Jobs size their names by it
+    "jobs_file": 420,  # the file name that starts each row of the Jobs drawer
+    "jobs_phase": 200,  # one step of a Jobs row: its name over its progress line
     "matrix_column": 82,  # a track chip's least width in an Overview row
     "matrix_header": 166,  # the matrix's column headers with their toggles and where their choice comes from
     "track_card": 64,  # a movie's track card
@@ -334,11 +351,11 @@ SIZES: dict[str, int] = {
     "track_mark_width": 120,  # where a track row's choice comes from, right-aligned before its flags
     "track_files_width": 76,  # the "Files" button at the end of a track row
     "track_row_two_lines_below": 480,  # a track row narrower than this puts its name, count and mark on a second line
-    "track_strip_label": 400,  # a track's row beside its strip of files, which stands still as the strip scrolls
+    "track_strip_label": 520,  # a track's row beside its strip of files, which stands still as the strip scrolls
     "track_strip_label_narrow": 236,  # its short form: the codec over the first of the mark, the count and the name
     "strip_label_short_below": 640,  # a Tracks place narrower than this takes the short form of the rows
-    "strip_pitch": 22,  # one file's width in the strip
-    "strip_cell": 16,  # the frame of a cell that differs
+    "strip_pitch": 26,  # one file's width in the strip
+    "strip_cell": 18,  # the frame of a cell that differs
     "strip_run": 40,  # the least width of a run of files that follow every track, folded into one
     "window_min_width": 1024,
     "window_min_height": 640,

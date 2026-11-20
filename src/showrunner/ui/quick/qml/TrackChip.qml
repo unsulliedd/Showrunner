@@ -389,7 +389,7 @@ Item {
                 id: entry
 
                 required property int index
-                readonly property var row: control.rows[index] ?? ({"text": "", "name": "", "file": "", "clickable": false, "dropped": false, "from": "", "over": "", "short": "", "label": ""})
+                readonly property var row: control.rows[index] ?? ({"text": "", "name": "", "file": "", "clickable": false, "dropped": false, "from": "", "over": "", "short": "", "label": "", "divider": false})
                 readonly property bool current: ListView.isCurrentItem && list.activeFocus && row.clickable
 
                 objectName: "chipNameRow"
@@ -407,10 +407,38 @@ Item {
                     border.color: Theme.control
                 }
 
+                // A season's divider: its name between two rules.
                 RowLayout {
                     anchors.fill: parent
                     anchors.leftMargin: Theme.space_sm
                     anchors.rightMargin: Theme.space_sm
+                    visible: entry.row.divider
+                    spacing: Theme.space_sm
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: Theme.stroke
+                        color: Theme.line
+                    }
+
+                    UiText {
+                        text: entry.row.text
+                        color: Theme.muted
+                        font.pixelSize: Theme.text_xs
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: Theme.stroke
+                        color: Theme.line
+                    }
+                }
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: Theme.space_sm
+                    anchors.rightMargin: Theme.space_sm
+                    visible: !entry.row.divider
                     spacing: Theme.space_md
 
                     UiText {

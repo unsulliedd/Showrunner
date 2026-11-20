@@ -33,6 +33,11 @@ Item {
                 tip: Strings.t("tip.token_add")
                 onClicked: app.add_token()
             }
+
+            HelpTip {
+                objectName: "tokensTip"
+                topic: "separators"
+            }
         }
 
         ScrollPane {
@@ -71,12 +76,6 @@ Item {
                                 font.weight: Font.DemiBold
                                 font.letterSpacing: Theme.stroke
                                 font.capitalization: Font.AllUppercase
-                            }
-
-                            HelpTip {
-                                objectName: "separatorsTip"
-                                visible: group.modelData.key === "separator"
-                                topic: "separators"
                             }
 
                             PlaceMark {
