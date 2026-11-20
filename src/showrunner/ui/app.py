@@ -11,6 +11,7 @@ from showrunner import APP_NAME, __version__
 from showrunner.app.profiles import registered  # noqa: F401  # registers every stage's options
 from showrunner.app.settings.app_settings import load_settings
 from showrunner.ui.i18n.catalog import set_language
+from showrunner.ui.quick.collector import collect_on_gui_thread
 from showrunner.ui.quick.engine import build_engine
 from showrunner.ui.quick.window import WindowController
 
@@ -25,6 +26,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
+    collect_on_gui_thread(app)
     settings = load_settings()
     for warning in settings.warnings:
         _log.warning("Settings: %s at %s", warning.kind.value, warning.location)

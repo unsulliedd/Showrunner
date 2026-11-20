@@ -15,9 +15,10 @@ def test_the_window_asks_for_opengl_before_it_is_built(monkeypatch: pytest.Monke
     monkeypatch.setattr(sys, "argv", ["showrunner"])
     monkeypatch.setattr(entry, "QApplication", lambda args: calls.append(args) or QApplication.instance())
     monkeypatch.setattr(entry.QQuickWindow, "setGraphicsApi", calls.append)
+    monkeypatch.setattr(entry, "collect_on_gui_thread", lambda app: calls.append("collector"))
     monkeypatch.setattr(entry, "build_engine", lambda controller: calls.append("engine") or _NoWindow())
     assert entry.main() == 1
-    assert calls == [entry.QSGRendererInterface.GraphicsApi.OpenGL, ["showrunner"], "engine"]
+    assert calls == [entry.QSGRendererInterface.GraphicsApi.OpenGL, ["showrunner"], "collector", "engine"]
 
 
 class _NoWindow:

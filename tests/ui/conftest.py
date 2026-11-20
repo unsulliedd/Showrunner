@@ -5,14 +5,14 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent, QThreadPool, QTimer
+from PySide6.QtCore import QCoreApplication, QEvent, QThreadPool
 
 from showrunner.app.storage.paths import HOME_ENV_VAR
+from showrunner.ui.quick.collector import collect_on_gui_thread
 
 POOL_WAIT_MS = 10_000
 # Each round delivers what the pool's work sent back, which may start more work (a plan after a program check).
 POOL_ROUNDS = 10
-COLLECT_MS = 50
 FULL_EVERY = 50  # tests between full collections
 _FINISHED = [0]
 
@@ -51,23 +51,9 @@ def deleted_at_end(data_home: Path) -> Iterator[None]:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def collected_on_the_main_thread(qapp: QCoreApplication) -> Iterator[None]:
-    """Python's collector runs on whichever thread allocates enough, a pool thread included. A pool-thread collection
-    while the main thread was inside Qt crashed the process with an access violation under load, also with nothing of
-    Qt's to free. So automatic collection is off, and a timer on the main thread collects whenever the counts pass
-    the collector's own thresholds, at each turn of the event loop."""
-
-    def collect() -> None:
-        young, middle, _old = gc.get_count()
-        first, second, _third = gc.get_threshold()
-        if young > first:
-            gc.collect(1 if middle > second else 0)
-
-    gc.disable()
-    timer = QTimer()
-    timer.setInterval(COLLECT_MS)
-    timer.timeout.connect(collect)
-    timer.start()
+def collected_on_the_gui_thread(qapp: QCoreApplication) -> Iterator[None]:
+    """As in the app: a pool-thread collection while the main thread was inside Qt crashed the process under load."""
+    timer = collect_on_gui_thread(qapp)
     yield
     timer.stop()
     gc.enable()
