@@ -7,14 +7,12 @@ import threading
 from collections.abc import Callable, Collection, Iterable, Mapping
 from pathlib import Path
 
-from showrunner.app.dependencies.service import check, media_programs
+from showrunner.app.dependencies.service import media_programs
 from showrunner.app.library.cache import CachedReader, load_cache, save_cache
 from showrunner.app.library.library import LibraryLoad
 from showrunner.core.media import MediaFile, MediaItem
 from showrunner.stages.scan import ScanOptions, probe_items, scan
 from showrunner.stages.scan.probing import Progress, Reader
-from showrunner.tools.dependencies.detect import DependencyStatus
-from showrunner.tools.dependencies.specs import SPEC_BY_ID
 from showrunner.tools.probe import Programs, probe
 
 _log = logging.getLogger(__name__)
@@ -94,8 +92,3 @@ def read_again(
     if cache is not None and cached.changed:
         save_cache(cache, cached.entries)
     return files
-
-
-def reading_statuses(cancel: threading.Event | None = None) -> dict[str, DependencyStatus]:
-    """The state of the programs that read tracks, by program ID."""
-    return {spec_id: check(SPEC_BY_ID[spec_id], cancel) for spec_id in ("mkvtoolnix", "ffmpeg")}

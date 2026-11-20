@@ -58,7 +58,7 @@ def test_a_remux_moves_through_its_phases_and_ends_worded() -> None:
     job.step_changed(record(1, B, "mux", StepState.FAILED, MuxResult(failure=Failure.VERIFY, problems=problems)), 130.0)
     job.step_changed(record(2, C, "metadata", StepState.RUNNING), 130.0)
     job.step_changed(record(2, C, "metadata", StepState.DONE, ApplyResult()), 131.0)
-    job.finish(JobResult(1, ()), 131.0)
+    job.finish(JobResult(()), 131.0)
     rows = job.view(131.0)["rows"]
     assert [p["state"] for p in rows[1]["phases"]] == ["done", "failed", "waiting", "waiting"]
     assert rows[1]["result"] == [
@@ -75,7 +75,7 @@ def test_stale_skipped_and_cancelled_files_say_why_nothing_was_written() -> None
     job.step_changed(record(0, A, "mux", StepState.STALE), 1.0)
     job.step_changed(record(1, B, "mux", StepState.SKIPPED), 1.0)
     job.step_changed(record(2, C, "mux", StepState.RUNNING), 1.0)
-    job.finish(JobResult(1, (), cancelled=True), 2.0)
+    job.finish(JobResult((), cancelled=True), 2.0)
     rows = job.view(2.0)["rows"]
     assert [r["state"] for r in rows] == ["stale", "skipped", "stopped"]
     assert rows[0]["result"] == ["The file changed since it was planned, so it was not written."]

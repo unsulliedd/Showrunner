@@ -90,25 +90,29 @@ def test_excluding_a_show_again_reaches_a_season_that_was_included_on_its_own() 
     assert exclusions.excluded(SEASON_1)
 
 
+def excluded_in_show(batches: Batches, item: MediaItem, under: BatchKey) -> bool:
+    return batches.is_excluded(BatchKey.file(item).in_show(under))
+
+
 def test_files_are_excluded_by_their_place_in_the_show_row(store: ProfileStore) -> None:
     batches = Batches(store)
     items = [episode_item(1, 1), episode_item(1, 2), episode_item(2, 1)]
     batches.set_excluded(SEASON_1, True)
-    assert batches.excluded_files(items, SHOW) == {items[0].file.path, items[1].file.path}
+    assert [excluded_in_show(batches, i, SHOW) for i in items] == [True, True, False]
     batches.set_excluded(BatchKey.file(items[0]), False)
-    assert batches.excluded_files(items, SHOW) == {items[1].file.path}
+    assert [excluded_in_show(batches, i, SHOW) for i in items] == [False, True, False]
     # Titles that differ in case still name the show row's place.
     shouting = MediaItem(Episode("SHOW NAME", 1, 2, year=2020), items[1].file)
-    assert batches.excluded_files([shouting], SHOW) == {items[1].file.path}
+    assert excluded_in_show(batches, shouting, SHOW)
 
 
 def test_a_movie_is_excluded_through_the_movies_group(store: ProfileStore) -> None:
     batches = Batches(store)
     item = MediaItem(Movie("Movie Title", 2021), MediaFile(Path("Movie Title (2021).mkv"), "matroska"))
     batches.set_excluded(MOVIES, True)
-    assert batches.excluded_files([item], MOVIES) == {item.file.path}
+    assert excluded_in_show(batches, item, MOVIES)
     batches.set_excluded(BatchKey.file(item), False)
-    assert batches.excluded_files([item], MOVIES) == set()
+    assert not excluded_in_show(batches, item, MOVIES)
 
 
 def test_exclusion_survives_a_restart(tmp_path: Path, store: ProfileStore) -> None:

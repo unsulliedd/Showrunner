@@ -20,20 +20,14 @@ from showrunner.ui.theme.tokens import (
 TEXT_ON_BACKGROUND = [
     ("ink", "surface"),
     ("ink", "chrome"),
-    ("ink", "chrome_2"),
     ("ink", "select"),
     ("ink", "drop_soft"),
-    ("ink", "danger_soft"),
     ("muted", "surface"),
     ("muted", "chrome"),
-    ("link", "surface"),
-    ("link", "chrome"),
     ("accent_ink", "surface"),
     ("accent_ink", "chrome"),
     ("danger", "surface"),
     ("control_ink", "control"),
-    ("control_soft_ink", "control_soft"),
-    ("tip_ink", "tip"),
 ]
 
 # Pure colors, greys, and an OKLCH grid of hues, lightness levels (around the 0.6 ink switch too) and chromas.
@@ -76,16 +70,16 @@ def test_every_role_resolves_to_a_hex_color(color_set: ColorSet) -> None:
 
 def test_bases_follow_into_derived_roles() -> None:
     changed = resolve(with_base(ThemeColors(), Base.PRIMARY, "#7a1f1f"), ColorSet.LIGHT)
-    assert changed["control_fill"] == "#7a1f1f"
-    assert changed["control_fill"] != resolve(ThemeColors(), ColorSet.LIGHT)["control_fill"]
+    assert changed["control"] == "#7a1f1f"
+    assert changed["control"] != resolve(ThemeColors(), ColorSet.LIGHT)["control"]
 
 
 def test_override_replaces_a_role_and_its_followers_take_it() -> None:
-    colors = with_role(ThemeColors(), ColorSet.DARK, "link", "#abcdef")
-    dark = resolve(colors, ColorSet.DARK)
-    assert dark["link"] == "#abcdef"
-    assert dark["focus"] == "#abcdef"
-    assert resolve(colors, ColorSet.LIGHT)["link"] != "#abcdef"
+    colors = with_role(ThemeColors(), ColorSet.LIGHT, "surface", "#abcdef")
+    light = resolve(colors, ColorSet.LIGHT)
+    assert light["surface"] == "#abcdef"
+    assert light["line_strong"] != resolve(ThemeColors(), ColorSet.LIGHT)["line_strong"]
+    assert resolve(colors, ColorSet.DARK)["surface"] != "#abcdef"
 
 
 def test_changes_stay_sparse() -> None:
@@ -104,7 +98,7 @@ APPROVED_DARK = {
     "line": "#22272F", "line_strong": "#353C47", "ink": "#E7EAEE", "muted": "#A2ABB7", "faint": "#7E8894",
     "control": "#8FA8FF", "control_ink": "#0B0D10", "control_soft": "#1B2236", "select": "#1D2540",
     "change": "#F4B544", "change_soft": "#2B2314", "drop": "#FF8077", "drop_soft": "#2C1817",
-    "add": "#62D6A5", "add_soft": "#13281F", "video": "#000000",
+    "add": "#62D6A5", "add_soft": "#13281F",
 }  # fmt: skip
 
 
@@ -136,7 +130,5 @@ def test_dark_roles_follow_a_moved_base() -> None:
 def test_the_matrix_sizes_order_from_narrowest_to_widest() -> None:
     from showrunner.ui.theme.tokens import SIZES
 
-    assert SIZES["matrix_label"] <= SIZES["matrix_name"]
-    assert SIZES["matrix_column"] <= SIZES["matrix_column_min"]
     assert SIZES["track_strip_label_narrow"] < SIZES["track_strip_label"] < SIZES["strip_label_short_below"]
     assert SIZES["strip_cell"] < SIZES["strip_pitch"] < SIZES["strip_run"]

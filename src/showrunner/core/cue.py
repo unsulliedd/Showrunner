@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class Cue:
+    # Not used by the app yet; the subtitle stage (sync, re-split, translate) works on cues.
     start: float  # seconds
     end: float
     text: str

@@ -46,7 +46,7 @@ class StringCatalog:
         return self._loaded[language]
 
     def _report(self, key: str, problem: str) -> None:
-        # A missing key is hit on every repaint of the widget that uses it; one line in the log is enough.
+        # A missing key is looked up on every redraw of the view that uses it; one line in the log is enough.
         if key not in self._reported:
             self._reported.add(key)
             _log.warning("String %r: %s", key, problem)
@@ -72,7 +72,7 @@ def set_language(language: str) -> None:
 
 
 def tr(key: str, **values: object) -> str:
-    """The UI text for `key` in the active language. Every widget gets its text through this function."""
+    """The UI text for `key` in the active language. Every piece of UI text comes through this function."""
     return _catalog.text(key, **values)
 
 

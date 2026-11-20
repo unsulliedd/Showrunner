@@ -46,8 +46,6 @@ class MetadataProblemKind(StrEnum):
     NOT_MATROSKA = "not-matroska"  # detail: the container
     TEMPLATE = "template"  # `template` is the option's name, `template_problems` what is wrong in it
     INVALID_LANGUAGE = "invalid-language"  # detail: the tag
-    # No longer produced: a file the track rules refuse is planned with its tracks as they are.
-    TRACKS_REFUSED = "tracks-refused"  # `refused` holds the reasons of the track plan
 
 
 @dataclass(frozen=True, slots=True)

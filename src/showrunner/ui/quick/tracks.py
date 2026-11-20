@@ -49,7 +49,7 @@ from showrunner.stages.tracks import (
 )
 from showrunner.tools.mkvtoolnix.propedit import Property
 from showrunner.ui.i18n.catalog import tr, tr_plural
-from showrunner.ui.sheet.format import size_text
+from showrunner.ui.quick.facts import size_text
 
 KINDS = (TrackKind.AUDIO, TrackKind.SUBTITLE)
 FLAGS = ("default", "forced")
@@ -1086,7 +1086,7 @@ def new_title(file: FilePreview | None) -> str:
 def _what_changes(
     item: MediaItem, file: FilePreview | None, tracks: Sequence[Seen], original: Original
 ) -> list[dict[str, str]]:
-    """The inspector's list, grouped like the design: the new file, the flags that move, the names."""
+    """The inspector's list, grouped as the new file, the flags that move and the names."""
     stage = file.plan_for("tracks") if file is not None else None
     plan = stage.plan if stage is not None else None
     changes: list[dict[str, str]] = []

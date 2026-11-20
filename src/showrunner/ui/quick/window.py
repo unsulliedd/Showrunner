@@ -133,7 +133,7 @@ SHOWN_PROGRAMS: tuple[str, ...] = ("mkvtoolnix", "ffmpeg")
 # A choice is written to the workspace file this long after the last one, so a burst of clicks writes once.
 SAVE_DELAY_MS = 400
 # The tree dot of a file whose plan needs a decision, and of one with planned changes.
-_LOOK_DOT, _PLANNED_DOT = "accent_ink", "control"
+_LOOK_DOT, _PLANNED_DOT = "needs_look", "planned"
 _LOOK = (FileOutcome.REFUSED, FileOutcome.NEEDS_REMUX, FileOutcome.UNWRITTEN)
 _NO_STRIP = {form: {"files": [], "lines": [], "seasons": []} for form in ("all", "differ")} | {"differing": 0}
 # How long closing the window waits for a cancelled job to stop its program and leave the files in a known place.
@@ -1130,11 +1130,6 @@ class WindowController(QObject):
         if self._view is None or not 0 <= column < len(self._view.cols):
             return None
         return self._view.cols[column], self._headers()[column]
-
-    @Slot(int, result="QVariantList")
-    def track_names(self, column: int) -> list[str]:
-        """The ▾ list of a chip or matrix column: each file's name for its track, built when the list opens."""
-        return self._view.names(column) if self._view is not None else []
 
     @Slot(int, result="QVariantList")
     def track_name_rows(self, column: int) -> list[dict[str, Any]]:

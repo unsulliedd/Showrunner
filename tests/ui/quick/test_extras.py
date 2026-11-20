@@ -17,7 +17,6 @@ from showrunner.ui.library.model import Kind
 from showrunner.ui.quick.facts import heading
 from showrunner.ui.quick.library import EXCLUDED, KIND, LABEL
 from showrunner.ui.quick.window import WindowController
-from showrunner.ui.sheet.format import count_parts, item_title
 
 from .test_choices import COMMENTARY, settle
 
@@ -120,13 +119,10 @@ def test_excluding_the_extras_reaches_each_one_and_the_show_reaches_them_too(
     assert row_of(controller, Kind.EXTRAS, tr("library.extras")).data(EXCLUDED)
 
 
-def test_titles_counts_and_facts_name_extras(library: Library) -> None:
+def test_facts_name_extras(library: Library) -> None:
     library = with_extras(library)
     items = [i for i in library.items if getattr(i.identity, "show", "") == "Show Name"]
     extra = items[-1]
-    assert item_title(extra) == "Show Name · Bloopers"
-    parts = [text for text, _ in count_parts(library.counts([i.file.path for i in items]))]
-    assert parts[1] == "1 show, 18 episodes, 2 extras"
     show = heading(BatchKey.of(extra, whole_show=True), items)
     dot = f" {tr('status.separator')} "
     assert show.facts.startswith(dot.join(("2 seasons", "18 episodes", "2 extras")))

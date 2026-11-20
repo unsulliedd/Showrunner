@@ -6,7 +6,6 @@ import pytest
 from showrunner.core.language import (
     Language,
     add_languages,
-    common_codes,
     languages,
     region_name,
     regions,
@@ -168,4 +167,3 @@ def test_the_lists_of_the_picker() -> None:
     assert ("Latn", "Latin") in scripts()
     add_languages({"roa": "Romance languages"})
     assert any(row.code == "roa" for row in languages())
-    assert set(common_codes()) <= {row.code for row in languages()}

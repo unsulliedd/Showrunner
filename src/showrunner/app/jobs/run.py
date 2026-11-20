@@ -44,7 +44,6 @@ class StepRecord:
 
 @dataclass(frozen=True, slots=True)
 class JobResult:
-    job_id: int
     steps: tuple[StepRecord, ...]
     cancelled: bool = False
     paused: bool = False  # stopped between two steps by `pause`; the rest waits for the next run
@@ -185,7 +184,7 @@ def run_job(
         )
         for s in job.steps
     )
-    return JobResult(job_id, records, cancelled, paused)
+    return JobResult(records, cancelled, paused)
 
 
 def _check_stamp(step: StoredStep) -> tuple[StepState | None, str]:

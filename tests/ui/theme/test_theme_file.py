@@ -67,3 +67,22 @@ def test_a_file_that_is_not_a_theme_gives_no_changes(tmp_path: Path, content: st
     loaded = load_theme_file(path)
     assert loaded.value == ThemeColors()
     assert [w.kind for w in loaded.warnings] == [WarningKind.UNREADABLE]
+
+
+RETIRED_ROLES = [
+    "control_fill", "chrome_2", "control_soft_ink", "danger_soft", "tip", "tip_ink", "scroll_thumb",
+    "scroll_thumb_hover", "focus", "link", "video",
+]  # fmt: skip
+
+
+def test_roles_that_were_retired_are_skipped_without_a_warning(tmp_path: Path) -> None:
+    path = tmp_path / "theme.json"
+    data = {
+        "showrunner_theme": 1,
+        "light": dict.fromkeys(RETIRED_ROLES, "#112233") | {"ink": "#000000"},
+        "dark": dict.fromkeys(RETIRED_ROLES, "#445566"),
+    }
+    path.write_text(json.dumps(data), encoding="utf-8")
+    loaded = load_theme_file(path)
+    assert loaded.warnings == []
+    assert loaded.value == with_role(ThemeColors(), ColorSet.LIGHT, "ink", "#000000")

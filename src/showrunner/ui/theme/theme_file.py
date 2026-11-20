@@ -16,6 +16,22 @@ THEME_FORMAT = 1
 THEME_EXTENSION = ".showrunner-theme.json"
 FORMAT_KEY = "showrunner_theme"
 MAX_THEME_BYTES = 64 * 1024
+# Roles that earlier versions wrote and that no longer exist; skipped on load so old files load without warnings.
+_RETIRED_ROLES = frozenset(
+    {
+        "control_fill",
+        "chrome_2",
+        "control_soft_ink",
+        "danger_soft",
+        "tip",
+        "tip_ink",
+        "scroll_thumb",
+        "scroll_thumb_hover",
+        "focus",
+        "link",
+        "video",
+    }
+)
 
 
 def theme_to_json(colors: ThemeColors) -> dict[str, Any]:
@@ -63,6 +79,8 @@ def load_theme_file(path: Path) -> Loaded[ThemeColors]:
             warnings.append(LoadWarning(WarningKind.WRONG_TYPE, section))
             continue
         for key, raw in entries.items():
+            if section != "base" and key in _RETIRED_ROLES:
+                continue
             location = f"{section}.{key}"
             known = key in Base if section == "base" else key in ROLE
             if not known:

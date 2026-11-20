@@ -20,12 +20,12 @@ def test_missing_file_gives_defaults_without_warnings(tmp_path: Path) -> None:
 
 def test_round_trip_writes_only_changed_values(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
-    settings = replace(AppSettings(), active_profile="Show Name", last_folders=["D:/tv"])
+    settings = replace(AppSettings(), last_selection="D:/tv/a.mkv", last_folders=["D:/tv"])
     save_settings(settings, path)
     assert json.loads(path.read_text(encoding="utf-8")) == {
         "format": 1,
-        "active_profile": "Show Name",
         "last_folders": ["D:/tv"],
+        "last_selection": "D:/tv/a.mkv",
     }
     assert load_settings(path).value == settings
 
@@ -37,13 +37,11 @@ def test_save_leaves_no_temporary_file(tmp_path: Path) -> None:
 
 def test_bad_values_fall_back_with_warnings(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
-    path.write_text(
-        json.dumps({"format": 1, "active_profile": 5, "window_geometry": "g", "future": 1}), encoding="utf-8"
-    )
+    path.write_text(json.dumps({"format": 1, "last_folders": 5, "window_geometry": "g", "future": 1}), encoding="utf-8")
     loaded = load_settings(path)
     assert loaded.value == AppSettings(window_geometry="g")
     assert set(loaded.warnings) == {
-        LoadWarning(WarningKind.WRONG_TYPE, "settings.active_profile"),
+        LoadWarning(WarningKind.WRONG_TYPE, "settings.last_folders"),
         LoadWarning(WarningKind.UNKNOWN_KEY, "settings.future"),
     }
 
@@ -62,8 +60,8 @@ def test_home_override_moves_everything(tmp_path: Path, monkeypatch: pytest.Monk
     assert data_dir() == tmp_path
     assert profiles_dir() == tmp_path / "profiles"
     assert settings_path() == tmp_path / "settings.json"
-    save_settings(AppSettings(active_profile="Show Name"))
-    assert load_settings().value.active_profile == "Show Name"
+    save_settings(AppSettings(window_geometry="abc"))
+    assert load_settings().value.window_geometry == "abc"
     assert (tmp_path / "settings.json").is_file()
 
 
@@ -115,7 +113,7 @@ def test_panel_sizes_and_recent_folders_are_saved(tmp_path: Path) -> None:
 
 def test_the_height_of_the_tracks_box_is_saved_and_an_old_file_without_it_still_loads(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
-    path.write_text(json.dumps({"format": 1, "active_profile": "Show Name"}), encoding="utf-8")
+    path.write_text(json.dumps({"format": 1, "last_selection": "x"}), encoding="utf-8")
     old = load_settings(path)
     assert (old.value.overview_tracks_height, old.warnings) == (0, [])
     save_settings(replace(old.value, overview_tracks_height=312), path)
@@ -125,3 +123,21 @@ def test_the_height_of_the_tracks_box_is_saved_and_an_old_file_without_it_still_
     wrong = load_settings(path)
     assert wrong.value.overview_tracks_height == 0
     assert wrong.warnings
+
+
+def test_fields_that_were_retired_load_without_warnings_and_are_not_written_back(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    old = {
+        "format": 1,
+        "active_profile": "Show Name",
+        "batch_source": "BluRay",
+        "library_splitter": [1, 2],
+        "sheet_splitter": [3, 4],
+        "window_geometry": "g",
+    }
+    path.write_text(json.dumps(old), encoding="utf-8")
+    loaded = load_settings(path)
+    assert loaded.value == AppSettings(window_geometry="g")
+    assert loaded.warnings == []
+    save_settings(loaded.value, path)
+    assert json.loads(path.read_text(encoding="utf-8")) == {"format": 1, "window_geometry": "g"}

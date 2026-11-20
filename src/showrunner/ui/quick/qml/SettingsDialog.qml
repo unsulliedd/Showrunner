@@ -49,7 +49,7 @@ Popup {
 
     Overlay.modal: Rectangle {
         color: Theme.ground
-        opacity: 0.6  // a proportion: the window stays readable behind the dialog
+        opacity: Theme.dim_percent / 100  // the window stays readable behind the dialog
     }
 
     background: Rectangle {

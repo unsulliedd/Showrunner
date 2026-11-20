@@ -56,7 +56,7 @@ from showrunner.stages.metadata import (
 from showrunner.stages.tracks import PlannedTrack, TrackPlan, TracksOptions
 from showrunner.tools.mkvtoolnix.propedit import Property
 from showrunner.ui.i18n.catalog import tr, tr_plural
-from showrunner.ui.quick.tracks import item_title
+from showrunner.ui.quick.tracks import item_number, item_title
 
 TEMPLATES = (TITLE_TEMPLATE, *TRACK_TEMPLATES)
 TRACK_KIND = dict(zip(TRACK_TEMPLATES, (TrackKind.VIDEO, TrackKind.AUDIO, TrackKind.SUBTITLE), strict=True))
@@ -505,10 +505,6 @@ def _file_label(item: MediaItem) -> str:
     return item_title(item) or item.file.path.stem
 
 
-def _number(item: MediaItem) -> str:
-    return f"{item.identity.episode:02d}" if isinstance(item.identity, Episode) else ""
-
-
 def place(given: NamesInput) -> dict[str, object]:
     naming, template = given.naming, given.template
     text = getattr(naming, template)
@@ -641,7 +637,7 @@ def _rows(text: str, entries: Sequence[Named], focus: MediaItem | None, files: S
         now = entry.now or tr("names.now_empty.title" if entry.track is None else "names.now_empty.track")
         rows.append(
             {
-                "number": _number(entry.item),
+                "number": item_number(entry.item),
                 "now": now,
                 "now_empty": not entry.now,
                 "after": entry.after or now,

@@ -137,4 +137,6 @@ def missing_for(
 
 
 def is_available(feature: Feature, statuses: Mapping[str, DependencyStatus]) -> bool:
+    """Whether every program the feature needs was found. Not called yet; features that need an external program
+    gate themselves on it."""
     return not missing_for(feature, statuses)

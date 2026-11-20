@@ -9,7 +9,6 @@ import math
 import re
 
 WHITE = "#ffffff"
-BLACK = "#000000"
 
 _HEX6 = re.compile(r"#[0-9a-f]{6}")
 _HEX3 = re.compile(r"#[0-9a-f]{3}")

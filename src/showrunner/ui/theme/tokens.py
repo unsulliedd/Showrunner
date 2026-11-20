@@ -2,7 +2,7 @@
 
 Two generations of roles share this table. The window reads the roles of the approved dark set (`QUICK_ROLES`);
 the older roles are read by no window, but the light rules of several window roles still derive from them
-(`surface`, `chrome`, `danger`, `control_fill`). Keys both use (`ink`, `line`, `control`, ...) carry the
+(`surface`, `chrome`, `danger`). Keys both use (`ink`, `line`, `control`, ...) carry the
 window's values in the dark set.
 
 So that any base color stays readable, the older roles keep an OKLCH lightness bound: text and marks drawn
@@ -150,7 +150,6 @@ ROLES: tuple[Role, ...] = (
     Role("panel_3", lambda v: with_lightness(v["neutral"], 0.94), follow(_N, "#21262e", lightness=True)),  # chips
     Role("well", lambda v: with_lightness(v["neutral"], 0.985), follow(_N, "#0e1014", lightness=True)),  # inputs
     Role("chrome", "#f3f4f6", "#1b1e22"),  # toolbars, side panels, the status bar
-    Role("chrome_2", "#e8eaee", "#262a30"),  # rows and buttons under the pointer
     Role("surface", "#ffffff", "#131518"),  # lists, tables, fields, dialog pages
     Role("line", "#dde1e6", follow(_N, "#22272f", lightness=True)),
     Role("ink", DARK_INK, follow(_N, "#e7eaee")),
@@ -161,12 +160,6 @@ ROLES: tuple[Role, ...] = (
         follow(_N, "#7e8894"),
     ),
     Role("line_strong", lambda v: mix(v["muted"], v["surface"], 0.75), follow(_N, "#353c47", lightness=True)),
-    Role(
-        "link",
-        lambda v: readable(at_most(mix(v["secondary"], "#003a70", 0.40), 0.58), v["surface"], v["chrome"], darker=True),
-        lambda v: readable(at_least(v["secondary"], 0.70), v["surface"], v["chrome"], darker=False),
-    ),
-    Role("focus", lambda v: v["link"], lambda v: v["link"]),
     # Selected text: a pale fill behind the ordinary ink.
     Role(
         "select",
@@ -176,11 +169,6 @@ ROLES: tuple[Role, ...] = (
     # The primary action, focus, checkboxes, sliders, the border of a field being typed in.
     # Moved until its ink reads on it, so a button's text passes the contrast check for any base.
     Role("control", lambda v: fill_behind_ink(at_most(v["primary"], 0.58)), lambda v: fill_behind_ink(v["primary"])),
-    Role(
-        "control_fill",
-        lambda v: fill_behind_ink(v["primary"]),
-        lambda v: fill_behind_ink(v["primary"]),
-    ),
     # Text on the control color; in the dark set the ground's own dark, which is darker than the usual dark ink.
     Role(
         "control_ink",
@@ -192,11 +180,6 @@ ROLES: tuple[Role, ...] = (
         "control_soft",
         lambda v: at_least(mix(v["primary"], v["surface"], 0.09), 0.88),
         follow(Base.PRIMARY, "#1b2236"),
-    ),
-    Role(
-        "control_soft_ink",
-        lambda v: readable(v["control"], v["control_soft"], darker=True),
-        lambda v: readable(mix(v["control"], WHITE, 0.30), v["control_soft"], darker=False),
     ),
     # A planned change: amber marks, counts and borders, and the fill behind them.
     Role(
@@ -210,26 +193,18 @@ ROLES: tuple[Role, ...] = (
         follow(Base.ACCENT, "#2b2314"),
     ),
     Role("danger", "#c4302b", "#ff7b72"),
-    # Behind a delete or discard button under the pointer. No widget or style sheet rule draws it yet.
-    Role("danger_soft", lambda v: mix(v["danger"], v["surface"], 0.10), lambda v: mix(v["danger"], v["surface"], 0.10)),
     # A dropped track or a destructive action, and the fill behind it.
     Role("drop", lambda v: v["danger"], "#ff8077"),
     Role("drop_soft", lambda v: mix(v["drop"], v["panel"], 0.12), "#2c1817"),
     # An added file or a program that was found, and the fill behind it.
     Role("add", "#1d7a52", "#62d6a5"),
     Role("add_soft", lambda v: mix(v["add"], v["panel"], 0.12), "#13281f"),
-    Role("video", "#000000", "#000000"),  # the player surface
     # Notices and warnings drawn as text.
     Role(
         "accent_ink",
         lambda v: readable(at_most(mix(v["accent"], "#000000", 0.72), 0.565), v["surface"], v["chrome"], darker=True),
         lambda v: readable(at_least(v["accent"], 0.70), v["surface"], v["chrome"], darker=False),
     ),
-    Role("tip", lambda v: v["ink"], lambda v: v["ink"]),
-    Role("tip_ink", lambda v: v["chrome"], lambda v: v["chrome"]),
-    # Theme colors carry no alpha, so a see-through thumb is mixed against the surface instead.
-    Role("scroll_thumb", lambda v: mix(v["muted"], v["surface"], 0.70), lambda v: mix(v["muted"], v["surface"], 0.70)),
-    Role("scroll_thumb_hover", lambda v: v["muted"], lambda v: v["muted"]),
 )
 
 ROLE: dict[str, Role] = {role.key: role for role in ROLES}
@@ -238,7 +213,7 @@ ROLE: dict[str, Role] = {role.key: role for role in ROLES}
 QUICK_ROLES: tuple[str, ...] = (
     "ground", "panel", "panel_2", "panel_3", "well", "line", "line_strong", "ink", "muted", "faint",
     "control", "control_ink", "control_soft", "select", "change", "change_soft", "drop", "drop_soft",
-    "add", "add_soft", "video",
+    "add", "add_soft",
 )  # fmt: skip
 
 
@@ -289,9 +264,6 @@ SIZES: dict[str, int] = {
     "text_xl": 18,  # the inspector's title
     "text_2xl": 22,  # the workspace's title
     "text_3xl": 30,  # the home screen's title
-    "height_sm": 24,  # small icon buttons
-    "height_md": 28,  # buttons and fields
-    "height_lg": 40,  # the toolbar
     "row_sm": 24,  # library tree rows, chips
     "row_md": 30,  # buttons, fields, tabs of a side panel
     "row_lg": 36,  # the drop area's buttons, track rows
@@ -333,28 +305,16 @@ SIZES: dict[str, int] = {
     "home_text_width": 500,
     "swatch_width": 96,
     "dialog_width": 960,  # the Settings window
-    "dialog_height": 720,
     "settings_nav_width": 200,  # the Settings window's section list
-    "rule_list_width": 284,  # the track rule list beside the rule editor
-    "token_picker_width": 252,  # the token list beside the naming templates
     "library_width": 272,
-    "details_width": 320,
     "progress_width": 160,  # the progress bar in the status bar
-    "dim_percent": 60,  # how far the loading layer hides the workspace under it, in percent
-    "mark_size": 8,  # the status dot of a row
-    "empty_width": 560,  # the block in the middle of the empty state
-    "spinner": 32,  # the loading spinner, drawn with a stroke of an eighth of its size
-    "library_min_width": 220,
-    "window_width": 1280,  # read by nothing: the window uses quick_window_width
-    "window_height": 800,
+    "dim_percent": 60,  # how far the loading layer and the dialogs' backdrops hide the workspace, in percent
     "quick_window_width": 1440,  # the Qt Quick window, which needs room for track names beside the workspace
     "quick_window_height": 900,
     "list_row": 46,  # an episode row of Overview, a file row of the track matrix
     "pill": 20,  # a track pill in an episode row, a code badge
     "matrix_label": 150,  # the narrowest the matrix's file names get; Overview, Review and Jobs size their names by it
-    "matrix_name": 260,  # the widest the file names of the track matrix get, while the track columns keep their minimum
     "matrix_column": 82,  # a track chip's least width in an Overview row
-    "matrix_column_min": 112,  # the least one track column of the matrix keeps; below it the matrix scrolls sideways
     "matrix_header": 166,  # the matrix's column headers with their toggles and where their choice comes from
     "track_card": 64,  # a movie's track card
     "settings_width": 920,  # the Settings dialog
@@ -370,9 +330,6 @@ SIZES: dict[str, int] = {
     "tracks_min_height": 160,  # the least Overview's tracks box keeps when its separator is dragged up
     "rows_min_height": 120,  # the least Overview's file list keeps when the separator is dragged down
     "separator_step": 24,  # what an arrow key moves Overview's separator
-    "chip_title_min_width": 56,  # a chip's codec, the last of its texts to be cut short in a narrow row
-    "chip_count_min_width": 48,  # a chip's "missing in N files", cut short after the track name and before the codec
-    "chip_name_width": 200,  # a chip's track name, cut short with an ellipsis beyond it
     "track_title_width": 132,  # the codec column of a track row on Overview
     "track_mark_width": 120,  # where a track row's choice comes from, right-aligned before its flags
     "track_files_width": 76,  # the "Files" button at the end of a track row
@@ -397,10 +354,6 @@ COMPACT_SIZES: dict[str, int] = {
     "track_card": 52,
 }
 
-# Tried in order; the first one installed is used.
-FONT_FAMILIES: tuple[str, ...] = ("Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Helvetica Neue", "Arial")
-# Templates, token names, patterns and language lists, where braces, brackets and backslashes must read apart.
-MONO_FAMILIES: tuple[str, ...] = ("Cascadia Mono", "Consolas", "DejaVu Sans Mono")
 # The Qt Quick window bundles its two faces (SIL Open Font License) rather than trying installed ones.
 QUICK_FONT = "Inter"
 QUICK_MONO = "JetBrains Mono"

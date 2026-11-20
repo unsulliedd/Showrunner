@@ -9,13 +9,14 @@ from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
-from showrunner.app.profiles.store import DEFAULT_PROFILE_NAME
 from showrunner.app.storage.files import write_json_atomic
 from showrunner.app.storage.paths import settings_path
 from showrunner.core.options.serialization import Loaded, LoadWarning, WarningKind, from_sparse, to_sparse
 
 FORMAT_VERSION = 1
 RECENT_LIMIT = 8
+# Fields that earlier versions wrote and nothing reads any more; dropped on load so old files load without warnings.
+_RETIRED_KEYS = ("active_profile", "batch_source", "library_splitter", "sheet_splitter")
 
 
 class ThemeMode(StrEnum):
@@ -36,21 +37,13 @@ class Startup(StrEnum):
 
 @dataclass(frozen=True)
 class AppSettings:
-    active_profile: str = DEFAULT_PROFILE_NAME
     startup: Startup = Startup.LAST_WORKSPACE
     # The workspace: what the window had open when it closed, for the next start.
     last_folders: list[str] = field(default_factory=list)
     last_selection: str = ""  # the library row selected: a video's path, or the names down to a show or season row
-    # The `{source}` of the batch (BluRay, WEB-DL, ...); empty guesses it from each file's name. Kept with the
-    # workspace, not the profile, since it describes the files rather than how to treat them.
-    batch_source: str = ""
     # Opaque to this layer: the text the window produces and later restores (its place and whether it is maximized).
     window_geometry: str = ""
-    # Not read or written by anything: the Widgets window's splitters. `panel_sizes` holds the Qt Quick window's
-    # panels. Kept only so that old settings files load as they did.
-    library_splitter: list[int] = field(default_factory=list)
-    sheet_splitter: list[int] = field(default_factory=list)
-    # Panel sizes of the Qt Quick window: split name to the split's own saved state, as base64.
+    # Panel sizes: split name to the split's own saved state, as base64.
     panel_sizes: dict[str, str] = field(default_factory=dict)
     # Height of the tracks box on Overview, set by the separator under it; 0 until the user has moved it.
     overview_tracks_height: int = 0
@@ -60,7 +53,7 @@ class AppSettings:
     # Folders opened before, newest first: path to when it was last opened, as an ISO date and time.
     recent_folders: dict[str, str] = field(default_factory=dict)
     ui_language: str = "en"
-    # Dark is the approved theme; light and following Windows are chosen in Appearance.
+    # Dark is the default theme; light and following Windows are chosen in Appearance.
     theme_mode: ThemeMode = ThemeMode.DARK
     density: Density = Density.COMFORTABLE
     # External programs the user located by hand: program id to the program file or its folder.
@@ -88,6 +81,8 @@ def load_settings(path: Path | None = None) -> Loaded[AppSettings]:
         return Loaded(AppSettings(), [LoadWarning(WarningKind.UNREADABLE, str(path))])
     warnings: list[LoadWarning] = []
     version = data.pop("format", None)
+    for key in _RETIRED_KEYS:
+        data.pop(key, None)
     if isinstance(version, int) and not isinstance(version, bool) and version > FORMAT_VERSION:
         warnings.append(LoadWarning(WarningKind.NEWER_FORMAT, "format"))
     return Loaded(from_sparse(AppSettings, data, "settings", warnings), warnings)

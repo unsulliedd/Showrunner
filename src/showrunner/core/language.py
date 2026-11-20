@@ -147,11 +147,6 @@ def _from_name(text: str) -> Language | None:
     return None if found.alpha3 == "und" else Language(found.alpha3)
 
 
-def common_codes() -> tuple[str, ...]:
-    """The 3-letter codes of the languages that also have a 2-letter one: the ones a typo most likely meant."""
-    return tuple(sorted(row.alpha3 for row in LANGUAGE_MATRIX if row.alpha2))
-
-
 def region_name(code: str) -> str:
     """`Brazil` for `BR`, `Latin America and the Caribbean` for `419`."""
     name = _REGION_NAMES[code]

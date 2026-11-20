@@ -23,7 +23,6 @@ class Mark(IntEnum):
 @dataclass(frozen=True, slots=True)
 class Counts:
     videos: int = 0
-    shows: int = 0
     episodes: int = 0
     movies: int = 0
     extras: int = 0
@@ -57,20 +56,11 @@ class Library:
     failures: tuple[ProbeFailure, ...] = ()
     roots: tuple[Path, ...] = ()
 
-    def relative_path(self, path: Path) -> Path:
-        """The path below the folder that was dropped, starting with that folder's name; a file that was
-        dropped by itself has only its name."""
-        root = next((r for r in self.roots if path.is_relative_to(r)), None)
-        return path.relative_to(root.parent) if root is not None else Path(path.name)
-
     def item(self, path: Path) -> MediaItem | None:
         return next((i for i in self.items if i.file.path == path), None)
 
     def failure(self, path: Path) -> str | None:
         return next((f.reason for f in self.failures if f.path == path), None)
-
-    def alternatives_of(self, path: Path) -> tuple[SubtitleFile, ...]:
-        return tuple(s for a in self.alternatives if a.video == path for s in a.subtitles)
 
     def mark(self, path: Path) -> Mark:
         if self.failure(path) is not None:
@@ -92,7 +82,6 @@ class Library:
         extras = [i.identity for i in items if isinstance(i.identity, Extra)]
         return Counts(
             videos=len(items),
-            shows=len({e.show.casefold() for e in (*episodes, *extras)}),
             episodes=len(episodes),
             movies=sum(isinstance(i.identity, Movie) for i in items),
             extras=len(extras),

@@ -57,7 +57,7 @@ class AudioProperties:
 
 @dataclass(frozen=True, slots=True)
 class SubtitleProperties:
-    text_based: bool = True
+    text_based: bool = True  # not read yet; the subtitle stage skips image subtitles by it
 
 
 @dataclass(frozen=True, slots=True)

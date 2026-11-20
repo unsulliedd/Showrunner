@@ -12,7 +12,6 @@ from showrunner.core.media import Episode, Extra, MediaItem, Movie
 from showrunner.core.naming.names import codec_display, hdr_display, resolution
 from showrunner.core.track import ObjectAudio, TrackKind
 from showrunner.ui.i18n.catalog import tr, tr_plural
-from showrunner.ui.sheet.format import size_text
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +39,17 @@ def duration(seconds: float) -> str:
     minutes = round(seconds / 60)
     hours, minutes = divmod(minutes, 60)
     return tr("facts.duration_hours", hours=hours, minutes=minutes) if hours else tr("facts.duration", minutes=minutes)
+
+
+_KB = 1000
+_UNITS = (("common.size_gb", _KB**3), ("common.size_mb", _KB**2), ("common.size_kb", _KB))
+
+
+def size_text(size: int) -> str:
+    for key, unit in _UNITS:
+        if size >= unit:
+            return tr(key, value=f"{size / unit:.2f}" if unit == _KB**3 else f"{size / unit:.0f}")
+    return tr("common.size_b", value=size)
 
 
 def _joined(parts: Sequence[str]) -> str:

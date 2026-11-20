@@ -392,10 +392,6 @@ class Batches:
         """Exclude the place and everything inside it, or include it again; an own value inside wins for that place."""
         self.exclusions.set(key, excluded)
 
-    def excluded_files(self, items: Sequence[MediaItem], under: BatchKey) -> set[Path]:
-        """The files among `items`, lying in place `under` (see `BatchKey.in_show`), that are excluded."""
-        return {i.file.path for i in items if self.exclusions.excluded(BatchKey.file(i).in_show(under))}
-
     def to_json(self) -> dict[str, Any]:
         """The state to keep with the workspace, so unsaved edits and exclusions survive a restart."""
         return {

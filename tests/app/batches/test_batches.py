@@ -530,7 +530,6 @@ def test_the_places_of_extras_survive_a_restart(tmp_path: Path, store: ProfileSt
     assert again.own(file) == batches.own(file) != {}
     assert dropped(again, item) == [COMMENTARY.id]
     assert again.is_excluded(file)
-    assert again.excluded_files([item], BatchKey.of(item, whole_show=True)) == {item.file.path}
     # A key stored before extras existed has no name and loads as it did.
     old = json.loads(path.read_text(encoding="utf-8"))
     for entry in (*old["batches"]["places"], *old["batches"]["excluded"]):
@@ -651,10 +650,6 @@ def test_normalizing_drops_what_a_place_sets_to_what_it_now_receives(tmp_path: P
     # Now the season follows the show again, and a later change reaches it.
     title(batches, show, "{episode}")
     assert batches.profile(season).for_stage("naming").title_template == "{episode}"
-
-
-def own_rules_of(batches: Batches, key: BatchKey) -> list[TrackRule]:
-    return list(batches.own(key).get("tracks", {}).get("rules", []))
 
 
 def test_normalizing_keeps_a_repeated_choice_whose_going_would_change_the_plan(

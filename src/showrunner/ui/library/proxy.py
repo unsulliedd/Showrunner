@@ -35,7 +35,7 @@ class LibraryFilter(QSortFilterProxyModel):
     def filterAcceptsRow(self, row: int, parent: QModelIndex | QPersistentModelIndex) -> bool:  # noqa: N802  # Qt's name
         model = self.sourceModel()
         index = model.index(row, 0, parent)
-        if self._needs_look and index.data(DOT_ROLE) not in ("danger", "accent_ink"):
+        if self._needs_look and index.data(DOT_ROLE) not in ("failed", "needs_look"):
             return False
         if not self._text:
             return True

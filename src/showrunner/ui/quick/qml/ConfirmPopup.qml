@@ -39,7 +39,7 @@ Popup {
 
     Overlay.modal: Rectangle {
         color: Theme.ground
-        opacity: 0.6  // a proportion: the window stays readable behind the question
+        opacity: Theme.dim_percent / 100  // the window stays readable behind the question
     }
 
     background: Rectangle {

@@ -22,7 +22,8 @@ class Chapter:
     names: tuple[ChapterName, ...] = ()
 
     def name_for(self, language: Language | None) -> str | None:
-        """The name in the language, else the first name, else None."""
+        """The name in the language, else the first name, else None. Not called yet; the chapters stage names chapters
+        with it."""
         for entry in self.names:
             if entry.language == language:
                 return entry.text
@@ -33,7 +34,7 @@ class Chapter:
 class Attachment:
     id: int
     file_name: str
-    mime_type: str
+    mime_type: str  # not read yet; the artwork stage picks cover images by it
     size: int  # bytes
     description: str = ""
 

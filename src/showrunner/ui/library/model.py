@@ -11,22 +11,29 @@ from PySide6.QtCore import QModelIndex, QObject, Qt, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 
 from showrunner.app.library.library import Library, LibraryLoad, Mark
-from showrunner.core.media import Episode, Extra, MediaFile, MediaItem, SubtitleFile
+from showrunner.core.media import Episode, Extra, MediaFile, MediaItem, Movie, SubtitleFile
 from showrunner.ui.i18n.catalog import tr
-from showrunner.ui.sheet.format import episode_name, movie_name
 
 KIND_ROLE = Qt.ItemDataRole.UserRole + 1
 PATH_ROLE = Qt.ItemDataRole.UserRole + 2
 MARK_ROLE = Qt.ItemDataRole.UserRole + 3
-# The color role of the row's dot: the library's own mark, else the mark of the last preview; a parent's
-# is the worst of its rows.
+# What the row's dot says: the library's own mark, else the mark of the last preview; a parent's is the worst of its
+# rows. The values are "failed", "needs_look" and "planned".
 DOT_ROLE = Qt.ItemDataRole.UserRole + 4
 
 # Worst first: could not be read, needs a decision (unsure pairing or a refused plan), changes planned.
-DOT_RANK = {"danger": 3, "accent_ink": 2, "control": 1}
-_LIBRARY_DOTS = {Mark.FAILED: "danger", Mark.UNSURE: "accent_ink"}
+DOT_RANK = {"failed": 3, "needs_look": 2, "planned": 1}
+_LIBRARY_DOTS = {Mark.FAILED: "failed", Mark.UNSURE: "needs_look"}
 
 NAME_COLUMN, SUMMARY_COLUMN, MARK_COLUMN = range(3)
+
+
+def movie_name(movie: Movie) -> str:
+    return tr("library.movie", title=movie.title, year=movie.year) if movie.year else movie.title
+
+
+def episode_name(episode: Episode) -> str:
+    return tr("library.episode", number=episode.episode, title=episode.episode_title).rstrip()
 
 
 class Kind(StrEnum):
@@ -92,7 +99,7 @@ class LibraryModel(QStandardItemModel):
 
     def needs_look_count(self) -> int:
         """Videos that need a decision: the library's marks plus the refused plans of the last preview."""
-        return sum(self.dot(p) in ("danger", "accent_ink") for p in self._order)
+        return sum(self.dot(p) in ("failed", "needs_look") for p in self._order)
 
     def set_plan_marks(self, marks: dict[Path, str]) -> None:
         """Dots from a preview, by video path; an empty dict clears them."""
@@ -113,12 +120,6 @@ class LibraryModel(QStandardItemModel):
         self._bubble_all(self._videos[path] for path in shown)
         if changed:
             self.marks_changed.emit()
-
-    def first_marked(self) -> QModelIndex:
-        """The first video in tree order that needs a look, or an invalid index."""
-        return next(
-            (self.index_for_path(p) for p in self._order if self._library.mark(p) is not Mark.NONE), QModelIndex()
-        )
 
     # Changing the library
 

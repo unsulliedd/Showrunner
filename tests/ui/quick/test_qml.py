@@ -217,11 +217,6 @@ def test_chips_and_rules_answer_the_pointer(
     assert qt_warnings() == []
 
 
-def _names_popup(window: Any) -> QObject:
-    (opened,) = (p for p in window.findChildren(QObject, "trackNames") if p.property("opened"))
-    return opened
-
-
 def _open_lists(root: QQuickItem) -> list[QQuickItem]:
     """The name lists of the chips that are folded open."""
     return [i for i in _items(root, "chipNameRows") if i.isVisible()]
@@ -865,10 +860,8 @@ def test_every_string_key_the_qml_asks_for_exists() -> None:
     text = _qml_text()
     keys = set(re.findall(r'Strings\.[tf]\("([^"]+)"\)', text)) | set(re.findall(r'Strings\.[tf]\("([^"]+)",', text))
     plurals = set(re.findall(r'Strings\.n\("([^"]+)"', text))
-    # Keys built from a place's name: one per place that can be opened, and per side panel tab.
-    places = [key for key, _icon, later in WORKSPACE_TABS if not later]
+    # Keys built from a place's name and from each side panel tab.
     keys |= {f"workspace.tab.{key}" for key, _icon, _later in WORKSPACE_TABS}
-    keys |= {f"workspace.placeholder.{place}.{part}" for place in places for part in ("title", "lead")}
     tabs = {tab for panel in SIDE_PANELS.values() for tab in panel}
     keys |= {f"panel.tab.{tab}" for tab in tabs}
     keys |= {f"panel.placeholder.{tab}.{part}" for tab in tabs for part in ("title", "lead")}

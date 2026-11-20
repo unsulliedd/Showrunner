@@ -11,6 +11,10 @@ def path_of(library: Library, name: str) -> Path:
     return next(i.file.path for i in library.items if name in i.file.path.name)
 
 
+def alternative_of(library: Library, video: Path) -> SubtitleFile:
+    return next(a for a in library.alternatives if a.video == video).subtitles[0]
+
+
 def test_marks_come_from_alternatives_and_failures(sample_library: Library) -> None:
     marks = {i.file.path.name: sample_library.mark(i.file.path) for i in sample_library.items}
     assert marks == {
@@ -24,7 +28,7 @@ def test_marks_come_from_alternatives_and_failures(sample_library: Library) -> N
 
 def test_counts_cover_the_library_or_a_subset(sample_library: Library) -> None:
     counts = sample_library.counts()
-    assert (counts.videos, counts.shows, counts.episodes, counts.movies) == (5, 2, 4, 1)
+    assert (counts.videos, counts.episodes, counts.movies) == (5, 4, 1)
     assert (counts.unsure, counts.failed, counts.unpaired, counts.needs_look) == (1, 1, 1, 2)
     season = sample_library.counts([path_of(sample_library, "S01E01"), path_of(sample_library, "S01E02")])
     assert (season.videos, season.unsure, season.failed, season.unpaired) == (2, 1, 0, 1)
@@ -33,15 +37,6 @@ def test_counts_cover_the_library_or_a_subset(sample_library: Library) -> None:
 def test_unpaired_files_are_found_by_the_folder_of_a_video(sample_library: Library) -> None:
     assert len(sample_library.unpaired_near([path_of(sample_library, "S01E01")])) == 1
     assert sample_library.unpaired_near([path_of(sample_library, "S02E01")]) == ()
-
-
-def test_relative_path_starts_with_the_dropped_folder_name(sample_library: Library) -> None:
-    video = path_of(sample_library, "S01E01")
-    assert sample_library.relative_path(video) == Path("lib/Alpha/S01/Alpha S01E01.mkv")
-    assert replace(sample_library, roots=(Path("lib/Alpha"),)).relative_path(video) == Path(
-        "Alpha/S01/Alpha S01E01.mkv"
-    )
-    assert Library().relative_path(Path("somewhere/x.mkv")) == Path("x.mkv")
 
 
 def test_pair_here_moves_an_unpaired_file_to_a_video(sample_library: Library) -> None:
@@ -64,7 +59,7 @@ def test_unpair_lists_the_file_as_unpaired(sample_library: Library) -> None:
 def test_pair_instead_swaps_the_file_and_settles_the_doubt(sample_library: Library) -> None:
     video = path_of(sample_library, "S01E02")
     attached = sample_library.item(video).subtitles[0]
-    alternative = sample_library.alternatives_of(video)[0]
+    alternative = alternative_of(sample_library, video)
     result = sample_library.pair_instead(video, alternative)
     assert result.item(video).subtitles == (alternative,)
     assert attached in result.unpaired
@@ -76,7 +71,7 @@ def test_pair_instead_keeps_a_file_of_another_language(sample_library: Library) 
     video = path_of(sample_library, "S01E02")
     english = SubtitleFile(Path("lib/Alpha/S01/Alpha S01E02.en.srt"), sample_library.unpaired[0].language)
     library = sample_library.pair(english, video)
-    alternative = library.alternatives_of(video)[0]
+    alternative = alternative_of(library, video)
     result = library.pair_instead(video, alternative)
     assert english in result.item(video).subtitles
     assert alternative in result.item(video).subtitles
@@ -117,7 +112,6 @@ def test_extras_are_counted_apart_from_episodes_and_movies(sample_library: Libra
     library = replace(sample_library, items=(*sample_library.items, extra, stranger))
     counts = library.counts()
     assert (counts.videos, counts.episodes, counts.movies, counts.extras) == (7, 4, 1, 2)
-    assert counts.shows == 3  # a show with nothing but extras still counts
     assert library.counts([extra.file.path]).extras == 1
 
 

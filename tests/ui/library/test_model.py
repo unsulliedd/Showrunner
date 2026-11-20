@@ -86,22 +86,16 @@ def test_a_row_knows_its_kind_and_the_videos_below_it(model: LibraryModel, sampl
     assert [p.name for p in model.video_paths(alpha)] == ["Alpha S01E01.mkv", "Alpha S01E02.mkv", "Alpha S02E01.mkv"]
 
 
-def test_the_first_video_that_needs_a_look_is_found(model: LibraryModel, sample_library: Library) -> None:
-    assert model.first_marked() == index_of(model, sample_library, "S01E02")
-    model.set_library(Library())
-    assert not model.first_marked().isValid()
-
-
 def test_an_excluded_video_carries_no_dot_and_needs_no_look(model: LibraryModel, sample_library: Library) -> None:
     video = index_of(model, sample_library, "S01E02")
     path = model.path(video)
     looks = model.needs_look_count()
-    assert model.dot(path) == "accent_ink"
+    assert model.dot(path) == "needs_look"
     model.set_excluded([path])
     assert model.dot(path) is None
     assert model.needs_look_count() == looks - 1
     model.set_excluded([])
-    assert model.dot(path) == "accent_ink"
+    assert model.dot(path) == "needs_look"
     assert model.needs_look_count() == looks
 
 
@@ -130,7 +124,7 @@ def test_choosing_an_alternative_clears_the_marks_of_the_row_and_its_parents(
 ) -> None:
     video = index_of(model, sample_library, "S01E02")
     path = model.path(video)
-    model.pair_instead(path, sample_library.alternatives_of(path)[0])
+    model.pair_instead(path, next(a for a in sample_library.alternatives if a.video == path).subtitles[0])
     assert model.mark(video) is Mark.NONE
     assert model.mark(video.parent()) is Mark.NONE
     assert model.mark(video.parent().parent()) is Mark.NONE
@@ -204,10 +198,10 @@ def test_plan_dots_reach_every_parent_and_each_parent_is_summed_once(
     sum_up = model._sum_up
     monkeypatch.setattr(model, "_sum_up", lambda parent: (summed.append(parent.text()), sum_up(parent)))
     second_season = index_of(model, sample_library, "S02E01")
-    model.set_plan_marks({model.path(second_season): "control"})
+    model.set_plan_marks({model.path(second_season): "planned"})
     season, show = second_season.parent(), second_season.parent().parent()
     # The planned dot reaches its season; the show shows the worst of its rows, the unsure episode of season 1.
-    assert (season.data(DOT_ROLE), show.data(DOT_ROLE)) == ("control", "accent_ink")
+    assert (season.data(DOT_ROLE), show.data(DOT_ROLE)) == ("planned", "needs_look")
     assert sorted(summed) == sorted(parent_names(model))
     model.set_plan_marks({})
     assert season.data(DOT_ROLE) is None

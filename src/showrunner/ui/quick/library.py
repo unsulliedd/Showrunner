@@ -104,7 +104,7 @@ class LibraryTree(LibraryFilter):
         if role == SUMMARY:
             return source.siblingAtColumn(SUMMARY_COLUMN).data()
         if role == PLANNED:
-            return source.data(DOT_ROLE) == "control"
+            return source.data(DOT_ROLE) == "planned"
         if role == ROW_ID:
             return self.row_id(index)
         if role == EXCLUDED:

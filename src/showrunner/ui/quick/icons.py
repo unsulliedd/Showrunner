@@ -62,9 +62,6 @@ ICONS: dict[str, str] = {
         '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle '
         'cx="12" cy="12" r="2.8"/>'
     ),
-    "star": '<path d="M12 3.8l2.5 5.1 5.6.8-4 4 .9 5.6L12 16.6l-5 2.7.9-5.6-4-4 5.6-.8z"/>',
-    # The same star filled with the stroke color, for a flag that is on.
-    "star_on": '<path fill="currentColor" d="M12 3.8l2.5 5.1 5.6.8-4 4 .9 5.6L12 16.6l-5 2.7.9-5.6-4-4 5.6-.8z"/>',
     "grip": '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3"/>',
     "no_entry": '<circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/>',
     "pause": '<path d="M8 5.5v13M16 5.5v13"/>',
