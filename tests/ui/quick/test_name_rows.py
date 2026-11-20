@@ -299,6 +299,8 @@ def test_the_names_are_lines_of_the_open_chip_that_a_click_or_the_keyboard_acts_
     assert [r["dropped"] for r in name_lines(controller)] == [True, True]
     assert rows.property("currentIndex") == 4
     # Another click goes back to the chip; the chip itself was never clicked.
+    # The open list runs past the box with the Video group above it: scroll it into view, as the user would.
+    _visible(root, "chipGroups")[0].property("contentItem").setProperty("contentY", 2 * lines[0].height())
     _click(load.window, _visible(root, "chipNameRow")[0])
     _click(load.window, _visible(root, "chipNameRow")[4])
     settle(controller, qtbot)

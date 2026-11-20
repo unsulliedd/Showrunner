@@ -18,10 +18,8 @@ from showrunner.ui.quick.engine import build_engine
 from showrunner.ui.quick.tracks import BatchView
 from showrunner.ui.quick.window import WindowController
 
-from .conftest import long_show
+from .conftest import COMMENTARY, long_show
 from .test_choices import settle
-
-COMMENTARY = 2
 
 
 def open_show(controller: WindowController, qtbot: QtBot) -> None:

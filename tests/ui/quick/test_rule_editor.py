@@ -26,7 +26,7 @@ from showrunner.stages.tracks import (
 from showrunner.ui.quick.rule_editor import Draft, problems
 from showrunner.ui.quick.window import WindowController
 
-from .test_choices import COMMENTARY, FORCED, open_season, rules, settle
+from .test_choices import COMMENTARY, ENGLISH, FORCED, open_season, rules, settle
 
 
 def tracks(controller: WindowController) -> TracksOptions:
@@ -108,7 +108,7 @@ def test_a_new_rule_goes_last_and_a_choice_made_later_still_leads(
     editor.set_text("label", "Mine")
     assert editor.save()
     assert [r.from_choice for r in tracks(controller).rules] == [True, False]
-    controller.toggle_flag(0, "default")  # a second choice goes ahead of the written rule
+    controller.toggle_flag(ENGLISH, "default")  # a second choice goes ahead of the written rule
     assert [r.from_choice for r in tracks(controller).rules] == [True, True, False]
     assert [r["label"] for r in controller.rules] == ["", "", "Mine"]
 

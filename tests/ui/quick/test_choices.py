@@ -16,9 +16,7 @@ from showrunner.stages.tracks import Verdict
 from showrunner.ui.quick.library import PLANNED
 from showrunner.ui.quick.window import WindowController
 
-from .conftest import cells
-
-ENGLISH, TURKISH, COMMENTARY, STEREO, SDH, ENGLISH_SUBS, FORCED, SRT = range(8)
+from .conftest import COMMENTARY, ENGLISH, FORCED, SDH, SRT, STEREO, TURKISH, VIDEO, cells
 
 
 def open_season(controller: WindowController, library: Library, qtbot: QtBot, episode: int = 2) -> None:
@@ -61,7 +59,7 @@ def test_a_show_s_choice_reaches_its_season_and_episode_marked_and_each_can_over
     settle(controller, qtbot)
     header = controller.matrix["headers"][COMMENTARY]
     assert (header["state"], header["from"], header["over"]) == ("dropped", "From the show", "")
-    assert controller.overview["groups"][0]["chips"][COMMENTARY]["from"] == "From the show"
+    assert [c for g in controller.overview["groups"] for c in g["chips"]][COMMENTARY]["from"] == "From the show"
     assert [(r["inherited"], r["from"]) for r in controller.rules] == [(True, "From the show")]
     # A rule from the show is changed on the show, not here.
     controller.pause_rule(0, True)
@@ -213,7 +211,7 @@ def test_a_movie_shows_cards_and_saves_to_a_new_profile(
     assert controller.profile_edited
     controller.select(movie)
     settle(controller, qtbot)
-    audio = controller.movie["groups"][0]
+    audio = controller.movie["groups"][1]
     assert [c["state"] for c in audio["cards"]] == ["kept", "kept", "dropped"]
     assert audio["cards"][2]["from"] == "From Movies"
     assert controller.profile_read_only  # Default cannot be saved over
@@ -224,7 +222,7 @@ def test_a_movie_shows_cards_and_saves_to_a_new_profile(
     assert controller.save_profile_as("default") == "A profile named default already exists."
     assert controller.save_profile_as("Movies") == ""
     assert (controller.profile, controller.profile_edited) == ("Movies", False)
-    assert controller.movie["groups"][0]["cards"][2]["state"] == "dropped"
+    assert controller.movie["groups"][1]["cards"][2]["state"] == "dropped"
 
 
 def test_the_inspector_follows_the_file_picked_in_a_row(
@@ -296,8 +294,8 @@ def test_moving_a_column_sets_the_track_order_of_the_new_files(
     before = codes(controller)
     assert controller.move_track(TURKISH, ENGLISH) == ENGLISH
     # The columns, chips and the Overview show the order at once.
-    assert codes(controller) == [before[TURKISH], before[ENGLISH], *before[COMMENTARY:]]
-    assert [c["code"] for c in controller.overview["groups"][0]["chips"]][:2] == ["TUR", "ENG"]
+    assert codes(controller) == [before[VIDEO], before[TURKISH], before[ENGLISH], *before[COMMENTARY:]]
+    assert [c["code"] for c in controller.overview["groups"][1]["chips"]][:2] == ["TUR", "ENG"]
     settle(controller, qtbot)
     # Every episode with Turkish audio gets a new file with its own order; Episode Seven has none, so stays as it is.
     assert controller.change_text == "18 changes in 9 files"
@@ -340,11 +338,11 @@ def test_a_paired_file_moves_ahead_of_the_embedded_subtitles(
 
 def test_movie_cards_follow_the_track_order(controller: WindowController, library: Library, qtbot: QtBot) -> None:
     open_season(controller, library, qtbot, episode=len(library.items) - 3)
-    audio = controller.movie["groups"][0]["cards"]
+    audio = controller.movie["groups"][1]["cards"]
     assert all(c["movable"] for c in audio)
     first, last = audio[0]["id"], audio[-1]["id"]
     assert controller.move_track(last, first) == first
-    moved = controller.movie["groups"][0]["cards"]
+    moved = controller.movie["groups"][1]["cards"]
     assert [c["title"] for c in moved] == [audio[-1]["title"], *(c["title"] for c in audio[:-1])]
     settle(controller, qtbot)
     assert controller.change_count == 2

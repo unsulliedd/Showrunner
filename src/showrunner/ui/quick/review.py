@@ -348,7 +348,8 @@ def _flags(s: Seen, flags: TrackFlags) -> dict[str, bool]:
 def _defaults(tracks: Sequence[Seen], *, before: bool) -> str:
     """ "English audio · no subtitles": the default track of each kind."""
     found = []
-    for kind in KINDS:
+    # Video stays out: "no video" would read as a file without one, and the video line's pill shows its D already.
+    for kind in (TrackKind.AUDIO, TrackKind.SUBTITLE):
         default = next(
             (
                 s.track

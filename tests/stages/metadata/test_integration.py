@@ -120,3 +120,14 @@ def test_rules_give_a_real_file_tags_with_a_region_script_and_collective_code(ep
         assert [t.language for t in after.tracks[1:]] == [Language.parse("es-419")] * 2 + [Language.parse("roa")]
     finally:
         add_languages({})
+
+
+def test_a_video_rule_gives_a_real_file_s_video_track_its_language(episode: MediaItem) -> None:
+    tracks = TracksOptions(rules=[TrackRule(match=TrackMatch(kind=KindTest.VIDEO), language="ja")])
+    plan = plan_metadata(episode, MetadataOptions(untagged_language="pt-BR"), NamingOptions(), tracks)
+    assert isinstance(plan, MetadataPlan)
+    assert [(c.track_id, c.new) for c in plan.changes] == [(0, "ja"), (1, "pt-BR"), (2, "pt-BR")]
+    result = apply_metadata(plan, MKVPROPEDIT, Programs(mkvmerge=MKVMERGE))
+    assert result.ok, result
+    after = probe(episode.file.path, Programs(mkvmerge=MKVMERGE))
+    assert [t.language for t in after.tracks[:3]] == [Language.parse("ja"), *(Language.parse("pt-BR"),) * 2]

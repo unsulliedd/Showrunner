@@ -3,7 +3,7 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
-// Overview of a movie: its video line, its audio and subtitle tracks as cards side by side, and the bar that says
+// Overview of a movie: its video, audio and subtitle tracks as cards side by side, and the bar that says
 // the choices are this movie's until saved to a profile. The cards of a kind stand in the order of the tracks in the
 // new file; a card's grip moves it among them.
 Item {
@@ -19,39 +19,6 @@ Item {
         anchors.fill: parent
         anchors.margins: Theme.space_lg
         spacing: Theme.space_lg
-
-        Rectangle {
-            Layout.fillWidth: true
-            implicitHeight: Theme.row_lg + Theme.space_md
-            radius: Theme.radius_lg
-            color: Theme.panel
-            border.width: Theme.stroke
-            border.color: Theme.line
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: Theme.space_lg
-                anchors.rightMargin: Theme.space_lg
-                spacing: Theme.space_md
-
-                Icon {
-                    name: "video"
-                    size: Theme.icon_sm
-                }
-
-                UiText {
-                    Layout.fillWidth: true
-                    text: movie.view.video
-                    font.weight: Font.Medium
-                }
-
-                UiText {
-                    text: Strings.t("movie.video_kept")
-                    color: Theme.faint
-                    font.pixelSize: Theme.text_sm
-                }
-            }
-        }
 
         ScrollPane {
             id: scroll

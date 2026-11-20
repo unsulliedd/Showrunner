@@ -19,7 +19,7 @@ from showrunner.core.media import Episode
 from showrunner.ui.quick.window import WindowController
 from showrunner.ui.theme.tokens import SIZES
 
-from .conftest import neutral_library
+from .conftest import TURKISH, neutral_library
 from .test_choices import COMMENTARY, open_season, settle
 from .test_name_rows import _click, _visible, name_rows, season_of, states
 
@@ -229,7 +229,7 @@ def test_a_click_on_a_cell_is_that_file_own_choice_and_a_second_takes_it_back(
     load()
     assert file_rules(controller, library, 2) == file_rules(controller, library, 5) == []
     # A file without the track, and a paired file nobody adds, take no click.
-    _click(load.window, _cell(root, 1, 6))  # Episode Seven has no Turkish audio
+    _click(load.window, _cell(root, TURKISH, 6))  # Episode Seven has no Turkish audio
     _click(load.window, _cell(root, len(controller.matrix["headers"]) - 1, 0))
     settle(controller, qtbot)
     assert all(file_rules(controller, library, n) == [] for n in range(1, 11))
@@ -277,7 +277,7 @@ def test_a_default_is_marked_d_like_forced_in_the_inspector_list(
     controller: WindowController, library: Library, qtbot: QtBot
 ) -> None:
     open_season(controller, library, qtbot)
-    controller.toggle_flag(1, "default")
+    controller.toggle_flag(TURKISH, "default")
     settle(controller, qtbot)
     changes = controller.inspector["changes"]
     assert [c["icon"] for c in changes if "Default" in str(c["text"])] == ["default"]

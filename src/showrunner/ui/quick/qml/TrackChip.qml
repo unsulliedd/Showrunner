@@ -100,7 +100,7 @@ Item {
         FlagButton {
             side: control.label ? Theme.pill : Theme.row_sm
             // An audio track has no forced flag; its place stays empty.
-            opacity: control.chip.kind === "subtitle" ? 1 : 0
+            opacity: control.chip.kind !== "audio" ? 1 : 0
             enabled: parent.opacity > 0 && opacity > 0
             flag: "forced"
             on: control.chip.forced

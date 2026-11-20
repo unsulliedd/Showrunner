@@ -248,11 +248,12 @@ def test_the_foldout_of_a_dropped_chip_says_first_where_the_plan_keeps_the_track
 ) -> None:
     controller.toggle_keep(by_title(controller, "Dolby Digital 2.0", "Commentary")["id"])
     settle(controller, qtbot)
-    controller.toggle_keep(by_title(controller, "TrueHD")["id"])
+    truehd = by_title(controller, "TrueHD")["id"]
+    controller.toggle_keep(truehd)
     settle(controller, qtbot)
     load()
     root = load.window.contentItem()
-    chip = _item(root, "chip1")
+    chip = _item(root, f"chip{truehd}")
     _click(load.window, _item(chip, "namesButton"))
     load()
     assert chip.property("held").startswith("Not dropped in S01E10, S02E08")

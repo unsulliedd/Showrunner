@@ -79,7 +79,7 @@ from showrunner.tools.probe import probe
 from showrunner.ui.i18n.catalog import tr, tr_plural
 from showrunner.ui.library.model import Kind, LibraryModel
 from showrunner.ui.quick import names as rail
-from showrunner.ui.quick.facts import Heading, heading, video_summary, when
+from showrunner.ui.quick.facts import Heading, heading, when
 from showrunner.ui.quick.jobs import Jobs
 from showrunner.ui.quick.languages import LanguagePicker
 from showrunner.ui.quick.library import LibraryTree
@@ -1462,8 +1462,8 @@ class WindowController(QObject):
 
     @Property("QVariantMap", notify=plans_changed)
     def movie(self) -> dict[str, Any]:
-        """The movie's video line and its tracks as cards by kind."""
-        return self._shown.get("movie", {"video": "", "groups": []})
+        """The movie's tracks as cards by kind."""
+        return self._shown.get("movie", {"groups": []})
 
     @Property(list, notify=plans_changed)
     def rules(self) -> list[dict[str, Any]]:
@@ -1804,7 +1804,7 @@ class WindowController(QObject):
             }
             if self._key.kind is BatchKind.MOVIE and self._items:
                 groups = self._view.card_groups(self._items[0])
-                self._shown["movie"] = {"video": video_summary(self._items[0]), "groups": groups}
+                self._shown["movie"] = {"groups": groups}
             self._shown["review_input"] = given = self._review_input()
             self._shown["totals"] = totals(given)
             self._shown["skipped"] = skipped(given, self._shown["totals"][0])

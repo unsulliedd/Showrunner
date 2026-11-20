@@ -28,9 +28,7 @@ from showrunner.tools.probe import Programs
 from showrunner.tools.process import ProcessCancelledError
 from showrunner.ui.quick.window import WindowController
 
-from .conftest import neutral_library, program_statuses
-
-COMMENTARY = 2
+from .conftest import COMMENTARY, neutral_library, program_statuses
 
 
 @dataclass(frozen=True)

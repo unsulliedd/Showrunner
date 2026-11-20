@@ -217,6 +217,15 @@ Item {
                 text: Strings.t("overview.column.file")
             }
 
+            // Mostly one track: narrower than the other kinds, and the first to give way in a narrow window.
+            Heading {
+                Layout.fillWidth: true
+                Layout.preferredWidth: Theme.matrix_column
+                Layout.maximumWidth: Theme.matrix_column
+                Layout.minimumWidth: Theme.pill
+                text: Strings.t("overview.column.video")
+            }
+
             Heading {
                 Layout.fillWidth: true
                 Layout.preferredWidth: Theme.matrix_header + Theme.space_2xl
@@ -326,6 +335,25 @@ Item {
                                 text: row.modelData.warning !== "" ? row.modelData.warning : row.modelData.file
                                 color: row.modelData.warning !== "" ? Theme.change : Theme.faint
                                 font.pixelSize: Theme.text_xs
+                            }
+                        }
+                    }
+
+                    Row {
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: Theme.matrix_column
+                        Layout.maximumWidth: Theme.matrix_column
+                        Layout.minimumWidth: Theme.pill
+                        spacing: Theme.space_sm
+                        clip: true
+
+                        Repeater {
+                            model: row.modelData.video
+
+                            delegate: TrackPill {
+                                required property var modelData
+
+                                track: modelData
                             }
                         }
                     }

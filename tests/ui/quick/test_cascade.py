@@ -17,6 +17,7 @@ from showrunner.ui.quick.library import KEPT
 from showrunner.ui.quick.tracks import item_title
 from showrunner.ui.quick.window import WindowController
 
+from .conftest import COMMENTARY
 from .test_apply import Setup, make_setup
 
 
@@ -278,7 +279,7 @@ def test_apply_on_a_whole_show_writes_every_season(setup: Setup, qtbot: QtBot) -
     second = [p for p in second if p.parent.parent.name == "Show Name (2020)"]
     _write(second)
     _open(setup, qtbot, up=2)
-    controller.toggle_keep(2)  # the show drops the commentary; Season 1 drops it on its own already
+    controller.toggle_keep(COMMENTARY)  # the show drops the commentary; Season 1 drops it on its own already
     qtbot.waitUntil(lambda: not controller.planning and controller.can_apply)
     with qtbot.waitSignal(controller.jobs.ended, timeout=20_000):
         controller.apply()

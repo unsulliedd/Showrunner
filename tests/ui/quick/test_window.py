@@ -21,6 +21,8 @@ from showrunner.ui.quick import window
 from showrunner.ui.quick.library import KIND, LABEL, NUMBER, PROBLEM, ROW_ID, SUMMARY
 from showrunner.ui.quick.window import WindowController, local_paths
 
+from .conftest import COMMENTARY
+
 
 def select_path(controller: WindowController, path: Path) -> None:
     controller.select(controller.tree.index_of(str(path)))
@@ -111,7 +113,7 @@ def test_the_header_is_built_once_per_selection(
     season = controller.tree.index_of(str(library.items[0].file.path)).parent()
     controller.select(season)
     first = controller.batch
-    controller.toggle_keep(2)  # an edit: QML reads the header again, which stays as it was
+    controller.toggle_keep(COMMENTARY)  # an edit: QML reads the header again, which stays as it was
     assert controller.batch == first
     assert built.count("season") == 1
     controller.select(season.parent())

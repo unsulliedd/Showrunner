@@ -188,8 +188,9 @@ def plan_metadata(
     # those changes go into the remux and never to mkvpropedit.
     for planned in track_plan.kept:
         track = planned.track
-        is_video = track.kind is TrackKind.VIDEO
-        wanted = "" if is_video else _wanted_language(track, language, language_rules, from_names, given, invalid)
+        # The language for untagged tracks is for audio and subtitles; a video track gets only a rule's.
+        untagged = "" if track.kind is TrackKind.VIDEO else language
+        wanted = _wanted_language(track, untagged, language_rules, from_names, given, invalid)
         name = render(_TEMPLATES[track.kind], planned, wanted, file_title)
         if name and name != track.name:
             changes.append(HeaderChange(Property.NAME, track.name, name, track.id))
@@ -212,9 +213,9 @@ def plan_metadata(
 
 
 def language_after(track: Track, rules: list[TrackRule], from_names: bool, untagged: str = "") -> str:
-    """The tag the plan gives `track` (a rule's, else the one for untagged tracks), empty when it keeps its language."""
-    if track.kind is TrackKind.VIDEO:
-        return ""
+    """The tag the plan gives `track` (a rule's, else the one for untagged audio and subtitles), empty when it keeps
+    its language."""
+    untagged = "" if track.kind is TrackKind.VIDEO else untagged
     return _wanted_language(track, _language(untagged, []), rules, from_names, {}, [])
 
 

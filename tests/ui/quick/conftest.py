@@ -33,6 +33,8 @@ from showrunner.ui.quick.window import WindowController
 
 NUMBERS = ("One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten")
 GB = 1024**3
+# The sample season's track columns, in the order Overview and Tracks list them.
+VIDEO, ENGLISH, TURKISH, COMMENTARY, STEREO, SDH, ENGLISH_SUBS, FORCED, SRT = range(9)
 
 
 def _tracks(number: int) -> tuple[Track, ...]:

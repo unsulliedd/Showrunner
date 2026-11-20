@@ -116,8 +116,8 @@ def test_choices_reach_every_place_without_warnings(
     controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
     qtbot.waitUntil(lambda: not controller.planning)
     # Chips, flags and rules driven from QML expressions, as a click would.
-    load.run("app.toggle_keep(2)")
-    load.run('app.toggle_flag(7, "default")')
+    load.run("app.toggle_keep(3)")
+    load.run('app.toggle_flag(8, "default")')
     load.run("app.pause_rule(0, true)")
     qtbot.waitUntil(lambda: not controller.planning)
     assert controller.change_count > 0
@@ -132,7 +132,7 @@ def test_choices_reach_every_place_without_warnings(
     controller.select(controller.tree.index_of(str(library.items[-3].file.path)))
     load.window.setProperty("place", "overview")
     qtbot.waitUntil(lambda: not controller.planning)
-    load.run("app.toggle_keep(0)")
+    load.run("app.toggle_keep(1)")
     qtbot.waitUntil(lambda: not controller.planning)
     assert load() == []
     assert qt_warnings() == []
@@ -167,16 +167,16 @@ def test_chips_and_rules_answer_the_pointer(
     load()
     # A click on the commentary row's box drops it; a click on the Turkish row's D sets the default only.
     root = load.window.contentItem()
-    _click(load.window, _item(_item(root, "chip2"), "keepBox"))
+    _click(load.window, _item(_item(root, "chip3"), "keepBox"))
     load()
-    _click(load.window, _item(_item(root, "chip1"), "defaultFlag"))
+    _click(load.window, _item(_item(root, "chip2"), "defaultFlag"))
     load()
     words = [" ".join(str(p["text"]) for p in rule["parts"]) for rule in controller.rules]
     assert words == [
         "Drop audio in ENG Dolby Digital 2.0 flagged commentary",
         "Keep audio in TUR Dolby Digital Plus 5.1 · default",
     ]
-    controller.toggle_keep(4)
+    controller.toggle_keep(5)
     qtbot.waitUntil(lambda: not controller.planning)
     load.window.setProperty("place", "tracks")
     load()
@@ -196,7 +196,7 @@ def test_chips_and_rules_answer_the_pointer(
     words = [" ".join(str(p["text"]) for p in rule["parts"]) for rule in controller.rules]
     assert words[-1] == "Drop audio in ENG Dolby Digital 2.0 flagged commentary"
     # With more rules than the panel holds the list could scroll; a drag on a grip still moves the rule.
-    for column in (5, 6, 7, 3):
+    for column in (6, 7, 8, 4):
         controller.toggle_flag(column, "default")
     qtbot.waitUntil(lambda: not controller.planning)
     load()
@@ -271,9 +271,9 @@ def test_a_chip_s_arrow_folds_the_chip_open_and_leaves_the_chip_alone(
     load: Any, controller: WindowController, qt_warnings: Any, qtbot: QtBot
 ) -> None:
     root = _named_show(load, controller, qtbot)
-    assert len(controller.overview["groups"][0]["chips"]) == 4  # tracks named per episode are one chip each
+    assert len(controller.overview["groups"][1]["chips"]) == 4  # tracks named per episode are one chip each
     assert _open_lists(root) == []
-    chip = _item(root, "chip1")
+    chip = _item(root, "chip2")
     closed = (chip.width(), chip.height())
     _click(load.window, _item(chip, "namesButton"))
     load()
@@ -289,28 +289,28 @@ def test_a_chip_s_arrow_folds_the_chip_open_and_leaves_the_chip_alone(
     assert chip.height() > closed[1]
     assert chip.width() == closed[0]  # an open chip never gets wider
     # The chips around it are as they were, and no chip lies over another where the Flow placed them again.
-    assert _item(root, "chip0").height() == closed[1]
-    chips = [_item(root, f"chip{i}") for i in range(8)]
+    assert _item(root, "chip1").height() == closed[1]
+    chips = [_item(root, f"chip{i}") for i in range(9)]
     assert not any(_overlap(a, b) for i, a in enumerate(chips) for b in chips[i + 1 :])
     # One at a time: another chip's arrow switches, a second click closes, also from the other kind of track.
-    _click(load.window, _item(_item(root, "chip0"), "namesButton"))
+    _click(load.window, _item(_item(root, "chip1"), "namesButton"))
     load()
     (rows,) = _open_lists(root)
-    assert (rows.property("count"), _item(root, "chip0").property("missing")) == (10, "")
+    assert (rows.property("count"), _item(root, "chip1").property("missing")) == (10, "")
     assert chip.height() == closed[1]
-    _click(load.window, _item(_item(root, "chip0"), "namesButton"))
+    _click(load.window, _item(_item(root, "chip1"), "namesButton"))
     load()
     assert _open_lists(root) == []
-    _click(load.window, _item(_item(root, "chip4"), "namesButton"))
+    _click(load.window, _item(_item(root, "chip5"), "namesButton"))
     load()
     (rows,) = _open_lists(root)
-    assert _contains(_item(root, "chip4"), rows)
-    _click(load.window, _item(_item(root, "chip0"), "namesButton"))
+    assert _contains(_item(root, "chip5"), rows)
+    _click(load.window, _item(_item(root, "chip1"), "namesButton"))
     load()
     (rows,) = _open_lists(root)
-    assert _contains(_item(root, "chip0"), rows)
-    assert _item(root, "chip4").height() == closed[1]
-    _click(load.window, _item(_item(root, "chip0"), "namesButton"))
+    assert _contains(_item(root, "chip1"), rows)
+    assert _item(root, "chip5").height() == closed[1]
+    _click(load.window, _item(_item(root, "chip1"), "namesButton"))
     load()
     assert _open_lists(root) == []
     assert controller.rules == []
@@ -343,7 +343,7 @@ def test_a_long_list_is_capped_inside_the_chip_and_scrolls(
     load: Any, controller: WindowController, qt_warnings: Any, qtbot: QtBot
 ) -> None:
     root = _named_show(load, controller, qtbot, episodes=40)
-    chip = _item(root, "chip1")
+    chip = _item(root, "chip2")
     closed = chip.height()
     _click(load.window, _item(chip, "namesButton"))
     load()
@@ -369,20 +369,45 @@ def test_a_matrix_row_s_arrow_folds_the_same_list_open_under_the_row(
     load.window.setProperty("place", "tracks")
     load()
     arrows = sorted((b for b in _items(root, "namesButton") if b.isVisible()), key=_top)
-    _click(load.window, arrows[0])
+    _click(load.window, arrows[1])  # the first audio row, under the video row
     load()
     (rows,) = _open_lists(root)
     assert rows.property("count") == 10
-    line = _item(root, "chip0")
+    line = _item(root, "chip1")
     assert _contains(line, rows)  # under the row's label, inside its frame
     assert controller.rules == []
-    _click(load.window, arrows[0])  # closes the list
+    _click(load.window, arrows[1])  # closes the list
     load()
     assert _open_lists(root) == []
     # The row of a track some files lack ends its list with the files that do.
-    _click(load.window, sorted((b for b in _items(root, "namesButton") if b.isVisible()), key=_top)[1])
+    _click(load.window, sorted((b for b in _items(root, "namesButton") if b.isVisible()), key=_top)[2])
     load()
-    assert _item(root, "chip1").property("missing") == "Missing in 07"
+    assert _item(root, "chip2").property("missing") == "Missing in 07"
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def test_overview_and_tracks_show_the_video_group_above_the_others(
+    load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
+) -> None:
+    load()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
+    qtbot.waitUntil(lambda: not controller.planning)
+    load()
+    root = load.window.contentItem()
+
+    def shown(text: str) -> list[float]:
+        return sorted(_top(i) for i in _all(root) if i.isVisible() and i.property("text") == text)
+
+    # The chips' group, then the rows' column heading with each row's video pill.
+    assert shown("Video")[0] < shown("Audio")[0]
+    assert shown("VIDEO")
+    assert len(shown("UND")) >= len(controller.overview["rows"][:3])
+    assert _item(root, "chip0").property("form") in ("row", "lines")
+    load.window.setProperty("place", "tracks")
+    load()
+    assert shown("VIDEO")[0] < shown("AUDIO")[0]
     assert load() == []
     assert qt_warnings() == []
 
@@ -417,23 +442,23 @@ def test_track_rows_line_up_in_columns_in_every_state_and_at_every_width(
         assert all(len(found) == 1 for found in lefts.values()), lefts
         return found
 
-    assert check() == 8
+    assert check() == 9
     # Dropped, and a paired file added.
-    controller.toggle_keep(2)
-    controller.toggle_keep(7)
+    controller.toggle_keep(3)
+    controller.toggle_keep(8)
     qtbot.waitUntil(lambda: not controller.planning)
     load()
-    assert check() == 8
+    assert check() == 9
     # At the narrowest window a row takes two lines and keeps its columns.
     load.window.setWidth(1024)
     qtbot.waitUntil(lambda: load.window.width() == 1024)
     qtbot.wait(300)
-    assert _item(root, "chip0").property("form") == "lines"
-    assert check() == 8
+    assert _item(root, "chip1").property("form") == "lines"
+    assert check() == 9
     # An open row is no wider, and its columns stay.
-    _click(load.window, _item(_item(root, "chip1"), "namesButton"))
+    _click(load.window, _item(_item(root, "chip2"), "namesButton"))
     load()
-    assert check() == 8
+    assert check() == 9
     assert load() == []
     assert qt_warnings() == []
 
@@ -468,7 +493,7 @@ def test_a_chip_folds_open_inside_its_row_at_a_narrow_a_laptop_and_a_wide_window
         qtbot.wait(300)
         groups = _item(root, "chipGroups")
         room = _right(groups) - SIZES["scroll_thumb"] - 2 * SIZES["space_xs"]  # what the scroll view leaves the row
-        chips = [_item(root, f"chip{i}") for i in range(8)]
+        chips = [_item(root, f"chip{i}") for i in range(9)]
         # Every row of the box, closed and open: each track is a row of its own.
         rows: dict[int, list[QQuickItem]] = {}
         for chip in chips:
@@ -488,7 +513,7 @@ def test_a_chip_folds_open_inside_its_row_at_a_narrow_a_laptop_and_a_wide_window
             assert _right(chip) <= room + 0.5, (width, name)
             assert _left(chip) >= _left(groups), (width, name)
             assert _right(_item(chip, "namesButton")) <= _right(chip), (width, name)
-            now = [_item(root, f"chip{i}") for i in range(8)]
+            now = [_item(root, f"chip{i}") for i in range(9)]
             assert not any(_overlap(a, b) for i, a in enumerate(now) for b in now[i + 1 :]), (width, name)
             _click(load.window, _item(chip, "namesButton"))
             load()
@@ -511,7 +536,7 @@ def test_a_chip_stays_open_through_a_resize_and_the_separator_with_a_height_alre
     qtbot.waitUntil(lambda: not controller.planning)
     load()
     root = load.window.contentItem()
-    _click(load.window, _item(_item(root, "chip1"), "namesButton"))
+    _click(load.window, _item(_item(root, "chip2"), "namesButton"))
     load()
     box, bar, rows = (_item(root, name) for name in ("tracksBox", "tracksSeparator", "overviewRows"))
     for width, height in ((1024, 640), (1920, 1080), (1280, 800), (1024, 640)):
@@ -522,7 +547,7 @@ def test_a_chip_stays_open_through_a_resize_and_the_separator_with_a_height_alre
         )
         qtbot.wait(300)
         assert len(_open_lists(root)) == 1, (width, height)  # the open chip keeps its contents
-        assert _contains(_item(root, "chip1"), _open_lists(root)[0])
+        assert _contains(_item(root, "chip2"), _open_lists(root)[0])
         assert box.height() >= SIZES["tracks_min_height"]  # the saved height is clamped, never zero
         assert rows.height() >= SIZES["rows_min_height"]
         assert _bottom(rows) <= load.window.height()
@@ -868,7 +893,7 @@ def test_every_string_key_the_qml_asks_for_exists() -> None:
     keys |= {f"drawer.placeholder.{tab}.{part}" for tab in ("player", "jobs", "log") for part in ("title", "lead")}
     # Keys built from a batch kind, a track kind, a flag and the key of the track strip.
     keys |= {f"overview.title.{kind}" for kind in BatchKind}
-    keys |= {f"matrix.group.{kind}" for kind in ("audio", "subtitle")}
+    keys |= {f"matrix.group.{kind}" for kind in ("video", "audio", "subtitle")}
     keys |= {f"tracks.flag_tip.{flag}" for flag in ("default", "forced")}
     keys |= {f"tokens.editor.kind.{kind}" for kind in names.KINDS}
     keys |= {f"tokens.editor.source.{source}" for source in names.SOURCES}
@@ -1401,28 +1426,28 @@ def test_track_rows_move_by_drag_and_by_keyboard(
     load.window.setProperty("place", "tracks")
     load()
     root = load.window.contentItem()
-    codes = lambda: [h["code"] for h in controller.matrix["headers"]]  # noqa: E731
+    codes = lambda: [h["code"] for h in controller.matrix["headers"] if h["kind"] != "video"]  # noqa: E731
     assert codes()[:4] == ["ENG", "TUR", "ENG", "ENG"]
     grips = _grips(root, "trackGrip", "y")
-    # Every row of the sample has a grip: each kind has more than one.
+    # Every row of the sample has a grip, kept in place where a kind of one row has no order to set.
     assert len(grips) == len(controller.matrix["headers"])
-    assert grips[1].property("activeFocusOnTab") is True
+    assert grips[2].property("activeFocusOnTab") is True
     # Drag the Turkish row one row up.
-    _drag_from(load.window, qtbot, grips[1], 0, -(SIZES["row_lg"] + SIZES["space_xs"]))
+    _drag_from(load.window, qtbot, grips[2], 0, -(SIZES["row_lg"] + SIZES["space_xs"]))
     load()
     assert codes()[:2] == ["TUR", "ENG"]
     # Ctrl+Down on the focused grip moves it one place, and the focus follows the row.
     grips = _grips(root, "trackGrip", "y")
-    grips[0].forceActiveFocus()
+    grips[1].forceActiveFocus()
     QTest.keyClick(load.window, Qt.Key.Key_Down, Qt.KeyboardModifier.ControlModifier)
     load()
     assert codes()[:2] == ["ENG", "TUR"]
     grips = _grips(root, "trackGrip", "y")
-    assert grips[1].hasActiveFocus()
+    assert grips[2].hasActiveFocus()
     QTest.keyClick(load.window, Qt.Key.Key_Down, Qt.KeyboardModifier.ControlModifier)
     load()
     assert codes()[:3] == ["ENG", "ENG", "TUR"]
-    assert _grips(root, "trackGrip", "y")[2].hasActiveFocus()
+    assert _grips(root, "trackGrip", "y")[3].hasActiveFocus()
     # Without Ctrl the arrow moves nothing, and a row never leaves its kind.
     QTest.keyClick(load.window, Qt.Key.Key_Up)
     load()
@@ -1430,13 +1455,13 @@ def test_track_rows_move_by_drag_and_by_keyboard(
     for _ in range(3):
         QTest.keyClick(load.window, Qt.Key.Key_Down, Qt.KeyboardModifier.ControlModifier)
         load()
-    assert [h["kind"] for h in controller.matrix["headers"]][:4] == ["audio"] * 4
+    assert [h["kind"] for h in controller.matrix["headers"]][1:5] == ["audio"] * 4
     assert load() == []
     assert qt_warnings() == []
 
 
 def _audio_grips(root: QQuickItem) -> list[QQuickItem]:
-    """The grips of a movie's audio cards: the left one of the two card columns."""
+    """The grips of a movie's audio cards: the leftmost column with grips, since the one video card has none."""
     grips = _grips(root, "cardGrip", "y")
     left = min(g.mapToScene(QPointF()).x() for g in grips)
     return [g for g in grips if g.mapToScene(QPointF()).x() == left]
@@ -1452,7 +1477,7 @@ def test_movie_track_cards_move_by_drag_and_by_keyboard(
     qtbot.waitUntil(lambda: not controller.planning)
     load()
     root = load.window.contentItem()
-    titles = lambda: [c["title"] for c in controller.movie["groups"][0]["cards"]]  # noqa: E731
+    titles = lambda: [c["title"] for c in controller.movie["groups"][1]["cards"]]  # noqa: E731
     before = titles()
     assert len(before) == 3
     audio = _audio_grips(root)

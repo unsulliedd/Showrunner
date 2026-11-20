@@ -123,7 +123,8 @@ def test_a_file_card_shows_its_tracks_defaults_file_and_title_before_and_after(s
     first = built(season, profile_for(season, original=Original.KEEP))["rows"][0]
     assert first["summary"] == "4 changes · new file, 2 flags, title"
     detail = {d["label"]: d for d in first["detail"]}
-    assert list(detail) == ["Audio", "Subtitles", "Default", "File", "Title", "Flags", ""]
+    assert list(detail) == ["Video", "Audio", "Subtitles", "Default", "File", "Title", "Flags", ""]
+    assert [(p["code"], p["state"]) for p in detail["Video"]["after"]] == [("UND", "kept")]
     audio = detail["Audio"]
     assert [p["code"] for p in audio["before"]] == ["ENG", "TUR", "ENG"]
     assert [(p["code"], p["state"], p["default"]) for p in audio["after"]] == [

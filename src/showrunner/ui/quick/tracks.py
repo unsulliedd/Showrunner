@@ -51,7 +51,8 @@ from showrunner.tools.mkvtoolnix.propedit import Property
 from showrunner.ui.i18n.catalog import tr, tr_plural
 from showrunner.ui.quick.facts import size_text
 
-KINDS = (TrackKind.AUDIO, TrackKind.SUBTITLE)
+KINDS = (TrackKind.VIDEO, TrackKind.AUDIO, TrackKind.SUBTITLE)
+KIND_ICONS = {TrackKind.VIDEO: "video", TrackKind.AUDIO: "audio", TrackKind.SUBTITLE: "subs"}
 FLAGS = ("default", "forced")
 # The marks of the Tracks strip where a file follows its track: a dot, or nothing.
 QUIET = ("follows", "none")
@@ -127,7 +128,7 @@ def _what(signature: TrackSignature) -> list[str]:
 def columns(
     items: Sequence[MediaItem], groups: TrackGroups | None = None, options: TracksOptions | None = None
 ) -> list[Column]:
-    """Audio signatures, then subtitle signatures, each in the order first seen, then the kinds of paired file; with
+    """Video, audio, then subtitle signatures, each in the order first seen, then the kinds of paired file; with
     `options`, each kind in the order its tracks get in the new files."""
     groups = groups if groups is not None else TrackGroups.of(items, flags_from_names=True)
     found: dict[TrackSignature, None] = {}
@@ -537,12 +538,12 @@ class BatchView:
         return headers
 
     def groups(self) -> list[dict[str, object]]:
-        """The headers split by kind, for the chip rows: Audio, then Subtitles with the paired files."""
+        """The headers split by kind, for the chip rows: Video, Audio, then Subtitles with the paired files."""
         headers = self.headers()
         return [
             {
                 "label": tr(f"tracks.kind.{kind.value}"),
-                "icon": "audio" if kind is TrackKind.AUDIO else "subs",
+                "icon": KIND_ICONS[kind],
                 "chips": [h for h in headers if h["kind"] == kind.value],
             }
             for kind in KINDS
@@ -704,6 +705,7 @@ class BatchView:
                     "number": item_number(item),
                     "title": item_title(item),
                     "file": item.file.path.stem,
+                    "video": [p for p, k in zip(pills, pill_kinds, strict=True) if k is TrackKind.VIDEO],
                     "audio": [p for p, k in zip(pills, pill_kinds, strict=True) if k is TrackKind.AUDIO],
                     "subtitles": [p for p, k in zip(pills, pill_kinds, strict=True) if k is TrackKind.SUBTITLE],
                     "changes": changes,
@@ -816,7 +818,7 @@ class BatchView:
             groups.append(
                 {
                     "label": tr(f"tracks.kind.{kind.value}"),
-                    "icon": "audio" if kind is TrackKind.AUDIO else "subs",
+                    "icon": KIND_ICONS[kind],
                     "count": tr("tracks.before_after", before=before, after=after),
                     "cards": [{**c, "movable": len(of_kind) > 1} for c in of_kind],
                 }
@@ -1134,7 +1136,7 @@ def _what_changes(
     if isinstance(plan, TrackPlan):
         for flag in FLAGS:
             moved = []
-            for kind in (TrackKind.VIDEO, *KINDS):
+            for kind in KINDS:
                 before = {
                     s.track.id
                     for s in tracks

@@ -186,7 +186,23 @@ def test_a_rule_for_en_reaches_the_en_us_tracks_too(b: SimpleNamespace) -> None:
 def test_a_refused_track_plan_still_gets_the_languages(b: SimpleNamespace) -> None:
     item = b.item(b.video(0), b.audio(1, language="eng"))
     tracks = rules(drop(kind=KindTest.AUDIO), language_rule("de"))
-    assert changes(plan(item, MetadataOptions(), NO_NAMES, tracks)) == [(Property.LANGUAGE, 1, "en", "de")]
+    # A rule for every kind reaches the video track too.
+    assert changes(plan(item, MetadataOptions(), NO_NAMES, tracks)) == [
+        (Property.LANGUAGE, 0, "", "de"),
+        (Property.LANGUAGE, 1, "en", "de"),
+    ]
+
+
+def test_a_video_rule_gives_the_video_track_its_language_and_the_untagged_one_does_not(b: SimpleNamespace) -> None:
+    item = b.item(b.video(0), b.audio(1, language=None))
+    tracks = rules(language_rule("ja", kind=KindTest.VIDEO))
+    options = MetadataOptions(untagged_language="pt-BR")
+    assert changes(plan(item, options, NO_NAMES, tracks)) == [
+        (Property.LANGUAGE, 0, "", "ja"),
+        (Property.LANGUAGE, 1, "", "pt-BR"),
+    ]
+    assert language_after(item.file.tracks[0], tracks.rules, True, "pt-BR") == "ja"
+    assert language_after(item.file.tracks[0], [], True, "pt-BR") == ""
 
 
 def test_no_language_is_written_unless_one_is_chosen(b: SimpleNamespace) -> None:

@@ -3,7 +3,7 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
-// The Tracks place: each track of the batch is a row, audio then subtitles, beside a strip of the batch's files, one
+// The Tracks place: each track of the batch is a row, by kind, beside a strip of the batch's files, one
 // cell per file under the numbers across the top. A cell is quiet where its file follows the track and drawn only where
 // it differs; Python says which and why. The rows stand in the order of the tracks in the new files: a row's grip drags
 // it up or down, or moves it with Ctrl+Up and Ctrl+Down, among the rows of its kind. A click on a cell is that file's
@@ -429,7 +429,7 @@ Item {
 
                         Icon {
                             anchors.verticalCenter: parent.verticalCenter
-                            name: line.column.kind === "audio" ? "audio" : "subs"
+                            name: line.column.kind === "subtitle" ? "subs" : line.column.kind
                             size: Theme.icon_sm
                             color: Theme.faint
                         }

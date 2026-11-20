@@ -13,6 +13,7 @@ from showrunner.stages.scan import ProbeFailure
 from showrunner.ui.quick.library import PROBLEM_TIP
 from showrunner.ui.quick.window import WindowController
 
+from .conftest import ENGLISH, TURKISH
 from .test_choices import settle
 
 REASON = "Not a Matroska file"
@@ -48,8 +49,8 @@ def test_overview_counts_the_unread_file_neither_as_having_nor_as_lacking_a_trac
 ) -> None:
     chips = [c for group in controller.overview["groups"] for c in group["chips"]]
     # Episode Three has no tracks to show, which says nothing about them: only Episode Seven lacks Turkish audio.
-    assert [c["count"] for c in chips][:2] == ["", "missing in 1 file"]
-    assert controller.track_missing(1) == "Missing in 07"
+    assert [c["count"] for c in chips][ENGLISH : TURKISH + 1] == ["", "missing in 1 file"]
+    assert controller.track_missing(TURKISH) == "Missing in 07"
     assert all("03" not in controller.track_missing(i) for i in range(len(chips)))
 
 
@@ -99,7 +100,10 @@ def test_a_file_a_cancelled_read_did_not_reach_says_not_read_without_a_problem(
     row = controller.overview["rows"][2]
     assert (row["warning"], row["changes_text"]) == ("", "Not read")
     chips = [c for group in controller.overview["groups"] for c in group["chips"]]
-    assert [c["count"] for c in chips][:2] == ["", "missing in 1 file"]  # Episode Seven only, as for a failed file
+    assert [c["count"] for c in chips][ENGLISH : TURKISH + 1] == [
+        "",
+        "missing in 1 file",
+    ]  # Episode Seven only, as for a failed file
     controller.focus_file(str(third.file.path))
     assert controller.inspector["unread"] == "Not read"
     controller.show_place("review")

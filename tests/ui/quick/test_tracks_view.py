@@ -16,6 +16,8 @@ from showrunner.app.profiles.store import ProfileStore
 from showrunner.core.language import Language
 from showrunner.core.media import Episode, MediaItem
 from showrunner.core.track import SubtitleProperties, Track, TrackKind
+from showrunner.stages.metadata import MetadataPlan
+from showrunner.stages.mux import MuxPlan
 from showrunner.stages.mux.options import Original
 from showrunner.stages.tracks import (
     FlagShape,
@@ -27,14 +29,14 @@ from showrunner.stages.tracks import (
     TracksOptions,
     Verdict,
 )
+from showrunner.tools.mkvtoolnix.propedit import Property
 from showrunner.tools.probe import Programs
-from showrunner.ui.quick.tracks import BatchView, columns, rule_parts
+from showrunner.ui.quick.tracks import BatchView, Received, columns, rule_parts
 
-from .conftest import named_after_episode
+from .conftest import COMMENTARY, ENGLISH, FORCED, SDH, SRT, STEREO, TURKISH, VIDEO, named_after_episode
 
 # Mux and Metadata plan with a made-up program path; nothing runs it.
 STAGES = pipeline(Programs(mkvmerge=Path("mkvmerge")), Path("mkvpropedit"))
-ENGLISH, TURKISH, COMMENTARY, STEREO, SDH, ENGLISH_SUBS, FORCED, SRT = range(8)
 
 
 @pytest.fixture
@@ -64,10 +66,11 @@ def chosen(items: list[MediaItem]) -> TracksOptions:
     return choose(options, cols[SRT].signature, TrackChoice(Verdict.KEEP, default=True))
 
 
-def test_columns_are_audio_then_subtitles_then_paired_files(season: list[MediaItem]) -> None:
+def test_columns_are_video_then_audio_then_subtitles_then_paired_files(season: list[MediaItem]) -> None:
     cols = columns(season)
     names = [h["name"] for h in view(season, TracksOptions(), planned=False).headers()]
     assert [(c.signature.kind.value, name) for c, name in zip(cols, names, strict=True)] == [
+        ("video", ""),
         ("audio", "English"),
         ("audio", "Turkish"),
         ("audio", "Commentary"),
@@ -83,8 +86,19 @@ def test_columns_are_audio_then_subtitles_then_paired_files(season: list[MediaIt
 
 def test_headers_show_the_choices_and_the_files_that_lack_a_track(season: list[MediaItem]) -> None:
     headers = view(season, chosen(season)).headers()
-    assert [h["state"] for h in headers] == ["kept", "kept", "dropped", "kept", "dropped", "kept", "kept", "added"]
+    assert [h["state"] for h in headers] == [
+        "kept",
+        "kept",
+        "kept",
+        "dropped",
+        "kept",
+        "dropped",
+        "kept",
+        "kept",
+        "added",
+    ]
     assert [h["count"] for h in headers] == [
+        "",
         "",
         "missing in 1 file",
         "",
@@ -209,9 +223,10 @@ def test_a_hand_written_rule_reads_from_its_match() -> None:
 def test_movie_cards_hold_the_choice_and_the_name(library: Library) -> None:
     movie = library.items[-3]
     cols = columns([movie])
-    options = choose(TracksOptions(), cols[2].signature, TrackChoice(Verdict.DROP))
+    options = choose(TracksOptions(), cols[3].signature, TrackChoice(Verdict.DROP))
     groups = view([movie], options).card_groups(movie)
-    audio, subtitles = groups
+    video, audio, subtitles = groups
+    assert (video["label"], video["icon"], video["count"]) == ("Video", "video", "1 → 1")
     assert audio["count"] == "3 → 2"
     assert [c["state"] for c in audio["cards"]] == ["kept", "kept", "dropped"]
     assert audio["cards"][0]["is_default"]
@@ -243,9 +258,9 @@ def test_tracks_named_per_episode_are_one_column_with_each_file_s_name_in_its_li
     headers = built.headers()
     assert len(headers) == len(columns(season))
     # A chip names what the track is when the files name it apart, or the name every file gives it.
-    assert [h["name"] for h in headers[:3]] == ["", "", "Commentary"]
+    assert [h["name"] for h in headers[ENGLISH:STEREO]] == ["", "", "Commentary"]
     assert headers[STEREO]["name"] == "Show Name - 1x09 - Episode Nine (Stereo)"  # one file has it
-    assert [h["name"] for h in headers[4:7]] == ["SDH", "", "Forced"]
+    assert [h["name"] for h in headers[SDH:SRT]] == ["SDH", "", "Forced"]
     assert all(h["names"] for h in headers[:SRT])
     assert not headers[SRT]["names"]
     turkish = built.names(TURKISH)
@@ -286,9 +301,75 @@ def test_two_alike_tracks_in_one_file_are_two_columns_named_apart(season: list[M
     built = view(items, TracksOptions())
     names = [h["name"] for h in built.headers() if h["kind"] == "audio"]
     assert names == ["English", "Turkish", "Commentary", "Director", "Stereo"]
-    director = names.index("Director")
+    director = next(h["id"] for h in built.headers() if h["name"] == "Director")
     options = choose(TracksOptions(), built.cols[director].signature, TrackChoice(Verdict.DROP))
     dropped = view(items, options)
-    assert [h["state"] for h in dropped.headers()][: len(names)] == ["kept", "kept", "kept", "dropped", "kept"]
+    audio = [h["state"] for h in dropped.headers() if h["kind"] == "audio"]
+    assert audio == ["kept", "kept", "kept", "dropped", "kept"]
     words = " ".join(str(p["text"]) for p in dropped.rules()[0]["parts"])
     assert words == "Drop audio in ENG Dolby Digital Plus 5.1 named Director"
+
+
+def test_video_is_the_first_group_and_has_its_pills_in_each_row(season: list[MediaItem]) -> None:
+    built = view(season, TracksOptions())
+    assert [(g["label"], g["icon"]) for g in built.groups()] == [
+        ("Video", "video"),
+        ("Audio", "audio"),
+        ("Subtitles", "subs"),
+    ]
+    header = built.headers()[VIDEO]
+    assert (header["kind"], header["code"], header["state"], header["flags"]) == ("video", "UND", "kept", True)
+    assert not header["movable"]  # one video column has no order to set
+    assert [(p["code"], p["state"]) for p in built.rows()[0]["video"]] == [("UND", "kept")]
+    assert all(p["code"] != "UND" for p in built.rows()[0]["audio"])
+
+
+def test_a_video_track_s_language_is_planned_as_a_header_edit_and_as_the_remux_s_language(
+    season: list[MediaItem],
+) -> None:
+    cols = columns(season)
+    options = choose(TracksOptions(), cols[VIDEO].signature, TrackChoice(language="ja"))
+    built = view(season, options)
+    assert (built.headers()[VIDEO]["code"], built.headers()[VIDEO]["language_set"]) == ("JPN", "ja")
+    stage = built.file(season[0]).plan_for("metadata")
+    assert isinstance(stage.plan, MetadataPlan)
+    assert [(c.track_id, c.old, c.new) for c in stage.plan.changes if c.prop is Property.LANGUAGE] == [(0, "", "ja")]
+    # A remux writes the same language into the new file.
+    remuxed = view(season, choose(options, cols[COMMENTARY].signature, TrackChoice(Verdict.DROP)))
+    mux = remuxed.file(season[0]).plan_for("mux")
+    assert isinstance(mux.plan, MuxPlan)
+    language = mux.plan.tracks[0].language
+    assert language is not None
+    assert language.ietf == "ja"
+
+
+def test_dropping_the_only_video_track_is_refused_with_its_reason(season: list[MediaItem]) -> None:
+    options = choose(TracksOptions(), columns(season)[VIDEO].signature, TrackChoice(Verdict.DROP))
+    built = view(season, options)
+    assert built.rows()[0]["warning"] == "Tracks stay as they are: the choices would leave no video"
+    header = built.headers()[VIDEO]
+    assert header["state"] == "dropped"  # what the choice says, while every file keeps its video
+    assert built.held(VIDEO) == season
+    assert built.held_note(VIDEO).endswith("Tracks stay as they are: the choices would leave no video")
+    assert built.look(VIDEO, season[0], header) == ("held", "held")
+
+
+def test_a_video_chip_has_a_line_per_file_and_a_file_s_own_choice_marks_its_line(season: list[MediaItem]) -> None:
+    signature = columns(season)[VIDEO].signature
+    own = choose(TracksOptions(), signature, TrackChoice(Verdict.KEEP, default=True))
+    built = BatchView.build(season, TracksOptions(), (), file_rules={str(season[0].file.path): own.rules})
+    lines = built.name_rows(VIDEO)
+    assert [line["text"] for line in lines[:2]] == ["01 · no name", "02 · no name"]
+    assert len(lines) == len(season)
+    assert all(line["clickable"] for line in lines)
+    assert (lines[0]["file"], lines[0]["over"], lines[1]["over"]) == (str(season[0].file.path), "Own choice", "")
+
+
+def test_a_video_choice_from_above_is_marked_and_a_nearer_one_overrides_it(season: list[MediaItem]) -> None:
+    signature = columns(season)[VIDEO].signature
+    given = choose(TracksOptions(), signature, TrackChoice(Verdict.KEEP, default=True))
+    received = BatchView.build(season, given, (), received=Received(origins=["show"]))
+    assert received.place_mark(VIDEO) == {"from": "From the show", "over": "", "short": "From show"}
+    own = choose(TracksOptions(), signature, TrackChoice(language="ja"))
+    nearer = Received(origins=[""], tracks=given, received_origins=["show"])
+    assert BatchView.build(season, own, (), received=nearer).place_mark(VIDEO)["over"] == "Overrides the show"
