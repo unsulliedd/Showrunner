@@ -10,6 +10,7 @@ from pytestqt.qtbot import QtBot
 
 from showrunner.app.library.library import Library
 from showrunner.stages.scan import ProbeFailure
+from showrunner.ui.quick.library import PROBLEM_TIP
 from showrunner.ui.quick.window import WindowController
 
 from .test_choices import settle
@@ -65,10 +66,25 @@ def test_review_puts_the_file_under_needs_a_look_with_the_reason(
     controller.show_place("review")
     review = controller.review
     (look,) = (f for f in review["filters"] if f["key"] == "look")
-    assert look["count"] == 1
+    assert look["count"] == 2  # and Episode Seven, whose subtitle pairing is unsure
     row = review["rows"][2]
     assert (row["state"], row["warning"], row["summary"]) == ("look", TEXT, "Not read")
-    assert [r["state"] for r in review["rows"]].count("look") == 1
+    assert [r["state"] for r in review["rows"]].count("look") == 2
+
+
+def test_review_needs_a_look_at_the_files_the_library_counts(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[0].file.path)).parent())
+    settle(controller, qtbot)
+    controller.show_place("review")
+    (look,) = (f for f in controller.review["filters"] if f["key"] == "look")
+    assert look["count"] == controller.model.needs_look_count() == 1
+    row = controller.review["rows"][6]
+    assert (row["title"], row["state"]) == ("Episode Seven", "look")
+    assert row["warning"] == "More than one subtitle file fits this video. Check the pairing."
 
 
 def test_a_file_a_cancelled_read_did_not_reach_says_not_read_without_a_problem(
@@ -89,3 +105,13 @@ def test_a_file_a_cancelled_read_did_not_reach_says_not_read_without_a_problem(
     controller.show_place("review")
     row = controller.review["rows"][2]
     assert (row["state"], row["summary"]) == ("in", "Not read")
+
+
+def test_the_library_row_gives_the_reason_its_mark_stands_for(controller: WindowController, season: Library) -> None:
+    def tip(number: int) -> object:
+        return controller.tree.index_of(str(season.items[number].file.path)).data(PROBLEM_TIP)
+
+    assert tip(2) == TEXT
+    assert tip(6) == "More than one subtitle file fits this video. Check the pairing."
+    assert tip(0) == ""
+    assert controller.tree.index_of(str(season.items[0].file.path)).parent().data(PROBLEM_TIP) == ""

@@ -232,11 +232,27 @@ ApplicationWindow {
         onAccepted: app.discard_changes()
     }
 
+    // The profile pill's Revert: the question names the show or Movies group and the profile; the answer is final.
+    ConfirmPopup {
+        id: revert
+
+        objectName: "revertPopup"
+        heading: app.revert_question.heading
+        text: app.revert_question.text
+        yes: app.revert_question.yes
+        danger: true
+        onAccepted: app.discard_profile()
+    }
+
     Connections {
         target: app
 
         function onDiscard_asked() {
             discard.open()
+        }
+
+        function onRevert_asked() {
+            revert.open()
         }
     }
 

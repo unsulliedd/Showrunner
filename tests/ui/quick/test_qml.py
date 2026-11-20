@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -953,6 +954,27 @@ def test_separators_drag_and_click_in_as_typed_text(
     assert load() == []
 
 
+@pytest.mark.parametrize("width", [1440, 1920])
+def test_the_suggestion_buttons_of_empty_template_cards_are_not_cut(
+    load: Any, controller: WindowController, library: Library, qtbot: QtBot, width: int
+) -> None:
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
+    qtbot.waitUntil(lambda: not controller.planning)
+    load.window.resize(width, 900)
+    load.window.setProperty("place", "names")
+    assert load() == []
+    buttons = [b for b in _items(load.window.contentItem(), "startTemplate") if b.isVisible()]
+    assert len(buttons) == 4
+    texts = [t for b in buttons for t in _all(b) if t.property("truncated") is not None and t.property("text")]
+    assert {t.property("text") for t in texts} == {"Suggest"}
+    assert not [t for t in texts if t.property("truncated")]
+    tips = {QQmlExpression(QQmlEngine.contextForObject(b), b, "ToolTip.text").evaluate()[0] for b in buttons}
+    assert tips == {"Start from a suggestion"}
+
+
 def test_names_and_tokens_answer_the_pointer(
     load: Any, controller: WindowController, library: Library, qt_warnings: Any, qtbot: QtBot
 ) -> None:
@@ -1243,7 +1265,7 @@ def test_a_narrow_window_elides_text_in_place_and_shows_it_whole_under_the_point
     assert load() == []
     root = window.contentItem()
     # The header's facts end before Exclude.
-    facts = next(i for i in _all(root) if i.property("text") == controller.batch["facts"])
+    facts = next(i for i in _all(root) if i.property("text") == controller.batch["facts"] and i.isVisible())
     assert _right(facts) <= _left(_item(root, "excludeBatch")) + 1
     # A tab of a place that does not exist yet shows whole or not at all.
     tabs = [i for i in _all(root) if i.metaObject().className().startswith("Tabs")]
@@ -1259,6 +1281,50 @@ def test_a_narrow_window_elides_text_in_place_and_shows_it_whole_under_the_point
     QTest.mouseMove(window, cut.mapToScene(QPointF(cut.width() / 2, cut.height() / 2)).toPoint())
     qtbot.waitUntil(lambda: _tip(cut).property("visible") is True)
     assert _tip(cut).property("text") == cut.property("text")
+
+
+def test_long_names_give_way_at_1440_in_the_header_and_the_inspector(
+    load: Any, controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    third = library.items[2]
+    long_title = replace(third, identity=replace(third.identity, episode_title="A Very Long Episode Title " * 3))
+    library = replace(library, items=(*library.items[:2], long_title, *library.items[3:]))
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(third.file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    controller.start_template("audio_track_template")
+    qtbot.waitUntil(lambda: not controller.planning)
+    window = load.window
+    window.resize(1440, 900)
+    window.setProperty("place", "overview")
+    assert load() == []
+    root = window.contentItem()
+    # The facts go under a title that takes the row, whole.
+    assert [i.isVisible() for i in _items(root, "factsBeside")] == [False]
+    under = _item(root, "factsUnder")
+    assert under.isVisible()
+    assert under.property("text") == controller.batch["facts"]
+    assert not under.property("truncated")
+    # A planned track name ends inside the Inspector, cut at its end, rather than run past its edge.
+    names = [i for i in _items(root, "trackNewName") if i.isVisible()]
+    assert names
+    for name in names:
+        line = name.parentItem()
+        assert _right(name) <= _right(line) + 1
+    controller.select(controller.tree.index_of(str(library.items[0].file.path)))
+    qtbot.waitUntil(lambda: not controller.planning)
+    load()
+    assert _item(root, "factsBeside").property("text") == controller.batch["facts"]  # beside a short title
+    assert [i.isVisible() for i in _items(root, "factsUnder")] == [False]
+
+
+def test_queue_names_are_cut_in_the_middle_and_review_lines_break_at_words() -> None:
+    queue = (QML_DIR / "QueuePanel.qml").read_text(encoding="utf-8")
+    assert re.search(r'objectName: "queueName"[^}]*elide: Text\.ElideMiddle', queue)
+    review = (QML_DIR / "ReviewFile.qml").read_text(encoding="utf-8")
+    assert "Text.WrapAnywhere" not in review
 
 
 def _tip(item: QQuickItem) -> Any:

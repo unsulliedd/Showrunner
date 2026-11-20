@@ -41,14 +41,14 @@ Panel {
                 onClicked: app.choose_folder()
             }
 
-            // Back to Home; a library being read or a batch being applied is not closed under its job.
+            // Back to Home; a library being read, applied or read again after a job is not closed under its job.
             IconButton {
                 objectName: "closeFolder"
                 anchors.right: add.left
                 anchors.rightMargin: Theme.space_xs
                 anchors.verticalCenter: parent.verticalCenter
                 visible: app.loaded
-                enabled: !app.busy && !app.applying
+                enabled: app.can_change_library
                 iconName: "x"
                 label: Strings.t("library.close_all")
                 ToolTip.visible: hovered
@@ -78,6 +78,9 @@ Panel {
                 text: app.needs_look
                 checkable: true
                 Accessible.name: Strings.f("library.needs_look", { count: app.needs_look })
+                Accessible.description: Strings.t("library.needs_look_tip")
+                ToolTip.visible: hovered
+                ToolTip.text: Accessible.description
                 onToggled: app.needs_look_only = checked
             }
         }

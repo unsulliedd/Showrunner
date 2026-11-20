@@ -20,7 +20,7 @@ from typing import Any
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 
 from showrunner.app.jobs.run import JobResult, Read, StepRecord
-from showrunner.app.jobs.stages import Stage
+from showrunner.app.jobs.stages import MISSED, Stage
 from showrunner.app.jobs.store import FINAL, JobStore, JobSummary, StepState, StoredJob, UnresumableJobError
 from showrunner.app.jobs.worker import JobRunner
 from showrunner.stages.metadata.apply import ApplyResult
@@ -53,7 +53,7 @@ def clock(seconds: float) -> str:
 
 def check_text(problem: VerifyProblem) -> str:
     """One way the new file differs from the plan, in words."""
-    if problem.what in ("read", "tracks", "title", "duration"):
+    if problem.what in ("read", "tracks", "title", "duration", "chapters", "attachments"):
         return tr(f"jobs.check.{problem.what}", planned=problem.planned, found=problem.found or tr("jobs.check.none"))
     return tr(
         "jobs.check.track",
@@ -81,6 +81,19 @@ def mux_text(plan: MuxPlan | None, result: MuxResult) -> list[str]:
     lines = [tr(f"jobs.failure.{result.failure.value}", detail=result.detail)]
     lines += [check_text(problem) for problem in result.problems]
     return lines
+
+
+def reason_text(message: str) -> str:
+    """A failed step's stored message in words: a remux stores its failure as "kind: detail", a metadata step whose
+    edits the file does not show as "missed: <missed>/<planned>"; any other message is already the error's own
+    text."""
+    kind, _, detail = message.partition(": ")
+    if kind in {f.value for f in Failure}:
+        return tr(f"jobs.failure.{kind}", detail=detail)
+    if kind == MISSED:
+        missed, _, planned = detail.partition("/")
+        return tr("jobs.failure.missed", missed=missed, planned=planned)
+    return message or tr("jobs.check.none")
 
 
 @dataclass
@@ -296,7 +309,7 @@ class JobProgress:
             elif record.state is StepState.DONE:
                 lines.append(tr("jobs.result.done"))
             else:
-                lines.append(tr("jobs.result.failed", message=record.message or tr("jobs.check.none")))
+                lines.append(tr("jobs.result.failed", message=reason_text(record.message)))
         return lines
 
 

@@ -107,7 +107,10 @@ AbstractButton {
                 kind: "ghost"
                 size: Theme.row_sm
                 iconName: "plus"
-                text: Strings.t("names.suggest")
+                text: Strings.t("names.suggest_short")
+                Accessible.name: Strings.t("names.suggest")
+                ToolTip.visible: hovered
+                ToolTip.text: Accessible.name
                 onClicked: app.start_template(control.entry.key)
             }
         }

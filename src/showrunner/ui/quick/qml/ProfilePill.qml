@@ -126,9 +126,9 @@ AbstractButton {
         }
 
         MenuRow {
-            text: Strings.t("profile.discard")
+            text: Strings.t("profile.revert")
             enabled: app.profile_edited
-            onTriggered: app.discard_profile()
+            onTriggered: app.ask_revert()
         }
 
         MenuSeparator {

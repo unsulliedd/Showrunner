@@ -190,7 +190,14 @@ def test_a_group_left_out_on_a_season_stays_out_in_its_episodes_unless_one_puts_
     qtbot.waitUntil(lambda: not controller.planning)
     assert controller.change_count == 0
     _open(setup, qtbot, fourth, up=0)
+    # The unticked change stays planned, and the top bar and Review's row say it is skipped, not that none is planned.
+    assert controller.change_text == "1 change skipped this run"
+    assert [r["summary"] for r in controller.review["rows"]] == ["1 change skipped this run"]
     assert not next(g for g in controller.review["groups"] if g["key"] == "tracks")["in_run"]
+    _open(setup, qtbot, up=2)  # the show's box stays ticked, and says its season holds another value
+    marks = {g["key"]: g["mark"] for g in controller.review["groups"]}
+    assert marks == {"tracks": {"from": "", "over": "Set otherwise in 1 place inside"}, "names": {}}
+    _open(setup, qtbot, fourth, up=0)
     controller.set_in_run("tracks", True)  # the episode's own value
     qtbot.waitUntil(lambda: not controller.planning)
     assert controller.change_count > 0

@@ -35,11 +35,14 @@ def test_a_row_says_the_state_the_version_and_what_it_turns_on() -> None:
     assert found["state"] == "Found"
     assert found["tone"] == "add"
     assert found["details"] == ["Version 88.0", str(Path("tools") / "mkvmerge")]
-    assert found["download"] == "Update"
+    # Whether a newer version exists is not known here: a working program is not told to update.
+    assert (found["download"], found["download_kind"]) == ("Download again", "outline")
+    old = row(spec, DependencyStatus(spec.id, State.OUTDATED, Path("tools") / "mkvmerge", version="40.0"), False)
+    assert (old["download"], old["download_kind"]) == ("Update", "primary")
     assert found["unlocks"].startswith("Turns on: ")
     checking = row(spec, None, False)
     assert checking["state"] == "Checking…"
-    assert checking["download"] == "Download"
+    assert (checking["download"], checking["download_kind"]) == ("Download", "primary")
 
 
 def test_the_first_show_checks_every_program_once(

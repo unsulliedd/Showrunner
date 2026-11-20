@@ -353,3 +353,13 @@ def test_the_inspector_names_the_new_order(controller: WindowController, library
     controller.move_track(TURKISH, ENGLISH)
     settle(controller, qtbot)
     assert [c["text"] for c in controller.inspector["changes"]][1] == "Tracks in a new order"
+
+
+def test_the_overview_lead_speaks_of_every_file_only_where_there_are_several(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    assert "in every file" in controller.overview["lead"]
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)))
+    settle(controller, qtbot)
+    assert "in this file" in controller.overview["lead"]

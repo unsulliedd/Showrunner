@@ -50,7 +50,12 @@ def row(spec: DependencySpec, status: DependencyStatus | None, has_user_path: bo
         details += [version, str(status.path)]
     if status is not None and status.state is State.BROKEN and status.detail:
         details.append(status.detail.splitlines()[0])
+    # Whether a newer version exists is known only after asking its source, so a program found and working offers a
+    # quiet Download again; Update is for one older than Showrunner needs.
     missing = status is None or status.state is State.MISSING
+    found = status is not None and status.state is State.FOUND
+    outdated = status is not None and status.state is State.OUTDATED
+    download = "download" if missing else "update" if outdated else "download_again"
     return {
         "id": spec.id,
         "name": tr(spec.name_key),
@@ -62,7 +67,8 @@ def row(spec: DependencySpec, status: DependencyStatus | None, has_user_path: bo
             features=tr("common.list_separator").join(tr(f"feature.{feature.value}") for feature in spec.features),
         ),
         "user_path": has_user_path,
-        "download": tr("dependencies.download" if missing else "dependencies.update"),
+        "download": tr(f"dependencies.{download}"),
+        "download_kind": "outline" if found else "primary",
         "variants": [
             {"id": variant.id, "label": tr(f"dependencies.variant.{variant.id}")}
             for variant in spec.source.variants

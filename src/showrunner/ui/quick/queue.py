@@ -12,19 +12,9 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from showrunner.app.jobs.queue import ItemState, can_retry, item_state, next_item, place
 from showrunner.app.jobs.run import JobResult
-from showrunner.app.jobs.store import FINAL, QueuedJob, QueueMark, UnresumableJobError
-from showrunner.stages.mux import Failure
+from showrunner.app.jobs.store import FINAL, QueuedJob, QueueMark, StepState, UnresumableJobError
 from showrunner.ui.i18n.catalog import tr, tr_plural
-from showrunner.ui.quick.jobs import Jobs
-
-
-def reason_text(message: str) -> str:
-    """A failed step's stored message in words: a remux stores its failure as "kind: detail", worded as the Jobs tab
-    words it; any other message is already the error's own text."""
-    kind, _, detail = message.partition(": ")
-    if kind in {f.value for f in Failure}:
-        return tr(f"jobs.failure.{kind}", detail=detail)
-    return message or tr("jobs.check.none")
+from showrunner.ui.quick.jobs import Jobs, reason_text
 
 
 class Queue(QObject):
@@ -197,7 +187,11 @@ class Queue(QObject):
             detail = tr("queue.detail.interrupted", done=done, total=len(item.states))
         elif state is ItemState.FAILED:
             detail = tr("queue.detail.failed", reason=reason_text(item.reason or item.message))
-        elif state in (ItemState.CHANGED, ItemState.CANCELLED, ItemState.UNREADABLE):
+        elif state is ItemState.CHANGED:
+            # Every step has ended and none failed: the rest changed on disk, or follow a step of their file that did.
+            written = sum(s is StepState.DONE for s in item.states)
+            detail = tr("queue.detail.changed", done=written, total=len(item.states), left=len(item.states) - written)
+        elif state in (ItemState.CANCELLED, ItemState.UNREADABLE):
             detail = tr(f"queue.detail.{state.value}")
         else:
             detail = ""

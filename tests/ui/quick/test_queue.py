@@ -4,6 +4,7 @@ queue after a restart. The season and the stand-in mux stage are those of the Ap
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -11,9 +12,11 @@ import pytest
 from PySide6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
 
+from showrunner.app.jobs.run import StalePreviewError
 from showrunner.app.jobs.stages import TracksStage
 from showrunner.core.media import MediaFile
 from showrunner.tools.probe import Programs
+from showrunner.ui.quick import window
 from showrunner.ui.quick.window import WindowController
 
 from .conftest import program_statuses
@@ -183,7 +186,8 @@ def test_a_file_changed_on_disk_after_it_was_queued_is_not_written(setup: Setup,
     wait_idle(controller, qtbot)
     (row,) = controller.queue.rows
     assert row["state"] == "changed"
-    assert row["detail"].startswith("A file changed on disk after it was queued")
+    # The other nine files were written, and the row says so beside the one that changed.
+    assert row["detail"].startswith("9 of 10 steps written. 1 not written: a file changed on disk after it was queued.")
     assert not row["can_retry"]
     assert setup.season[4].read_bytes() == b"changed by another program"
     assert len(list(setup.bin.iterdir())) == 9
@@ -236,3 +240,42 @@ def test_the_queue_comes_back_after_a_restart_paused_and_goes_on(setup: Setup, q
     assert len(list(setup.bin.iterdir())) == 10
     after.stop_jobs()
     after.deleteLater()
+
+
+@pytest.mark.parametrize(
+    ("error", "note"),
+    [
+        (StalePreviewError(), "The plan changed while the place was being queued"),
+        (sqlite3.OperationalError("disk I/O error"), "The place could not be queued: disk I/O error"),
+    ],
+)
+def test_a_job_that_cannot_be_stored_is_not_queued_and_leaves_nothing_locked(
+    setup: Setup, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch, error: Exception, note: str
+) -> None:
+    controller = setup.controller
+
+    def refuse(*_args: object, **_kwargs: object) -> int:
+        raise error
+
+    monkeypatch.setattr(window, "create_job", refuse)
+    add(controller, qtbot)
+    assert controller.queue.note.startswith(note)
+    assert controller.queue.rows == []
+    assert not controller.locked
+    assert controller.can_queue
+
+
+def test_an_apply_whose_job_cannot_be_stored_says_why_and_leaves_nothing_locked(
+    setup: Setup, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = setup.controller
+
+    def refuse(*_args: object, **_kwargs: object) -> int:
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(window, "create_job", refuse)
+    controller.apply()
+    qtbot.waitUntil(lambda: not controller.applying)
+    assert controller.apply_message == "Apply could not get ready: disk I/O error"
+    assert not controller.locked
+    assert controller.can_apply

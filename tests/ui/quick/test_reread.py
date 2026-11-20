@@ -176,6 +176,9 @@ def test_the_place_stays_locked_until_the_files_are_read_again(setup: Setup, qtb
     assert not controller.jobs.running
     assert controller.locked
     assert not controller.can_apply
-    release.set()
+    assert not controller.can_change_library  # Close all folders waits too
+    with qtbot.waitSignal(controller.loading_changed):
+        release.set()
     qtbot.waitUntil(lambda: not controller.locked)
+    assert controller.can_change_library
     assert title(setup, setup.season[0]) == "Slowly read"

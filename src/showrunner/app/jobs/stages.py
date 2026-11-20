@@ -91,6 +91,8 @@ class Stage(Protocol):
 
 
 RECHECK = Resumed(Recovery.RECHECK)
+# The message of a metadata step whose edits the file does not show when read back: "missed: <missed>/<planned>".
+MISSED = "missed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,7 +154,7 @@ class MetadataStage:
         if not isinstance(plan.plan, MetadataPlan):
             raise TypeError(f"not a metadata plan: {type(plan.plan).__name__}")
         result = apply_metadata(plan.plan, self.mkvpropedit, self.programs, cancel=cancel)
-        missed = f"{len(result.missed)} of {len(plan.plan.changes)} changes not found after the edit"
+        missed = f"{MISSED}: {len(result.missed)}/{len(plan.plan.changes)}"
         return StepResult(result.ok, result.error or (missed if result.missed else ""), result)
 
     def resume(self, plan: StagePlan, before: FileStamp, cancel: threading.Event | None) -> Resumed:

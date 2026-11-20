@@ -61,9 +61,12 @@ Panel {
                     color: Theme.muted
                 }
 
-                // The title, then the facts in what room is left; each elides rather than run under Exclude.
+                // The title, then the facts beside it; when both do not fit, the facts go under the title. Each
+                // elides rather than run under Exclude.
                 Row {
                     id: titleRow
+
+                    readonly property bool besides: title.implicitWidth + spacing + factsBeside.implicitWidth <= heading.width
 
                     spacing: Theme.space_md + Theme.space_xs
 
@@ -77,11 +80,22 @@ Panel {
                     }
 
                     UiText {
+                        id: factsBeside
+
+                        objectName: "factsBeside"
                         anchors.baseline: title.baseline
-                        width: Math.max(0, Math.min(implicitWidth, heading.width - title.width - titleRow.spacing))
+                        visible: titleRow.besides
                         text: app.batch.facts
                         color: Theme.muted
                     }
+                }
+
+                UiText {
+                    objectName: "factsUnder"
+                    width: Math.min(implicitWidth, heading.width)
+                    visible: !titleRow.besides && text !== ""
+                    text: app.batch.facts
+                    color: Theme.muted
                 }
             }
 

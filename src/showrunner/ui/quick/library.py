@@ -13,13 +13,14 @@ from showrunner.ui.library.model import DOT_ROLE, MARK_ROLE, NAME_COLUMN, SUMMAR
 from showrunner.ui.library.proxy import LibraryFilter
 
 _FIRST = Qt.ItemDataRole.UserRole + 100
-KIND, LABEL, NUMBER, SUMMARY, PROBLEM, PLANNED, ROW_ID, EXCLUDED, KEPT = range(_FIRST, _FIRST + 9)
+KIND, LABEL, NUMBER, SUMMARY, PROBLEM, PROBLEM_TIP, PLANNED, ROW_ID, EXCLUDED, KEPT = range(_FIRST, _FIRST + 10)
 ROLE_NAMES = {
     KIND: "kind",
     LABEL: "label",
     NUMBER: "number",  # an episode's number, drawn apart from its title
     SUMMARY: "summary",  # a group's count of videos, a video's subtitle languages
     PROBLEM: "problem",  # a video that needs a look: the theme role its mark is drawn in, else ""
+    PROBLEM_TIP: "problem_tip",  # why it needs a look, in words (the reason a read failed), else ""
     PLANNED: "planned",  # a planned change at or below the row
     ROW_ID: "row_id",  # a video's path, a group's place in the tree
     EXCLUDED: "excluded",  # a place that is excluded from every run, whether on its own or through a parent
@@ -58,13 +59,13 @@ class LibraryTree(LibraryFilter):
         model.dataChanged.connect(self._on_source_data)
 
     def _on_source_data(self, top_left: QModelIndex, bottom_right: QModelIndex, roles: list[int]) -> None:
-        """The source names its dot and mark roles; QML listens for the roles here that are drawn from them."""
-        if DOT_ROLE not in roles and MARK_ROLE not in roles:
+        """The source names its dot, mark and tooltip roles; QML listens for the roles here that are drawn from them."""
+        if DOT_ROLE not in roles and MARK_ROLE not in roles and Qt.ItemDataRole.ToolTipRole not in roles:
             return
         for row in range(top_left.row(), bottom_right.row() + 1):
             index = self.mapFromSource(top_left.siblingAtRow(row).siblingAtColumn(NAME_COLUMN))
             if index.isValid():
-                self.dataChanged.emit(index, index, [PLANNED, PROBLEM])
+                self.dataChanged.emit(index, index, [PLANNED, PROBLEM, PROBLEM_TIP])
 
     def source(self) -> LibraryModel:
         model = self.sourceModel()
@@ -112,6 +113,8 @@ class LibraryTree(LibraryFilter):
             return self.row_id(index) in self._kept
         if role == PROBLEM:
             return _PROBLEM_ROLES.get(Mark(source.data(MARK_ROLE)), "") if kind.is_video else ""
+        if role == PROBLEM_TIP:
+            return (source.data(Qt.ItemDataRole.ToolTipRole) or "") if kind.is_video else ""
         path = model.path(source)
         item = model.library.item(path) if path is not None else None
         episode = item.identity if item is not None and isinstance(item.identity, Episode) else None

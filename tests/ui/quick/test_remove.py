@@ -95,13 +95,28 @@ def test_a_season_and_then_an_episode_are_taken_out_of_the_list_and_stay_on_disk
     assert listed(controller) == ["Another Show - S01E01.mkv", "Show Name - S02E01.mkv"]
     assert controller.batches.removed == {show / "Season 1" / f"Show Name - S01E0{n}.mkv" for n in (1, 2)}
     assert (show / "Season 1" / "Show Name - S01E01.mkv").is_file()
-    assert controller.has_batch  # the first row that is left opens
+    assert controller.selected == controller.tree.row_id(row(controller, show, "Show Name - S02E01.mkv", up=2))
     pick(controller, qtbot, row(controller, show, "Show Name - S02E01.mkv"))
     controller.place_action("remove")
     assert listed(controller) == ["Another Show - S01E01.mkv"]
     assert controller.loaded
     controller._save_batches()
     assert len(saved_removed()) == 3
+
+
+def test_removing_an_episode_selects_its_season_or_the_show_when_the_season_is_gone(
+    controller: WindowController, folders: tuple[Path, Path], qtbot: QtBot
+) -> None:
+    show, _ = folders
+    open_folders(controller, qtbot, *folders)
+    season = controller.tree.row_id(row(controller, show, "Show Name - S01E01.mkv", up=1))
+    pick(controller, qtbot, row(controller, show, "Show Name - S01E02.mkv"))
+    controller.place_action("remove")
+    assert controller.selected == season
+    assert controller.batch["title"] == "Season 1"
+    pick(controller, qtbot, row(controller, show, "Show Name - S02E01.mkv"))
+    controller.place_action("remove")  # Season 2 held only this episode
+    assert controller.selected == controller.tree.row_id(row(controller, show, "Show Name - S01E01.mkv", up=2))
 
 
 def test_a_whole_show_is_taken_out_with_what_lies_inside_it(

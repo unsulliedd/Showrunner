@@ -49,7 +49,7 @@ class VerifyProblem:
     """One way the new file differs from the plan. `position` counts the tracks of the new file from 0, -1 for
     the file itself."""
 
-    what: str  # read, tracks, kind, codec, channels, language, name, flags, title or duration
+    what: str  # read, tracks, kind, codec, channels, language, name, flags, title, duration, chapters or attachments
     position: int = -1
     planned: str = ""
     found: str = ""
@@ -187,6 +187,12 @@ def verify(plan: MuxPlan, after: MediaFile) -> tuple[VerifyProblem, ...]:
         problems += [VerifyProblem(what, position, a, b) for what, a, b in pairs if a != b]
     if after.title != plan.title:
         problems.append(VerifyProblem("title", planned=plan.title, found=after.title))
+    for what, planned_count, found_count in (
+        ("chapters", plan.chapters, len(after.chapters)),
+        ("attachments", plan.attachments, len(after.attachments)),
+    ):
+        if found_count != planned_count:
+            problems.append(VerifyProblem(what, planned=str(planned_count), found=str(found_count)))
     planned = plan.duration
     if planned is not None and (after.duration is None or abs(after.duration - planned) > DURATION_TOLERANCE_SECONDS):
         found = "" if after.duration is None else f"{after.duration:.3f}"

@@ -71,6 +71,12 @@ Item {
             }
         }
 
+        PlaceMark {
+            objectName: "heldInsideMark"
+            Layout.fillWidth: true
+            choice: group.card.mark
+        }
+
         Repeater {
             model: group.card.lines
 

@@ -91,7 +91,7 @@ Item {
 
                 UiText {
                     Layout.fillWidth: true
-                    text: Strings.t("overview.lead")
+                    text: overview.view.lead ?? ""
                     color: Theme.muted
                     font.pixelSize: Theme.text_sm
                     wrapMode: Text.WordWrap

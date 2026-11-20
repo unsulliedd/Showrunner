@@ -26,6 +26,15 @@ class LeftOut:
         """The groups the place leaves out: its own value of each, else the nearest place's above it."""
         return frozenset(group for group, places in self.groups.items() if places.excluded(key))
 
+    def held_inside(self, key: BatchKey, group: ChangeGroup) -> int:
+        """The places inside `key` whose own value of `group` is not the one `key` has, so its box does not tell
+        what they run."""
+        places = self.groups.get(group)
+        if places is None:
+            return 0
+        here = places.excluded(key)
+        return sum(place != key and place.within(key) and out != here for place, out in places.values.items())
+
     def set_group(self, key: BatchKey, group: ChangeGroup, out: bool) -> None:
         self.groups.setdefault(group, Exclusions()).set(key, out)
 

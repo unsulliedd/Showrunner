@@ -262,12 +262,15 @@ ScrollPane {
                         font.weight: Font.Medium
                     }
 
-                    Row {
+                    // The names give way to the panel's width and are cut at their end; the tooltip has them whole.
+                    RowLayout {
                         Layout.fillWidth: true
                         spacing: Theme.space_sm
-                        clip: true
 
                         UiText {
+                            objectName: "trackOldName"
+                            Layout.fillWidth: true
+                            Layout.maximumWidth: implicitWidth
                             text: track.modelData.name
                             color: track.dropped ? Theme.drop : Theme.muted
                             font.pixelSize: Theme.text_sm
@@ -289,6 +292,9 @@ ScrollPane {
                         }
 
                         UiText {
+                            objectName: "trackNewName"
+                            Layout.fillWidth: true
+                            Layout.maximumWidth: implicitWidth
                             visible: track.modelData.new_name !== ""
                             text: track.modelData.new_name
                             color: Theme.change

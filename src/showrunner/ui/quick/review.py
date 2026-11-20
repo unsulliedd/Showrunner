@@ -73,6 +73,9 @@ class ReviewInput:
     mkvtoolnix_missing: bool = False
     filter: str = "all"
     failures: Mapping[str, str] = field(default_factory=dict)  # why a file's tracks could not be read, by path
+    unsure: Set[Path] = frozenset()  # the scan found more than one subtitle file that fits
+    # By group, how many places inside the open place hold a tick of their own that is not the open place's.
+    held_inside: Mapping[ChangeGroup, int] = field(default_factory=dict)
 
 
 def parts(file: FilePreview | None) -> dict[str, int]:
@@ -114,6 +117,19 @@ def totals(given: ReviewInput) -> tuple[int, int]:
     run = _by_path(given.run)
     per_file = [sum(parts(run.get(i.file.path)).values()) for i in _writing(given, run)[1]]
     return sum(per_file), sum(n > 0 for n in per_file)
+
+
+def skipped(given: ReviewInput) -> int:
+    """The planned changes this run leaves out with its unticked kinds and files; they stay planned."""
+    if not given.run:
+        return 0
+    full = _by_path(given.full)
+    planned = sum(
+        sum(parts(f).values())
+        for i in given.items
+        if i.file.path not in given.excluded and (f := full.get(i.file.path)) is not None and f.writes
+    )
+    return max(planned - totals(given)[0], 0)
 
 
 def review(given: ReviewInput) -> dict[str, object]:
@@ -190,6 +206,10 @@ def _group(
         "title": title,
         "label": tr("review.group_files", title=title, files=tr_plural("top.files", changed)) if changed else title,
         "in_run": not out,
+        # Marked as the views mark where a value comes from: places inside set this box otherwise.
+        "mark": {"from": "", "over": tr_plural("review.held_inside", held)}
+        if (held := given.held_inside.get(group, 0))
+        else {},
         "lines": lines,
         "note": note,
         "problems": problems,
@@ -247,7 +267,11 @@ def _row(
 ) -> dict[str, object]:
     path = item.file.path
     run_file, full_file = run_view.file(item), full_view.file(item)
-    warning = run_view.failure(item) or (run_view.warning(item) if run_file is not None else "")
+    warning = (
+        run_view.failure(item)
+        or (run_view.warning(item) if run_file is not None else "")
+        or (tr("library.tip.unsure") if path in given.unsure else "")
+    )
     if path in given.excluded:
         state = "excluded"
     elif path in given.files_out:
@@ -258,15 +282,19 @@ def _row(
         state = "in"
     count = sum(found.values())
     every = parts(full_file)
+    if count:
+        summary = _summary(found)
+    elif state != "excluded" and (planned := sum(every.values())):
+        summary = tr_plural("top.skipped", planned)
+    else:
+        summary = tr("review.file.nothing" if run_view.was_read(item) else "tracks.not_read")
     return {
         "path": str(path),
         "number": item_number(item),
         "title": item_title(item),
         "state": state,
         "count": count,
-        "summary": _summary(found)
-        if count
-        else tr("review.file.nothing" if run_view.was_read(item) else "tracks.not_read"),
+        "summary": summary,
         "warning": warning,
         # One mark per group: amber where the group changes this file in the run, faint where it would but is out.
         "marks": [

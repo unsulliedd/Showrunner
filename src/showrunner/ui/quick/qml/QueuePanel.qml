@@ -124,10 +124,13 @@ Item {
                                  : row.itemState === "waiting" ? Theme.faint : Theme.change
                         }
 
+                        // Cut in the middle: items of one season differ only at the end of their names.
                         UiText {
+                            objectName: "queueName"
                             Layout.fillWidth: true
                             text: row.modelData.name
                             font.weight: Font.Medium
+                            elide: Text.ElideMiddle
                         }
 
                         UiText {

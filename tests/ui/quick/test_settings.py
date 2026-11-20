@@ -198,6 +198,20 @@ def test_the_palette_finds_files_tracks_tokens_and_actions(
     assert opened.args == ["appearance"]
 
 
+def test_a_palette_result_that_names_a_place_a_track_or_a_token_leaves_home(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    for kind, key in (("action", "place.tracks"), ("track", "2"), ("token", "episode_title")):
+        controller.go_home()
+        assert controller.home_shown
+        controller.palette_run(kind, key)
+        assert not controller.home_shown, key
+    controller.go_home()
+    controller.palette_run("action", "settings.appearance")
+    assert controller.home_shown  # Settings opens over Home
+
+
 # Value maps, the untagged-track language and deleting a rule
 
 

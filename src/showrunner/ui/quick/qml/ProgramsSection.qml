@@ -112,7 +112,7 @@ SettingsPage {
 
                     ActionButton {
                         objectName: "download_" + card.modelData.id
-                        kind: "primary"
+                        kind: card.modelData.download_kind
                         text: card.modelData.download
                         iconName: card.modelData.variants.length > 0 ? "down" : ""
                         enabled: !page.programs.busy

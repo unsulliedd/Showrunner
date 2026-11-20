@@ -17,12 +17,15 @@ AbstractButton {
     required property string number
     required property string summary
     required property string problem
+    required property string problem_tip
     required property bool planned
     required property bool excluded
     required property bool kept
     required property string row_id
 
     readonly property bool isSelected: row_id === app.selected
+    // What the mark at the row's end says: a file that needs a look, or changes planned at or below the row.
+    readonly property string markTip: excluded ? "" : problem !== "" ? problem_tip : planned ? Strings.t("library.mark.planned") : ""
 
     // The row was right-clicked, at this point of the row; it is selected first, so the menu is that place's.
     signal menuAsked(real x, real y)
@@ -34,7 +37,7 @@ AbstractButton {
     focusPolicy: Qt.NoFocus
     Accessible.role: Accessible.TreeItem
     Accessible.name: number !== "" ? number + " " + label : label
-    Accessible.description: [excluded ? Strings.t("library.excluded_tip") : "", kept ? Strings.t("library.kept_tip") : ""].filter(t => t !== "").join(" ")
+    Accessible.description: [excluded ? Strings.t("library.excluded_tip") : "", kept ? Strings.t("library.kept_tip") : "", markTip].filter(t => t !== "").join(" ")
     onClicked: app.select(treeView.index(row.row, row.column))
     onDoubleClicked: if (hasChildren) treeView.toggleExpanded(row.row)
 
@@ -162,10 +165,18 @@ AbstractButton {
             }
 
             Item {
+                objectName: "rowMark"
                 anchors.verticalCenter: parent.verticalCenter
                 width: Theme.icon_sm
                 height: Theme.icon_sm
                 visible: !row.excluded && (row.problem !== "" || row.planned)
+
+                HoverHandler {
+                    id: markTipHover
+                }
+
+                ToolTip.visible: markTipHover.hovered
+                ToolTip.text: row.markTip
 
                 Icon {
                     anchors.centerIn: parent

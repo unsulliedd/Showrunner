@@ -227,3 +227,63 @@ def test_the_menu_key_and_shift_f10_open_the_menu_of_the_selected_row(
 def test_the_shortcuts_list_the_keys_that_open_the_row_menu(controller: WindowController) -> None:
     entries = {entry["text"]: entry["keys"] for entry in controller.settings.shortcuts}
     assert len(entries["Library and Home: open the menu of the selected row or recent folder"]) == 2
+
+
+def test_the_palette_discard_asks_and_acts_on_the_open_place_not_the_show_above_it(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    season = _own_choice_in_season_and_episode(controller, library, qtbot)
+    controller.select(season.parent())
+    settle(controller, qtbot)
+    controller.toggle_keep(COMMENTARY)  # the show's working copy is edited
+    controller.select(season)
+    settle(controller, qtbot)
+    controller.palette_query = "discard"
+    assert [(r["key"], r["label"], r["detail"]) for r in controller.palette if r["kind"] == "action"] == [
+        ("discard", "Discard changes…", "Season 1")
+    ]
+    asked: list[bool] = []
+    controller.discard_asked.connect(lambda: asked.append(True))
+    controller.palette_run("action", "discard")
+    assert asked == [True]
+    assert controller.can_discard  # asking changes nothing
+    controller.discard_changes()
+    settle(controller, qtbot)
+    assert not controller.can_discard
+    controller.select(season.parent())
+    settle(controller, qtbot)
+    assert controller.profile_edited  # the show above keeps its unsaved edit
+
+
+def test_the_palette_offers_no_discard_where_there_is_nothing_to_discard(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    controller.palette_query = "discard"
+    assert [r for r in controller.palette if r["key"] == "discard"] == []
+
+
+def test_the_profile_pill_reverts_only_after_asking_and_names_the_show(
+    load: Any, controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    load()
+    season = _own_choice_in_season_and_episode(controller, library, qtbot)
+    controller.select(season.parent())
+    settle(controller, qtbot)
+    controller.toggle_keep(COMMENTARY)  # the show's working copy is edited
+    controller.select(season)
+    settle(controller, qtbot)
+    load()
+    window = load.window
+    popup = _named(window, "revertPopup")
+    controller.ask_revert()
+    qtbot.waitUntil(lambda: bool(popup.property("visible")))
+    assert popup.property("heading") == "Revert Show Name (2020) to the saved profile “Default”?"
+    text = controller.revert_question["text"]
+    assert "Show Name (2020) loses its unsaved edits of the profile “Default”" in text
+    assert "Choices made on the places inside Show Name (2020) stay." in text
+    assert controller.profile_edited  # asking changes nothing
+    _click(window, _visible(window.contentItem(), "confirmYes"))
+    qtbot.waitUntil(lambda: not controller.profile_edited)
+    assert controller.can_discard  # the season keeps its own choice
+    assert load() == []

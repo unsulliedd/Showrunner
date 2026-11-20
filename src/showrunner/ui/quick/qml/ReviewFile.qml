@@ -240,7 +240,8 @@ Item {
                             text: modelData.before
                             color: Theme.muted
                             font.pixelSize: Theme.text_sm
-                            wrapMode: Text.WrapAnywhere
+                            // At words; inside one only where a file name is longer than the line.
+                            wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                             maximumLineCount: 2
                         }
                     }
@@ -285,7 +286,7 @@ Item {
                             text: modelData.after
                             color: modelData.out ? Theme.faint : Theme.change
                             font.pixelSize: Theme.text_sm
-                            wrapMode: modelData.mono ? Text.WrapAnywhere : Text.WordWrap
+                            wrapMode: modelData.mono ? Text.WrapAtWordBoundaryOrAnywhere : Text.WordWrap
                             maximumLineCount: 2
                         }
                     }

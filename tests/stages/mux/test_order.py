@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from showrunner.core.language import Language
-from showrunner.core.media import MediaFile, MediaItem, SubtitleFile
+from showrunner.core.media import Attachment, Chapter, MediaFile, MediaItem, SubtitleFile
 from showrunner.core.naming import NamingOptions
 from showrunner.core.track import AudioProperties
 from showrunner.stages.metadata import MetadataOptions
@@ -80,3 +80,17 @@ def test_the_check_tells_apart_tracks_that_differ_only_in_channels(b: SimpleName
         module.verify(replace(plan, reordered=False), MediaFile(Path("new.mkv"), "matroska", tracks=in_file_order))
         == ()
     )
+
+
+def test_the_check_counts_the_chapters_and_attachments_the_new_file_should_carry(b: SimpleNamespace) -> None:
+    item = two_audio(b)
+    chapters = (Chapter(0.0), Chapter(600.0))
+    fonts = (Attachment(1, "font.ttf", "font/ttf", 1000),)
+    item = replace(item, file=replace(item.file, chapters=chapters, attachments=fonts))
+    plan = mux(item, FRENCH_FIRST)
+    assert (plan.chapters, plan.attachments) == (2, 1)
+    tracks = tuple(replace(t.planned.track, flags=t.flags) for t in plan.tracks)
+    right = MediaFile(Path("new.mkv"), "matroska", tracks=tracks, chapters=chapters, attachments=fonts)
+    assert module.verify(plan, right) == ()
+    problems = module.verify(plan, replace(right, chapters=chapters[:1], attachments=()))
+    assert {(p.what, p.planned, p.found) for p in problems} == {("chapters", "2", "1"), ("attachments", "1", "0")}

@@ -31,6 +31,12 @@ def test_every_topic_has_a_title_an_explanation_and_an_example(topic: str) -> No
     assert text["name"] == f"Help: {text['title']}"
 
 
+@pytest.mark.parametrize("topic", HELP_TOPICS)
+def test_no_topic_names_review_s_former_not_this_time_button(topic: str) -> None:
+    text = help_topic(topic)
+    assert "Not this time" not in text["explanation"] + text["example"]
+
+
 def test_an_unknown_topic_is_refused() -> None:
     with pytest.raises(KeyError):
         help_topic("nowhere")

@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import binascii
 import logging
+import sqlite3
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -47,7 +48,7 @@ from showrunner.app.jobs.run import JobResult, Read, StalePreviewError, create_j
 from showrunner.app.jobs.stages import Stage, pipeline
 from showrunner.app.jobs.store import JobStore, StepState
 from showrunner.app.languages import read_languages, use_languages
-from showrunner.app.library.library import Library, LibraryLoad
+from showrunner.app.library.library import Library, LibraryLoad, Mark
 from showrunner.app.library.loader import BackgroundJob, LibraryLoader
 from showrunner.app.library.service import read_again
 from showrunner.app.profiles.errors import ProfileError, ProfileExistsError
@@ -85,7 +86,7 @@ from showrunner.ui.quick.library import LibraryTree
 from showrunner.ui.quick.palette import Entry, search
 from showrunner.ui.quick.plans import LivePlanner
 from showrunner.ui.quick.queue import Queue
-from showrunner.ui.quick.review import FILTERS, ReviewInput, review, totals
+from showrunner.ui.quick.review import FILTERS, ReviewInput, review, skipped, totals
 from showrunner.ui.quick.rule_editor import RuleEditor
 from showrunner.ui.quick.settings import SECTIONS, Settings
 from showrunner.ui.quick.tracks import BatchView, Column, Received, columns, item_number, item_title
@@ -215,6 +216,7 @@ class WindowController(QObject):
     palette_changed = Signal()
     palette_asked = Signal(str, str)  # the palette asks the window for a place ("place", key) or the drawer
     discard_asked = Signal()  # Discard changes was chosen: the window asks its question
+    revert_asked = Signal()  # the profile pill's Revert was chosen: the window asks its question
 
     def __init__(
         self,
@@ -320,6 +322,7 @@ class WindowController(QObject):
         self.model.library_changed.connect(self.home_changed)
         self.model.library_changed.connect(self._refresh_excluded)
         self.model.library_changed.connect(self.needs_look_changed)
+        self.model.library_changed.connect(self.loading_changed)  # whether the library can be closed
         self.model.marks_changed.connect(self.needs_look_changed)
 
     # Start and end
@@ -475,6 +478,11 @@ class WindowController(QObject):
         """Videos are taken out of the library only while it is open and neither being read nor applied."""
         return self.loaded and not self._loader.busy and not self.applying and not self._locked_paths()
 
+    @Property(bool, notify=loading_changed)
+    def can_change_library(self) -> bool:
+        """Close all folders is offered: the library is open, and no file of it is read, applied or read again."""
+        return self._can_change_library()
+
     def _clear_view(self, library: Library) -> None:
         """Show `library`, which holds no videos, with nothing selected: Home."""
         self._set_filter("")
@@ -491,15 +499,16 @@ class WindowController(QObject):
         self.batch_changed.emit()
         self.loading_changed.emit()
 
-    def _show_library(self, library: Library, gone: set[Path]) -> None:
-        """Show `library`, the open one without the videos at `gone`; the selection stays where its row does."""
+    def _show_library(self, library: Library, gone: set[Path], above: list[str] | None = None) -> None:
+        """Show `library`, the open one without the videos at `gone`; the selection stays where its row does, else
+        moves to the nearest of the rows `above` it that is left."""
         if not library.items:
             self._clear_view(library)
             return
         for path in gone:
             self._marks.pop(path, None)
-        self._restore = ""
         self.model.set_library(library)
+        self._restore = next((row for row in above or [] if self.tree.index_of(row).isValid()), "")
         self._reselect()
         self.loading_changed.emit()
 
@@ -543,8 +552,12 @@ class WindowController(QObject):
         if self._key is None or not self._can_change_library():
             return
         gone = {i.file.path for i in self._items}
+        above, index = [], self.tree.index_of(self._selected).parent()
+        while index.isValid():
+            above.append(self.tree.row_id(index))
+            index = index.parent()
         self.batches.removed |= gone
-        self._show_library(self.model.library.without(gone), gone)
+        self._show_library(self.model.library.without(gone), gone, above)
         self._save_timer.start()
 
     def _folders_of_place(self) -> tuple[Path, ...]:
@@ -719,10 +732,12 @@ class WindowController(QObject):
 
     @Property(str, notify=plans_changed)
     def change_text(self) -> str:
-        """The top bar's "68 changes in 10 files", or "Nothing to change yet"."""
+        """The top bar's "68 changes in 10 files", "2 changes skipped this run" when only unticked ones are planned,
+        or "Nothing to change yet"."""
         changes, files = self._shown.get("totals", (0, 0))
         if not changes:
-            return tr("top.nothing")
+            left_out = self._shown.get("skipped", 0)
+            return tr_plural("top.skipped", left_out) if left_out else tr("top.nothing")
         return tr("top.changes_in", changes=tr_plural("top.changes", changes), files=tr_plural("top.files", files))
 
     @Property(list, notify=plans_changed)
@@ -778,7 +793,32 @@ class WindowController(QObject):
         self._copy_changed()
 
     @Slot()
+    def ask_revert(self) -> None:
+        """The profile pill's Revert asks first, as Discard changes does: it cannot be undone."""
+        if self._key is not None and not self.locked and self.profile_edited:
+            self.revert_asked.emit()
+
+    @Property("QVariantMap", notify=batch_changed)
+    def revert_question(self) -> dict[str, str]:
+        """The question asked before Revert: the show or Movies group whose working copy goes back to the profile as
+        saved, and that the choices of the places inside it stay."""
+        if self._key is None:
+            return {"heading": "", "text": "", "yes": tr("profile.revert_yes")}
+        place = heading(self._key.root, ()).title
+        lines = (
+            tr("discard.edited", place=place, profile=self.profile),
+            tr("profile.revert_inside", place=place),
+            tr("discard.final"),
+        )
+        return {
+            "heading": tr("profile.revert_heading", place=place, profile=self.profile),
+            "text": "\n\n".join(lines),
+            "yes": tr("profile.revert_yes"),
+        }
+
+    @Slot()
     def discard_profile(self) -> None:
+        """Revert the open place's show or Movies group to its profile as saved, once the question was answered."""
         if self._key is not None and not self.locked:
             self.batches.copy(self._key).revert()
             self._copy_changed()
@@ -1393,9 +1433,11 @@ class WindowController(QObject):
 
     @Property("QVariantMap", notify=overview_changed)
     def overview(self) -> dict[str, Any]:
-        """Chips by kind and one row per file, for a season, a show or a selection."""
+        """Chips by kind and one row per file, for a season, a show or a selection, under a lead that speaks of every
+        file only where there are several."""
         groups = self._part("groups", self._view.groups) if self._view is not None else []
-        return {"groups": groups, "rows": self._rows()}
+        lead = tr("overview.lead" if len(self._items) > 1 else "overview.lead_one")
+        return {"groups": groups, "rows": self._rows(), "lead": lead}
 
     @Property("QVariantMap", notify=matrix_changed)
     def matrix(self) -> dict[str, Any]:
@@ -1761,6 +1803,7 @@ class WindowController(QObject):
                 self._shown["movie"] = {"video": video_summary(self._items[0]), "groups": groups}
             self._shown["review_input"] = given = self._review_input()
             self._shown["totals"] = totals(given)
+            self._shown["skipped"] = skipped(given)
         self.plans_changed.emit()
         self.apply_changed.emit()
         self._signal_shown()
@@ -1834,6 +1877,7 @@ class WindowController(QObject):
             run=self._current_files(self._run_preview) if files else (),
             full=files,
             groups_out=self.left_out.groups_of(self._key),
+            held_inside={g: n for g in ChangeGroup if (n := self.left_out.held_inside(self._key, g))},
             files_out=self._files_out(),
             excluded=self._excluded_files,
             blocks=blocked_stages(profile),
@@ -1841,10 +1885,11 @@ class WindowController(QObject):
             mkvtoolnix_missing=self._statuses is not None and (status is None or status.state is not State.FOUND),
             filter=self._review_filter,
             failures=self._failures(),
+            unsure=frozenset(i.file.path for i in self._items if self.model.library.mark(i.file.path) is Mark.UNSURE),
         )
 
     def _files_out(self) -> frozenset[Path]:
-        """The files of the open place that this run leaves out ("Not this time"), by their own places."""
+        """The files of the open place that this run leaves out (unticked in Review), by their own places."""
         assert self._key is not None
         return frozenset(
             i.file.path for i in self._items if self.left_out.file_out(BatchKey.file(i).in_show(self._key))
@@ -1876,7 +1921,7 @@ class WindowController(QObject):
 
     @Slot(str, bool)
     def set_file_in_run(self, path: str, on: bool) -> None:
-        """A file's "Not this time", a value of its own place: left out of this run only, nothing saved; its choices
+        """A file's tick box in Review, a value of its own place: left out of this run only, nothing saved; its choices
         and exclusion stay."""
         item = next((i for i in self._items if str(i.file.path) == path), None)
         if self._key is None or self.locked or item is None:
@@ -2018,11 +2063,20 @@ class WindowController(QObject):
             message = tr(f"{refused}.nothing")
         elif given.live is None:
             paths = [f.item.file.path for f in in_run if f.stamp is not None and f.writes]
-            self._queue.add(
-                given.name,
-                paths,
-                lambda: create_job(self.jobs.store, stamped, given.profiles, given.stages, left_out_files=given.out),
-            )
+            # Both paths store the job alike: what goes wrong is said, and the lock below is always given back.
+            try:
+                self._queue.add(
+                    given.name,
+                    paths,
+                    lambda: create_job(
+                        self.jobs.store, stamped, given.profiles, given.stages, left_out_files=given.out
+                    ),
+                )
+            except StalePreviewError:
+                message = tr("queue.refused.plans")
+            except (OSError, sqlite3.Error) as error:
+                _log.exception("Could not store the queued job")
+                message = tr("queue.refused.error", error=error)
         else:
             try:
                 job_id = create_job(
@@ -2034,6 +2088,9 @@ class WindowController(QObject):
                 )
             except StalePreviewError:
                 message = tr("review.refused.plans")
+            except (OSError, sqlite3.Error) as error:
+                _log.exception("Could not store the job")
+                message = tr("review.refused.error", error=error)
             else:
                 self.jobs.start(job_id, given.name)
                 # The run took what was unticked; the next one starts with every box ticked.
@@ -2062,6 +2119,7 @@ class WindowController(QObject):
     def _on_lock_changed(self) -> None:
         self.batch_changed.emit()
         self.apply_changed.emit()
+        self.loading_changed.emit()  # whether the library can be closed
 
     def _job_pipeline(self) -> tuple[Sequence[Stage], Read]:
         """The stages and the reader a job runs with: those of the programs found now."""
@@ -2237,7 +2295,7 @@ class WindowController(QObject):
                 self.profile,
                 edited and not self.profile_read_only,
             ),
-            Entry("action", "discard", tr("palette.action.discard"), self.profile, edited),
+            Entry("action", "discard", tr("palette.action.discard"), self.batch["title"], self.can_discard),
             Entry(
                 "action",
                 "include" if self.place_excluded else "exclude",
@@ -2258,7 +2316,7 @@ class WindowController(QObject):
             Entry(
                 "track",
                 str(h["id"]),
-                " · ".join(str(p) for p in (h["code"], h["title"], h["name"]) if p),
+                f" {tr('status.separator')} ".join(str(p) for p in (h["code"], h["title"], h["name"]) if p),
                 tr(f"palette.track.{h['kind']}"),
             )
             for h in self._headers()
@@ -2278,11 +2336,14 @@ class WindowController(QObject):
             if index.isValid():
                 self.select(index)
         elif kind == "track":
+            self.leave_home()
             self.palette_asked.emit("place", "tracks")
         elif kind == "token":
+            self.leave_home()
             self._set_token_query(key)
             self.palette_asked.emit("place", "names")
         elif key.startswith("place."):
+            self.leave_home()
             self.palette_asked.emit("place", key.removeprefix("place."))
         elif key.startswith("settings."):
             self._settings.open(key.removeprefix("settings."))
@@ -2293,7 +2354,7 @@ class WindowController(QObject):
                 "close_folder": self.close_folder,
                 "home": self.go_home,
                 "save_profile": self.save_profile,
-                "discard": self.discard_profile,
+                "discard": self.ask_discard,
                 "exclude": lambda: self.exclude_place(True),
                 "include": lambda: self.exclude_place(False),
                 "drawer": lambda: self.palette_asked.emit("drawer", ""),

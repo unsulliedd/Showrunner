@@ -238,3 +238,25 @@ def test_the_right_click_menu_and_the_header_exclude_and_the_row_shows_the_mark(
     assert button.property("text") == "Exclude"
     assert _row(root, season).property("excluded") is False
     assert load() == []
+
+
+def test_the_row_marks_and_the_needs_a_look_button_say_what_they_mean(
+    load: Any, controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    load()
+    open_season(controller, library, qtbot)
+    controller.toggle_keep(COMMENTARY)
+    settle(controller, qtbot)
+    root = load.window.contentItem()
+    unsure = "More than one subtitle file fits this video. Check the pairing."
+    for number, tip in ((6, unsure), (0, "Changes are planned here.")):  # Episode Seven, Episode One
+        controller.select(controller.tree.index_of(path_of(library, number)))  # the tree opens down to it
+        settle(controller, qtbot)
+        load()
+        row = _row(root, path_of(library, number))
+        (mark,) = (i for i in _all(row) if i.objectName() == "rowMark" and i.isVisible())
+        assert _evaluate(mark, "ToolTip.text") == tip
+        assert tip in _evaluate(row, "Accessible.description")
+    (button,) = (i for i in _all(root) if i.isVisible() and i.property("text") == "1" and i.property("checkable"))
+    assert _evaluate(button, "ToolTip.text") == "Show only the files that need a look"
+    assert load() == []

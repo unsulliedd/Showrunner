@@ -60,6 +60,9 @@ class MuxPlan:
     keep_folder: str
     # The tracks are in another order than the file's (`TrackPlan.reordered`).
     reordered: bool = False
+    # Of the source, for the check after writing: mkvmerge copies both into the new file.
+    chapters: int = 0
+    attachments: int = 0
 
     @property
     def added(self) -> tuple[SubtitleFile, ...]:
@@ -127,4 +130,6 @@ def plan_mux(
         options.original,
         options.keep_folder.strip(),
         track_plan.reordered,
+        len(file.chapters),
+        len(file.attachments),
     )

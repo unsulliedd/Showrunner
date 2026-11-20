@@ -31,7 +31,7 @@ def test_metadata_reports_changes_the_file_does_not_show(monkeypatch: pytest.Mon
     result = MetadataStage(Path("mkvpropedit"), Programs()).apply(PLAN, None)
     assert calls == [(PLAN.plan, Path("mkvpropedit"))]
     assert not result.ok
-    assert result.message == "1 of 2 changes not found after the edit"
+    assert result.message == "missed: 1/2"  # worded by the views
     assert result.detail == ApplyResult((TITLE,), (NAME,))
 
 

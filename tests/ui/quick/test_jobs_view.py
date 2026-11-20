@@ -13,7 +13,7 @@ from showrunner.app.profiles.profile import Profile
 from showrunner.core.media import MediaFile, MediaItem, Movie
 from showrunner.stages.metadata.apply import ApplyResult
 from showrunner.stages.mux import Failure, MuxResult, VerifyProblem
-from showrunner.ui.quick.jobs import JobProgress, check_text, clock, mux_text
+from showrunner.ui.quick.jobs import JobProgress, check_text, clock, mux_text, reason_text
 
 A, B, C = Path("a.mkv"), Path("b.mkv"), Path("c.mkv")
 
@@ -89,6 +89,9 @@ def test_failures_and_checks_are_worded() -> None:
     assert check_text(VerifyProblem("tracks", planned="6", found="5")) == "The new file has 5 tracks; 6 were planned."
     assert check_text(VerifyProblem("name", 0, "English", "")) == "Track 1: the name is none; English was planned."
     assert check_text(VerifyProblem("read", found="mkvmerge")) == "The new file could not be read back: mkvmerge."
+    assert check_text(VerifyProblem("chapters", planned="8", found="0")) == (
+        "The new file has 0 chapters; the original has 8."
+    )
     assert mux_text(None, MuxResult(failure=Failure.MERGE, detail="disk full")) == [
         "MKVToolNix could not write the new file: disk full. The original was not touched."
     ]
@@ -99,3 +102,16 @@ def test_failures_and_checks_are_worded() -> None:
         "Finished after a restart.",
     ]
     assert (clock(5), clock(3723)) == ("0:05", "1:02:03")
+
+
+def test_a_stored_failure_is_worded_and_any_other_message_is_kept() -> None:
+    assert reason_text("missed: 1/2") == "1 of 2 changes were not in the file when it was read back after the edit."
+    assert reason_text("merge: disk full") == (
+        "MKVToolNix could not write the new file: disk full. The original was not touched."
+    )
+    assert reason_text("exit code 2") == "exit code 2"
+    job = progress(step(0, A, "metadata"))
+    job.step_changed(StepRecord(0, A, "metadata", StepState.FAILED, "missed: 1/2"), 1.0)  # as read back from the store
+    assert job.view(2.0)["rows"][0]["result"] == [
+        "Not written: 1 of 2 changes were not in the file when it was read back after the edit."
+    ]

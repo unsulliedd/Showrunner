@@ -60,3 +60,15 @@ def test_clearing_a_place_puts_back_what_a_place_above_leaves_out() -> None:
     assert out.groups_of(replace(SEASON, season=2)) == {ChangeGroup.NAMES}
     out.clear(SHOW)
     assert out.empty
+
+
+def test_places_inside_that_hold_another_tick_are_counted_for_the_place_above() -> None:
+    out = LeftOut()
+    out.set_group(SEASON, ChangeGroup.TRACKS, True)
+    assert out.held_inside(SHOW, ChangeGroup.TRACKS) == 1
+    assert out.held_inside(SEASON, ChangeGroup.TRACKS) == 0  # its own value is what its box shows
+    assert out.held_inside(SHOW, ChangeGroup.NAMES) == 0
+    # An episode that puts it back differs from the season, not from the show.
+    out.set_group(EPISODE, ChangeGroup.TRACKS, False)
+    assert out.held_inside(SEASON, ChangeGroup.TRACKS) == 1
+    assert out.held_inside(SHOW, ChangeGroup.TRACKS) == 1
