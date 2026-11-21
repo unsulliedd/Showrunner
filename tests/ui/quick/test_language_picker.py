@@ -335,7 +335,6 @@ def test_a_click_on_a_badge_opens_the_dialog_and_choosing_a_language_and_a_regio
     assert badge.property("pickable") is True
     assert badge.property("activeFocusOnTab") is True
     _click(load.window, badge)
-    qtbot.wait(100)
     load()
     # The dialog lists the languages in a ListView, so only the rows on screen are made.
     (languages,) = _visible(root, "languageList")
@@ -344,7 +343,7 @@ def test_a_click_on_a_badge_opens_the_dialog_and_choosing_a_language_and_a_regio
     assert len(_items(languages, "entryRow")) < 60
     controller.language_picker.select_language("spa")
     controller.language_picker.select_region("419")
-    qtbot.wait(50)
+    load()
     assert load.run("app.language_picker.state.tag") == "es-419"
     (apply,) = _visible(root, "languageApply")
     assert apply.property("enabled") is True
@@ -371,6 +370,6 @@ def test_the_badge_opens_the_picker_from_the_keyboard(
     controller.language_picker.opened.connect(lambda: opened.append(True))
     badge.forceActiveFocus()
     QTest.keyClick(load.window, Qt.Key.Key_Return)
-    qtbot.wait(50)
+    load()
     assert opened == [True]
     assert qt_warnings() == []

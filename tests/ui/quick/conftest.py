@@ -10,7 +10,8 @@ from typing import Any
 
 import pytest
 from PySide6.QtCore import QtMsgType
-from PySide6.QtQml import QQmlEngine, QQmlExpression
+from PySide6.QtQml import QQmlApplicationEngine, QQmlEngine, QQmlExpression
+from PySide6.QtQuick import QQuickWindow
 from PySide6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
 
@@ -203,7 +204,7 @@ def load(controller: WindowController, qtbot: QtBot) -> Iterator[Any]:
     qtbot.waitUntil(window.isExposed)
 
     def settle() -> list[str]:
-        qtbot.wait(50)
+        drawn(window, qtbot)
         return warnings
 
     def run(source: str) -> object:
@@ -215,5 +216,26 @@ def load(controller: WindowController, qtbot: QtBot) -> Iterator[Any]:
     settle.window = window  # type: ignore[attr-defined]
     settle.run = run  # type: ignore[attr-defined]
     yield settle
-    window.close()
+    close_engine(engine, qtbot)
+
+
+FRAMES = 2  # a frame's layout may change a size that another layout reads
+
+
+def drawn(window: QQuickWindow, qtbot: QtBot) -> None:
+    """Returns once `window` has drawn `FRAMES` frames from now: events already posted are delivered, and items are
+    laid out and built as they draw. A window draws only what changed, so each frame is asked for."""
+    for _ in range(FRAMES):
+        with qtbot.waitSignal(window.frameSwapped):
+            window.update()
+
+
+def close_engine(engine: QQmlApplicationEngine, qtbot: QtBot) -> None:
+    """Close the engine's window once the list rows it builds a few at a time between frames are built, then delete
+    the engine. A closed window draws no more frames, so rows still in the making stay so, and deleting the engine
+    then warns of them."""
+    incubation = engine.incubationController()
+    if incubation is not None:
+        qtbot.waitUntil(lambda: incubation.incubatingObjectCount() == 0)
+    engine.rootObjects()[0].close()
     engine.deleteLater()

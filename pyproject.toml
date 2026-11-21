@@ -10,19 +10,21 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
+# The lowest versions are the ones the suite runs against; older ones are untested.
 dependencies = [
-    "PySide6",
-    "babelfish",
-    "charset-normalizer",
-    "langdetect",
-    "platformdirs",
+    "PySide6>=6.12",
+    "babelfish>=0.6",
+    "charset-normalizer>=3.5",
+    "langdetect>=1.0.9",
+    "platformdirs>=4.14",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest",
-    "pytest-qt",
-    "ruff",
+    "pytest>=9.2",
+    "pytest-qt>=4.5",
+    "pytest-xdist>=3.8",
+    "ruff>=0.17",
 ]
 
 [project.scripts]
@@ -40,8 +42,9 @@ packages = ["src/showrunner"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Test modules in mirrored folders may share a file name.
-addopts = "--import-mode=importlib"
+# Test modules in mirrored folders may share a file name. Tests run in worker processes, one per core; past eight
+# the windows the UI tests open contend for the machine and the run gets no faster. `-n 0` runs in this process.
+addopts = "--import-mode=importlib -n auto --maxprocesses=8"
 
 [tool.ruff]
 line-length = 120

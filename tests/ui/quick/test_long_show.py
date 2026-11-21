@@ -18,7 +18,7 @@ from showrunner.ui.quick.engine import build_engine
 from showrunner.ui.quick.tracks import BatchView
 from showrunner.ui.quick.window import WindowController
 
-from .conftest import COMMENTARY, long_show
+from .conftest import COMMENTARY, close_engine, drawn, long_show
 from .test_choices import settle
 
 
@@ -101,7 +101,7 @@ def test_the_window_builds_only_the_place_it_shows(
     assert (built["names"], built["review"]) == (0, 0)  # Overview shows: no hidden place reads its data
     root.setProperty("place", "tracks")
     root.findChild(QQuickItem, "matrix").setProperty("chosen", "all")
-    qtbot.wait(50)
+    drawn(root, qtbot)
     rows = root.findChild(QQuickItem, "trackRows")
     assert rows.property("count") == len(controller.matrix["headers"])
     assert len(controller.matrix["strip"]["all"]["files"]) == 300
@@ -109,12 +109,11 @@ def test_the_window_builds_only_the_place_it_shows(
     rows.setProperty("contentX", 3000.0)
     controller.pause_rule(0, True)  # a choice gives the strip new cells of the same batch
     settle(controller, qtbot)
-    qtbot.wait(50)
+    drawn(root, qtbot)
     assert rows.property("contentX") == 3000.0
     assert 0 < len(_named(rows, "stripNumber")) < 100
     assert (built["names"], built["review"]) == (0, 0)
-    root.close()
-    engine.deleteLater()
+    close_engine(engine, qtbot)
 
 
 def _named(root: QQuickItem, name: str) -> list[QQuickItem]:
@@ -143,31 +142,30 @@ def test_long_lists_show_a_scrollbar_and_keep_their_place(controller: WindowCont
     rows.setProperty("contentY", 3000.0)
     controller.toggle_keep(COMMENTARY)  # a choice gives Overview new rows of the same batch
     settle(controller, qtbot)
-    qtbot.wait(50)
+    drawn(root, qtbot)
     assert rows.property("contentY") == 3000.0
     root.setProperty("place", "review")
-    qtbot.wait(50)
+    drawn(root, qtbot)
     files = root.findChild(QQuickItem, "reviewFiles")
     files.setProperty("contentY", 3000.0)
     controller.set_file_in_run(str(controller._items[100].file.path), False)
     settle(controller, qtbot)
-    qtbot.wait(50)
+    drawn(root, qtbot)
     assert files.property("contentY") == 3000.0
     root.setProperty("place", "names")
     controller.start_template("title_template")
     settle(controller, qtbot)
-    qtbot.wait(50)
+    drawn(root, qtbot)
     named = root.findChild(QQuickItem, "nameRows")
     named.setProperty("contentY", 3000.0)
     controller.focus_file(str(controller._items[70].file.path))  # a click on a row moves the focus
-    qtbot.wait(50)
+    drawn(root, qtbot)
     assert named.property("contentY") == 3000.0
     root.setProperty("place", "tracks")
-    qtbot.wait(50)
+    drawn(root, qtbot)
     matrix = root.findChild(QQuickItem, "trackRows")
     assert any(bar.isVisible() for bar in _bars(matrix))  # the strip of 300 files scrolls sideways
-    root.close()
-    engine.deleteLater()
+    close_engine(engine, qtbot)
 
 
 def test_another_batch_with_as_many_rows_starts_at_the_top(controller: WindowController, qtbot: QtBot) -> None:
@@ -187,17 +185,16 @@ def test_another_batch_with_as_many_rows_starts_at_the_top(controller: WindowCon
         root.setProperty("place", place)
         controller.select(seasons[0])
         settle(controller, qtbot)
-        qtbot.wait(50)
+        drawn(root, qtbot)
         view = root.findChild(QQuickItem, name)
         top = view.property(axis)
         view.setProperty(axis, top + 100.0)
         assert view.property(axis) == top + 100.0, place
         controller.select(seasons[1])
         settle(controller, qtbot)
-        qtbot.wait(50)
+        drawn(root, qtbot)
         assert view.property(axis) == top, place
-    root.close()
-    engine.deleteLater()
+    close_engine(engine, qtbot)
 
 
 def test_lists_that_shrink_while_they_show_read_no_missing_row(controller: WindowController, qtbot: QtBot) -> None:
@@ -210,24 +207,23 @@ def test_lists_that_shrink_while_they_show_read_no_missing_row(controller: Windo
     controller.set_file_in_run(str(controller._items[3].file.path), False)
     settle(controller, qtbot)
     controller.review_filter = "out"  # 300 cards become 1
-    qtbot.wait(50)
+    drawn(root, qtbot)
     controller.review_filter = "all"
-    qtbot.wait(50)
+    drawn(root, qtbot)
     root.setProperty("place", "names")
     controller.start_template("title_template")
     settle(controller, qtbot)
-    qtbot.wait(50)
+    drawn(root, qtbot)
     controller.clear_template()  # 300 rows become none
     settle(controller, qtbot)
-    qtbot.wait(50)
+    drawn(root, qtbot)
     controller.model.set_library(long_show(1, 5))  # the overview of another batch with fewer rows
     root.setProperty("place", "overview")
     controller.select(controller.tree.index(0, 0))
     settle(controller, qtbot)
-    qtbot.wait(50)
+    drawn(root, qtbot)
     assert warnings == []
-    root.close()
-    engine.deleteLater()
+    close_engine(engine, qtbot)
 
 
 def test_many_chips_leave_the_file_list_its_room(controller: WindowController, qtbot: QtBot) -> None:
@@ -245,10 +241,9 @@ def test_many_chips_leave_the_file_list_its_room(controller: WindowController, q
     controller.model.set_library(replace(show, items=items))
     controller.select(controller.tree.index(0, 0))
     settle(controller, qtbot)
-    qtbot.wait(50)
+    drawn(root, qtbot)
     groups = root.findChild(QQuickItem, "chipGroups")
     rows = root.findChild(QQuickItem, "overviewRows")
     assert groups.property("contentHeight") > groups.height()  # the chips scroll inside their box
     assert rows.height() > 0
-    root.close()
-    engine.deleteLater()
+    close_engine(engine, qtbot)

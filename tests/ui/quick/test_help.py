@@ -127,7 +127,7 @@ def test_each_place_shows_its_tips_named_for_a_reader(
     controller.add_token()
     controller.rename_token(0, "code")
     window.setProperty("place", "names")
-    qtbot.wait(100)
+    load()
     assert _evaluate(_visible(root, "replaceValuesTip"), "Accessible.name") == "Help: Replace values"
     assert _evaluate(_visible(root, "tokensTip"), "Accessible.name") == "Help: Separators between tokens"
     assert load() == []

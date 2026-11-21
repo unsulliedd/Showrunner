@@ -14,6 +14,7 @@ from showrunner.app.settings.app_settings import load_settings
 from showrunner.ui.quick.engine import build_engine
 from showrunner.ui.quick.window import WindowController
 
+from .conftest import close_engine
 from .test_choices import open_season, settle
 from .test_discard import _all, _click, _evaluate
 
@@ -77,8 +78,7 @@ def test_the_window_opens_where_it_was_left(qapp: QApplication, qtbot: QtBot) ->
     window = engine.rootObjects()[0]
     qtbot.waitUntil(window.isExposed)
     assert (window.x(), window.y(), window.width(), window.height()) == (40, 50, 1300, 800)
-    window.close()
-    engine.deleteLater()
+    close_engine(engine, qtbot)
     controller.deleteLater()
 
 

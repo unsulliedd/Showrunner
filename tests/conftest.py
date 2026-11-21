@@ -21,6 +21,12 @@ from showrunner.core.track import AudioProperties, SubtitleProperties, Track, Tr
 from showrunner.stages.scan import Alternatives, ProbeFailure
 
 
+@pytest.hookimpl(optionalhook=True)
+def pytest_xdist_auto_num_workers(config: pytest.Config) -> int | None:
+    """No workers for a run of tests named one by one (`path::name`): starting them takes longer than such a run."""
+    return 0 if config.args and all("::" in arg for arg in config.args) else None
+
+
 @pytest.fixture(scope="session")
 def qapp() -> QApplication:
     # Qt allows one QApplication per process, so it is shared by every test.

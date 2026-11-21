@@ -406,6 +406,9 @@ def test_the_library_menu_closes_after_close_folder_empties_the_list(
     qtbot.waitUntil(lambda: bool(menu.property("visible")))
     count = int(menu.property("count"))
     entries = {_evaluate(menu, f"itemAt({i})").property("text"): _evaluate(menu, f"itemAt({i})") for i in range(count)}
+    # The menu is drawn before the click: a click on it in the frame it opened in was lost about two times in three.
+    with qtbot.waitSignal(window.frameSwapped):
+        pass
     _click(window, entries["Close folder"])
     qtbot.waitUntil(lambda: not controller.loaded)
     qtbot.waitUntil(lambda: not menu.property("visible"))
