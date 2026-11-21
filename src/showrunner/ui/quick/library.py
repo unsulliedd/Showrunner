@@ -9,7 +9,15 @@ from PySide6.QtCore import QAbstractItemModel, QByteArray, QModelIndex, QPersist
 from showrunner.app.library.library import Mark
 from showrunner.core.media import Episode, Extra
 from showrunner.ui.i18n.catalog import tr
-from showrunner.ui.library.model import DOT_ROLE, MARK_ROLE, NAME_COLUMN, SUMMARY_COLUMN, Kind, LibraryModel
+from showrunner.ui.library.model import (
+    DOT_ROLE,
+    MARK_ROLE,
+    NAME_COLUMN,
+    PLANNED_ROLE,
+    SUMMARY_COLUMN,
+    Kind,
+    LibraryModel,
+)
 from showrunner.ui.library.proxy import LibraryFilter
 
 _FIRST = Qt.ItemDataRole.UserRole + 100
@@ -59,8 +67,8 @@ class LibraryTree(LibraryFilter):
         model.dataChanged.connect(self._on_source_data)
 
     def _on_source_data(self, top_left: QModelIndex, bottom_right: QModelIndex, roles: list[int]) -> None:
-        """The source names its dot, mark and tooltip roles; QML listens for the roles here that are drawn from them."""
-        if DOT_ROLE not in roles and MARK_ROLE not in roles and Qt.ItemDataRole.ToolTipRole not in roles:
+        """The source names its dot, planned, mark and tooltip roles; QML listens for the roles here drawn from them."""
+        if not {DOT_ROLE, PLANNED_ROLE, MARK_ROLE, Qt.ItemDataRole.ToolTipRole} & set(roles):
             return
         for row in range(top_left.row(), bottom_right.row() + 1):
             index = self.mapFromSource(top_left.siblingAtRow(row).siblingAtColumn(NAME_COLUMN))
@@ -104,7 +112,7 @@ class LibraryTree(LibraryFilter):
         if role == SUMMARY:
             return source.siblingAtColumn(SUMMARY_COLUMN).data()
         if role == PLANNED:
-            return source.data(DOT_ROLE) == "planned"
+            return bool(source.data(PLANNED_ROLE))
         if role == ROW_ID:
             return self.row_id(index)
         if role == EXCLUDED:

@@ -39,6 +39,17 @@ Item {
             }
 
             ActionButton {
+                objectName: "queueClear"
+                visible: panel.queue.can_clear
+                kind: "ghost"
+                text: Strings.t("queue.clear")
+                Accessible.description: Strings.t("queue.clear_tip")
+                ToolTip.visible: hovered
+                ToolTip.text: Accessible.description
+                onClicked: panel.queue.clear()
+            }
+
+            ActionButton {
                 objectName: "queueStart"
                 visible: !panel.queue.going
                 enabled: panel.queue.can_start
@@ -97,6 +108,17 @@ Item {
                 border.color: Theme.line_strong
                 Accessible.role: Accessible.ListItem
                 Accessible.name: modelData.name + " " + modelData.state_text
+
+                // A rule between items, so a long queue stays easy to follow.
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: -rows.spacing / 2
+                    height: Theme.stroke
+                    visible: row.index < rows.count - 1 && row.itemState !== "running"
+                    color: Theme.line
+                }
 
                 ColumnLayout {
                     id: content

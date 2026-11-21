@@ -52,8 +52,10 @@ def path_of(library: Library, episode: int) -> str:
 
 def file_rules(controller: WindowController, library: Library, episode: int) -> list[Any]:
     """The rules the episode's own place holds."""
-    assert controller._key is not None
-    return controller.batches.own_tracks(BatchKey.file(library.items[episode - 1]).in_show(controller._key)).rules
+    assert controller.workspace.key is not None
+    return controller.batches.own_tracks(
+        BatchKey.file(library.items[episode - 1]).in_show(controller.workspace.key)
+    ).rules
 
 
 def test_tracks_without_a_name_have_a_line_per_file_and_a_name_keeps_its_line(

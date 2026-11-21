@@ -13,7 +13,7 @@ from PySide6.QtCore import Q_ARG, QMetaObject
 from PySide6.QtQuick import QQuickItem
 from pytestqt.qtbot import QtBot
 
-from showrunner.ui.quick import names, window
+from showrunner.ui.quick import names, run
 from showrunner.ui.quick.engine import build_engine
 from showrunner.ui.quick.tracks import BatchView
 from showrunner.ui.quick.window import WindowController
@@ -28,7 +28,7 @@ def open_show(controller: WindowController, qtbot: QtBot) -> None:
     controller.model.set_library(long_show())
     controller.select(controller.tree.index(0, 0))
     settle(controller, qtbot)
-    assert (controller.batch_kind, len(controller._items)) == ("show", 300)
+    assert (controller.batch_kind, len(controller.workspace.items)) == ("show", 300)
     assert Path(controller.focus_path).name == controller.inspector["file"]  # the row the Inspector shows is marked
 
 
@@ -45,7 +45,7 @@ def built(monkeypatch: pytest.MonkeyPatch) -> Counter[str]:
         return wrapper
 
     monkeypatch.setattr(names, "place", counted("names", names.place))
-    monkeypatch.setattr(window, "review", counted("review", window.review))
+    monkeypatch.setattr(run, "review", counted("review", run.review))
     monkeypatch.setattr(BatchView, "rows", counted("rows", BatchView.rows))
     return calls
 
@@ -148,7 +148,7 @@ def test_long_lists_show_a_scrollbar_and_keep_their_place(controller: WindowCont
     drawn(root, qtbot)
     files = root.findChild(QQuickItem, "reviewFiles")
     files.setProperty("contentY", 3000.0)
-    controller.set_file_in_run(str(controller._items[100].file.path), False)
+    controller.set_file_in_run(str(controller.workspace.items[100].file.path), False)
     settle(controller, qtbot)
     drawn(root, qtbot)
     assert files.property("contentY") == 3000.0
@@ -158,7 +158,7 @@ def test_long_lists_show_a_scrollbar_and_keep_their_place(controller: WindowCont
     drawn(root, qtbot)
     named = root.findChild(QQuickItem, "nameRows")
     named.setProperty("contentY", 3000.0)
-    controller.focus_file(str(controller._items[70].file.path))  # a click on a row moves the focus
+    controller.focus_file(str(controller.workspace.items[70].file.path))  # a click on a row moves the focus
     drawn(root, qtbot)
     assert named.property("contentY") == 3000.0
     root.setProperty("place", "tracks")
@@ -204,7 +204,7 @@ def test_lists_that_shrink_while_they_show_read_no_missing_row(controller: Windo
     qtbot.waitUntil(root.isExposed)
     open_show(controller, qtbot)
     root.setProperty("place", "review")
-    controller.set_file_in_run(str(controller._items[3].file.path), False)
+    controller.set_file_in_run(str(controller.workspace.items[3].file.path), False)
     settle(controller, qtbot)
     controller.review_filter = "out"  # 300 cards become 1
     drawn(root, qtbot)

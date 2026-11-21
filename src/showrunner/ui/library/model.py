@@ -20,6 +20,9 @@ MARK_ROLE = Qt.ItemDataRole.UserRole + 3
 # What the row's dot says: the library's own mark, else the mark of the last preview; a parent's is the worst of its
 # rows. The values are "failed", "needs_look" and "planned".
 DOT_ROLE = Qt.ItemDataRole.UserRole + 4
+# Whether the last preview plans a change at or below the row. Kept apart from the dot, which shows only the worst of
+# a parent's rows, so a season with one file that needs a look still says it has changes planned.
+PLANNED_ROLE = Qt.ItemDataRole.UserRole + 5
 
 # Worst first: could not be read, needs a decision (unsure pairing or a refused plan), changes planned.
 DOT_RANK = {"failed": 3, "needs_look": 2, "planned": 1}
@@ -238,14 +241,15 @@ class LibraryModel(QStandardItemModel):
             cell.setToolTip(tr("library.tip.unsure") if mark is Mark.UNSURE else "")
         self._bubble_up(cell)
 
-    def _set_dot(self, cell: QStandardItem, dot: str | None) -> None:
+    def _set_dot(self, cell: QStandardItem, dot: str | None, planned: bool) -> None:
         parent = cell.parent() or self.invisibleRootItem()
         for column in range(self.columnCount()):
             parent.child(cell.row(), column).setData(dot, DOT_ROLE)
+            parent.child(cell.row(), column).setData(planned, PLANNED_ROLE)
 
     def _refresh_dot(self, path: Path, *, bubble: bool = True) -> None:
         cell = self._videos[path]
-        self._set_dot(cell, self.dot(path))
+        self._set_dot(cell, self.dot(path), path not in self._excluded and self._plan.get(path) == "planned")
         if bubble:
             self._bubble_up(cell)
 
@@ -268,5 +272,7 @@ class LibraryModel(QStandardItemModel):
     def _sum_up(self, parent: QStandardItem) -> None:
         marks = (Mark(parent.child(row, NAME_COLUMN).data(MARK_ROLE)) for row in range(parent.rowCount()))
         self._set_mark(parent, max(marks, default=Mark.NONE))
-        dots = [parent.child(row, NAME_COLUMN).data(DOT_ROLE) for row in range(parent.rowCount())]
-        self._set_dot(parent, max(dots, key=lambda d: DOT_RANK.get(d, 0), default=None))
+        rows = [parent.child(row, NAME_COLUMN) for row in range(parent.rowCount())]
+        dots = [row.data(DOT_ROLE) for row in rows]
+        planned = any(row.data(PLANNED_ROLE) for row in rows)
+        self._set_dot(parent, max(dots, key=lambda d: DOT_RANK.get(d, 0), default=None), planned)

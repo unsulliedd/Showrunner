@@ -68,11 +68,11 @@ def test_a_profile_field_reaches_the_batch_that_follows_it(
     settings.set_keep_folder("  kept ")
     settings.set_suffix(" new")
     settings.set_flags_from_names(False)
-    profile = controller.batches.profile(controller._key)  # type: ignore[arg-type]
+    profile = controller.batches.profile(controller.workspace.key)  # type: ignore[arg-type]
     mux = profile.for_stage("mux")
     assert (mux.original, mux.keep_folder, mux.suffix) == ("keep", "kept", " new")
     assert not profile.for_stage("tracks").flags_from_names
-    assert controller._store.load("Series").value.for_stage("mux").suffix == " new"
+    assert controller.store.load("Series").value.for_stage("mux").suffix == " new"
     assert not controller.profile_edited
     settle(controller, qtbot)
     settings.set_keep_folder("a:b")
@@ -89,11 +89,11 @@ def test_rename_and_delete_carry_the_batch_with_them(
     settings.pick("Series")
     assert settings.rename("Shows") == ""
     assert controller.profile == "Shows"
-    assert controller.batches.own(controller._key)  # type: ignore[arg-type]
+    assert controller.batches.own(controller.workspace.key)  # type: ignore[arg-type]
     assert [p["name"] for p in settings.profiles] == [DEFAULT_PROFILE_NAME, "Shows"]
     settings.delete()
     assert controller.profile == DEFAULT_PROFILE_NAME
-    assert controller.batches.own(controller._key)  # type: ignore[arg-type]  # the season keeps its choice
+    assert controller.batches.own(controller.workspace.key)  # type: ignore[arg-type]  # the season keeps its choice
     assert settings.picked == DEFAULT_PROFILE_NAME
     assert settings.message == "Shows was deleted."
 
@@ -103,12 +103,12 @@ def test_profiles_wait_while_files_are_applied(
 ) -> None:
     open_season(controller, library, qtbot)
     controller.save_profile_as("Series")
-    controller._applying = object()  # type: ignore[assignment]
+    controller.run._applying = object()  # type: ignore[assignment]
     settings = controller.settings
     assert settings.profiles_locked
     assert not settings.profile["editable"]
     assert settings.rename("Shows") == "Profiles cannot be changed while files are being applied."
-    controller._applying = None
+    controller.run._applying = None
 
 
 def test_a_profile_file_imports_and_exports(
@@ -134,7 +134,7 @@ def test_profiles_change_with_no_batch_selected(controller: WindowController, tm
     assert not controller.has_batch
     assert settings.duplicate("Series") == ""
     settings.set_suffix(" new")
-    assert controller._store.load("Series").value.for_stage("mux").suffix == " new"
+    assert controller.store.load("Series").value.for_stage("mux").suffix == " new"
     settings.export_to(tmp_path / "Shared.json")
     settings.import_from(tmp_path / "Shared.json")
     assert settings.rename("Shows") == ""
@@ -226,7 +226,7 @@ def test_a_value_map_rewrites_a_token_in_the_batch(
     assert editor["maps"] == [{"read": "", "written": ""}]
     controller.set_value_map("codec", 0, "HEVC", "x265")
     assert naming(controller).value_maps == {"codec": {"HEVC": "x265"}}
-    assert controller.batches.own(controller._key)  # type: ignore[arg-type]
+    assert controller.batches.own(controller.workspace.key)  # type: ignore[arg-type]
     editor = controller.tokens["editor"]
     assert editor["maps"][0] == {"read": "HEVC", "written": "x265"}
     controller.set_value_map("codec", 0, "HEVC", "H.265")
@@ -256,7 +256,7 @@ def test_the_untagged_language_is_set_and_its_problem_shown(
     controller.set_untagged_language(" tr ")
     assert controller.untagged["value"] == "tr"
     assert controller.untagged["label"] == "Turkish (tr)"
-    assert controller.batches.own(controller._key)  # type: ignore[arg-type]
+    assert controller.batches.own(controller.workspace.key)  # type: ignore[arg-type]
     controller.set_untagged_language("not a language")
     assert "not a language" in controller.untagged["problem"]
 
@@ -266,9 +266,9 @@ def test_a_hand_written_rule_can_be_deleted_a_choice_cannot(
 ) -> None:
     open_season(controller, library, qtbot)
     controller.toggle_keep(COMMENTARY)
-    tracks = controller._tracks()
+    tracks = controller.workspace.tracks()
     written = TrackRule(match=TrackMatch(languages=["tur"]), verdict=Verdict.DROP)
-    controller._set_tracks(replace(tracks, rules=[*tracks.rules, written]))
+    controller.workspace.set_tracks(replace(tracks, rules=[*tracks.rules, written]))
     assert len(controller.rules) == 2
     controller.remove_rule(0)  # the commentary choice stays: it is undone on its track
     assert len(controller.rules) == 2

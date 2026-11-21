@@ -157,7 +157,7 @@ def program_statuses() -> dict[str, DependencyStatus]:
 
 def cells(controller: WindowController) -> list[list[dict[str, Any]]]:
     """Per file of the batch, what each track column holds for it, as the views build their marks from."""
-    view = controller._view
+    view = controller.workspace.view
     assert view is not None
     return [view.cells(item) for item in view.items]
 

@@ -203,7 +203,7 @@ def test_a_place_being_applied_cannot_be_excluded(
     controller: WindowController, library: Library, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     open_season(controller, library, qtbot)
-    monkeypatch.setattr(controller, "_locked_paths", lambda: {i.file.path for i in library.items})
+    monkeypatch.setattr(controller.run, "locked_paths", lambda: {i.file.path for i in library.items})
     assert next(a for a in controller.place_actions if a["key"] == "exclude")["enabled"] is False
     controller.exclude_place(True)
     assert not controller.place_excluded

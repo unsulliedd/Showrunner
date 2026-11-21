@@ -13,7 +13,7 @@ from showrunner.app.library.library import Library
 from showrunner.app.storage.paths import workspace_path
 from showrunner.core.media import Episode
 from showrunner.stages.tracks import Verdict
-from showrunner.ui.quick.library import PLANNED
+from showrunner.ui.quick.library import PLANNED, PROBLEM
 from showrunner.ui.quick.window import WindowController
 
 from .conftest import COMMENTARY, ENGLISH, FORCED, SDH, SRT, STEREO, TURKISH, VIDEO, cells
@@ -114,10 +114,10 @@ def test_a_chip_click_becomes_a_rule_and_the_plan_follows(
     tabs = {tab["key"]: tab["count"] for tab in controller.workspace_tabs}
     assert (tabs["tracks"], tabs["names"], tabs["review"]) == (10, 0, 10)
     # The rule is an ordinary one among the season's own choices.
-    assert controller._key is not None
-    (rule,) = controller.batches.profile(controller._key).for_stage("tracks").rules
+    assert controller.workspace.key is not None
+    (rule,) = controller.batches.profile(controller.workspace.key).for_stage("tracks").rules
     assert (rule.verdict, rule.from_choice) == (Verdict.DROP, True)
-    assert controller.batches.own(controller._key) == {"tracks": {"rules": [rule]}}
+    assert controller.batches.own(controller.workspace.key) == {"tracks": {"rules": [rule]}}
     # A second click keeps the track again and the rule goes.
     controller.toggle_keep(COMMENTARY)
     settle(controller, qtbot)
@@ -199,6 +199,20 @@ def test_the_tree_marks_files_with_planned_changes(
     assert controller.tree.index_of(str(library.items[2].file.path)).data(PLANNED)
 
 
+def test_the_open_season_keeps_its_planned_mark_beside_a_file_that_needs_a_look(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)  # Show Name's season 1, whose Episode Seven has an unsure pairing
+    controller.toggle_keep(COMMENTARY)
+    settle(controller, qtbot)
+    assert controller.change_text == "10 changes in 10 files"
+    season = controller.tree.index_of(controller.selected)
+    seventh = controller.tree.index_of(str(library.items[6].file.path))
+    # The selected season and its show draw the planned dot; Episode Seven draws its own alert.
+    assert (season.data(PLANNED), season.parent().data(PLANNED)) == (True, True)
+    assert (seventh.data(PROBLEM), season.data(PROBLEM)) == ("change", "")
+
+
 def test_a_movie_shows_cards_and_saves_to_a_new_profile(
     controller: WindowController, library: Library, qtbot: QtBot
 ) -> None:
@@ -248,9 +262,9 @@ def test_the_implied_flags_switch_writes_into_the_working_copy(
     assert not controller.write_implied_flags
     controller.set_write_implied_flags(True)
     assert controller.write_implied_flags
-    assert controller._key is not None
-    assert controller.batches.own(controller._key) == {"metadata": {"write_implied_flags": True}}
-    assert controller.batches.profile(controller._key).for_stage("metadata").write_implied_flags
+    assert controller.workspace.key is not None
+    assert controller.batches.own(controller.workspace.key) == {"metadata": {"write_implied_flags": True}}
+    assert controller.batches.profile(controller.workspace.key).for_stage("metadata").write_implied_flags
     settle(controller, qtbot)
     tabs = {tab["key"]: tab["count"] for tab in controller.workspace_tabs}
     # Each fixture file has a track whose name implies a flag it does not have: the change shows on Tracks and in
@@ -258,7 +272,7 @@ def test_the_implied_flags_switch_writes_into_the_working_copy(
     assert (tabs["tracks"], tabs["names"], tabs["review"]) == (10, 0, 10)
     assert not controller.implied_nothing
     controller.set_write_implied_flags(False)
-    assert controller.batches.own(controller._key) == {}
+    assert controller.batches.own(controller.workspace.key) == {}
 
 
 def test_a_drop_the_plan_refuses_is_undone_by_a_second_click(
@@ -313,13 +327,13 @@ def test_a_column_moves_only_among_its_kind_and_back_again(
     # Pushed past the subtitles, an audio column stops at the last audio place.
     assert controller.move_track(ENGLISH, FORCED) == STEREO
     assert codes(controller)[STEREO] == before[ENGLISH]
-    assert controller._key is not None
-    assert controller.batches.own(controller._key)["tracks"]["order"]
+    assert controller.workspace.key is not None
+    assert controller.batches.own(controller.workspace.key)["tracks"]["order"]
     # Back where the files have it: no order is stored and nothing is planned.
     assert controller.move_track(STEREO, ENGLISH) == ENGLISH
     assert codes(controller) == before
-    assert controller.batches.profile(controller._key).for_stage("tracks").order == []
-    assert controller.batches.own(controller._key) == {}
+    assert controller.batches.profile(controller.workspace.key).for_stage("tracks").order == []
+    assert controller.batches.own(controller.workspace.key) == {}
     settle(controller, qtbot)
     assert controller.change_count == 0
 

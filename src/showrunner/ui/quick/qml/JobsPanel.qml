@@ -39,10 +39,11 @@ Item {
                 }
 
                 RowLayout {
+                    Layout.fillWidth: true
                     spacing: Theme.space_lg
 
                     ProgressLine {
-                        Layout.preferredWidth: Theme.home_text_width
+                        Layout.fillWidth: true
                         value: panel.job.fraction || 0
                         Accessible.name: panel.job.count || ""
                     }
@@ -53,10 +54,6 @@ Item {
                         font.pixelSize: Theme.text_sm
                     }
                 }
-            }
-
-            Item {
-                Layout.fillWidth: true
             }
 
             ActionButton {
@@ -114,6 +111,17 @@ Item {
                 border.color: Theme.line_strong
                 Accessible.role: Accessible.ListItem
                 Accessible.name: modelData.file + " " + modelData.time
+
+                // A rule between files, so a long list stays easy to follow.
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: -rows.spacing / 2
+                    height: Theme.stroke
+                    visible: row.index < rows.count - 1 && row.modelData.state !== "running"
+                    color: Theme.line
+                }
 
                 ColumnLayout {
                     id: content

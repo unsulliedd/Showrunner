@@ -29,7 +29,7 @@ def test_a_recent_folder_is_removed_from_its_menu_and_stays_on_disk(
     kept, gone = tmp_path / "Show Name (2020)", tmp_path / "Movie Name (2019)"
     kept.mkdir()
     gone.mkdir()
-    controller._recent = {str(kept): "2026-01-02T00:00:00", str(gone): "2026-01-01T00:00:00"}
+    controller.folders._recent = {str(kept): "2026-01-02T00:00:00", str(gone): "2026-01-01T00:00:00"}
     controller.recent_changed.emit()
     load()
     window, root = load.window, load.window.contentItem()

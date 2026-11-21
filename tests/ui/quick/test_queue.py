@@ -16,7 +16,7 @@ from showrunner.app.jobs.run import StalePreviewError
 from showrunner.app.jobs.stages import TracksStage
 from showrunner.core.media import MediaFile
 from showrunner.tools.probe import Programs
-from showrunner.ui.quick import window
+from showrunner.ui.quick import run
 from showrunner.ui.quick.window import WindowController
 
 from .conftest import program_statuses
@@ -178,6 +178,22 @@ def test_a_failed_item_says_why_and_retry_runs_only_its_failed_steps(
     made.controller.deleteLater()
 
 
+def test_clear_all_removes_every_item_but_the_running_one(setup: Setup, qtbot: QtBot) -> None:
+    controller = setup.controller
+    assert not controller.queue.can_clear
+    for episode in setup.season[:3]:
+        controller.select(controller.tree.index_of(str(episode)))
+        add(controller, qtbot)
+    controller.queue.start()
+    wait_idle(controller, qtbot)
+    controller.select(controller.tree.index_of(str(setup.season[3])))
+    add(controller, qtbot)  # one waiting beside the finished ones
+    assert controller.queue.can_clear
+    controller.queue.clear()
+    assert controller.queue.rows == []
+    assert not controller.queue.can_clear
+
+
 def test_a_file_changed_on_disk_after_it_was_queued_is_not_written(setup: Setup, qtbot: QtBot) -> None:
     controller = setup.controller
     add(controller, qtbot)
@@ -257,7 +273,7 @@ def test_a_job_that_cannot_be_stored_is_not_queued_and_leaves_nothing_locked(
     def refuse(*_args: object, **_kwargs: object) -> int:
         raise error
 
-    monkeypatch.setattr(window, "create_job", refuse)
+    monkeypatch.setattr(run, "create_job", refuse)
     add(controller, qtbot)
     assert controller.queue.note.startswith(note)
     assert controller.queue.rows == []
@@ -273,7 +289,7 @@ def test_an_apply_whose_job_cannot_be_stored_says_why_and_leaves_nothing_locked(
     def refuse(*_args: object, **_kwargs: object) -> int:
         raise sqlite3.OperationalError("disk I/O error")
 
-    monkeypatch.setattr(window, "create_job", refuse)
+    monkeypatch.setattr(run, "create_job", refuse)
     controller.apply()
     qtbot.waitUntil(lambda: not controller.applying)
     assert controller.apply_message == "Apply could not get ready: disk I/O error"

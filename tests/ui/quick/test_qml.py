@@ -28,7 +28,8 @@ from showrunner.tools.probe import Programs
 from showrunner.ui.i18n.catalog import STRINGS_DIR
 from showrunner.ui.quick import names, palette
 from showrunner.ui.quick.engine import QML_DIR, build_engine, prepare
-from showrunner.ui.quick.window import SIDE_PANELS, WORKSPACE_TABS, WindowController
+from showrunner.ui.quick.window import WindowController
+from showrunner.ui.quick.workspace import SIDE_PANELS, WORKSPACE_TABS
 from showrunner.ui.theme.tokens import SIZES
 
 from .conftest import close_engine, drawn
@@ -92,7 +93,7 @@ def test_qml_reaches_the_controller(
     assert controller.selected == controller.tree.row_id(controller.tree.index(0, 0))
     # Dropped URLs arrive as paths.
     dropped: list[list[Path]] = []
-    monkeypatch.setattr(controller, "add_paths", dropped.append)
+    monkeypatch.setattr(controller.folders, "add_paths", dropped.append)
     url = QUrl.fromLocalFile(str(tmp_path)).toString()
     load.run(f'app.add_urls([Qt.resolvedUrl("{url}")])')
     assert dropped == [[tmp_path]]
@@ -695,7 +696,7 @@ def test_review_apply_and_the_job_offer_draw_without_warnings(
     qtbot.waitUntil(lambda: not controller.planning and not controller.review["groups"][1]["in_run"])
     drawn(window, qtbot)
     _click(window, _items(root, "tickFile")[1])
-    assert controller._files_out() == {made.season[1]}
+    assert controller.workspace.files_out() == {made.season[1]}
     assert [b.property("ticked") for b in _items(root, "tickFile")[:3]] == [True, False, True]
     assert _item(root, "inRun_names").property("ticked") is False
     drawn(window, qtbot)
@@ -946,8 +947,8 @@ def test_separators_drag_and_click_in_as_typed_text(
     load()
 
     def template() -> str:
-        assert controller._key is not None
-        return controller.batches.profile(controller._key).for_stage("naming").title_template
+        assert controller.workspace.key is not None
+        return controller.batches.profile(controller.workspace.key).for_stage("naming").title_template
 
     assert template() == "{file_name}"
     # A drop on the left half of a chip goes before it; a click goes at the end. Both write plain text.
@@ -1012,8 +1013,8 @@ def test_names_and_tokens_answer_the_pointer(
     root = load.window.contentItem()
 
     def naming() -> Any:
-        assert controller._key is not None
-        return controller.batches.profile(controller._key).for_stage("naming")
+        assert controller.workspace.key is not None
+        return controller.batches.profile(controller.workspace.key).for_stage("naming")
 
     # An empty card's suggestion starts the template.
     _click(load.window, _item(_item(root, "templateCard_title_template"), "startTemplate"))
@@ -1094,8 +1095,8 @@ def test_the_space_choice_and_the_episode_code_spelling_answer_the_pointer(
     root = load.window.contentItem()
 
     def naming() -> Any:
-        assert controller._key is not None
-        return controller.batches.profile(controller._key).for_stage("naming")
+        assert controller.workspace.key is not None
+        return controller.batches.profile(controller.workspace.key).for_stage("naming")
 
     # Nothing to choose a space for until the template has something.
     assert not [i for i in _items(root, "spaceChoice") if i.isVisible()]

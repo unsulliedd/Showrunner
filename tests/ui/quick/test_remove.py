@@ -100,7 +100,7 @@ def test_a_season_and_then_an_episode_are_taken_out_of_the_list_and_stay_on_disk
     controller.place_action("remove")
     assert listed(controller) == ["Another Show - S01E01.mkv"]
     assert controller.loaded
-    controller._save_batches()
+    controller.workspace.save_batches()
     assert len(saved_removed()) == 3
 
 
@@ -229,7 +229,7 @@ def test_a_removed_place_keeps_no_row_and_cannot_be_removed_while_a_folder_is_be
     pick(controller, qtbot, row(controller, show, "Show Name - S01E01.mkv", up=1))
     assert next(a for a in controller.place_actions if a["key"] == "remove")["enabled"]
     controller.add_paths([other])
-    assert controller._loader.busy
+    assert controller.folders._loader.busy
     assert not next(a for a in controller.place_actions if a["key"] == "remove")["enabled"]
     controller.remove_place()
     assert controller.batches.removed == set()
@@ -328,7 +328,7 @@ def test_a_click_on_a_library_row_or_a_new_folder_leaves_home_but_a_background_r
     show, other = folders
     open_folders(controller, qtbot, show)
     controller.go_home()
-    controller._reselect()  # as after a job's files were read again
+    controller.workspace.reselect()  # as after a job's files were read again
     assert controller.home_shown
     pick(controller, qtbot, row(controller, show, "Show Name - S02E01.mkv"))
     assert not controller.home_shown
@@ -351,7 +351,7 @@ def test_home_changes_nothing_that_is_saved(
 def test_home_does_nothing_without_a_library(controller: WindowController) -> None:
     controller.go_home()
     assert controller.home_shown  # Home already, and no flag is left to hold it after a folder is opened
-    assert not controller._at_home
+    assert not controller.folders._at_home
 
 
 def test_the_palette_offers_home_while_a_library_is_open(

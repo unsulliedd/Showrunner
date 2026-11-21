@@ -132,6 +132,14 @@ class Queue(QObject):
             self._store.discard(job_id)
             self._reload()
 
+    @Slot()
+    def clear(self) -> None:
+        """Remove every item but the running one: finished, failed and waiting items alike."""
+        for item in self._items:
+            if item.id != self._running:
+                self._store.discard(item.id)
+        self._reload()
+
     @Slot(int)
     def retry(self, job_id: int) -> None:
         """Make a failed or cancelled item wait again and start the queue, as Start does."""
@@ -150,6 +158,10 @@ class Queue(QObject):
     @Property(bool, notify=changed)
     def can_start(self) -> bool:
         return not self._going and next_item(self._items) is not None
+
+    @Property(bool, notify=changed)
+    def can_clear(self) -> bool:
+        return any(item.id != self._running for item in self._items)
 
     @Property(str, notify=changed)
     def note(self) -> str:

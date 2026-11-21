@@ -18,8 +18,8 @@ from .test_choices import open_season, settle
 
 
 def naming(controller: WindowController) -> NamingOptions:
-    assert controller._key is not None
-    return controller.batches.profile(controller._key).for_stage("naming")
+    assert controller.workspace.key is not None
+    return controller.batches.profile(controller.workspace.key).for_stage("naming")
 
 
 def test_opening_names_writes_nothing(controller: WindowController, library: Library, qtbot: QtBot) -> None:
@@ -35,7 +35,7 @@ def test_a_suggestion_then_chips_build_the_template(
     open_season(controller, library, qtbot)
     controller.start_template("title_template")
     assert naming(controller).title_template == "{file_name}"
-    assert controller.batches.own(controller._key)  # type: ignore[arg-type]
+    assert controller.batches.own(controller.workspace.key)  # type: ignore[arg-type]
     controller.rail_remove(0)
     for token in ("show", "season", "episode", "episode_title"):
         controller.rail_append(token)
@@ -174,8 +174,8 @@ def test_a_removed_token_takes_its_value_map_and_the_editor_follows_the_batch(
 ) -> None:
     open_season(controller, library, qtbot)
     controller.add_token()
-    assert controller._key is not None
-    copy = controller.batches.copy(controller._key)
+    assert controller.workspace.key is not None
+    copy = controller.batches.copy(controller.workspace.key)
     copy.set_options("naming", replace(naming(controller), value_maps={"token_1": {"a": "b"}, "show": {"x": "y"}}))
     controller.focus_file(str(library.items[4].file.path))
     assert controller.tokens["editor"]["name"] == "token_1"  # a row of the same season keeps it open

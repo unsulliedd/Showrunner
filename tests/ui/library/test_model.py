@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QApplication
 from showrunner.app.library.library import Library, LibraryLoad, Mark
 from showrunner.core.media import Episode, Extra, MediaItem
 from showrunner.ui.i18n.catalog import tr
-from showrunner.ui.library.model import DOT_ROLE, Kind, LibraryModel
+from showrunner.ui.library.model import DOT_ROLE, PLANNED_ROLE, Kind, LibraryModel
 
 
 @pytest.fixture
@@ -205,3 +205,22 @@ def test_plan_dots_reach_every_parent_and_each_parent_is_summed_once(
     assert sorted(summed) == sorted(parent_names(model))
     model.set_plan_marks({})
     assert season.data(DOT_ROLE) is None
+
+
+def test_a_parent_says_changes_are_planned_below_it_whatever_worse_dot_it_shows(
+    model: LibraryModel, sample_library: Library
+) -> None:
+    first = index_of(model, sample_library, "S01E01")
+    unsure = index_of(model, sample_library, "S01E02")
+    season, show = first.parent(), first.parent().parent()
+    model.set_plan_marks({model.path(first): "planned", model.path(unsure): "planned"})
+    # Season 1 shows the unsure episode's dot, and still has changes planned, as the show above it does.
+    assert (season.data(DOT_ROLE), season.data(PLANNED_ROLE), show.data(PLANNED_ROLE)) == ("needs_look", True, True)
+    # The unsure episode's own changes count for its parents too.
+    model.set_plan_marks({model.path(unsure): "planned"})
+    assert (unsure.data(DOT_ROLE), unsure.data(PLANNED_ROLE), season.data(PLANNED_ROLE)) == ("needs_look", True, True)
+    assert not index_of(model, sample_library, "S02E01").parent().data(PLANNED_ROLE)
+    # An excluded video's changes are planned for no run.
+    model.set_excluded([model.path(unsure)])
+    assert not season.data(PLANNED_ROLE)
+    assert not show.data(PLANNED_ROLE)

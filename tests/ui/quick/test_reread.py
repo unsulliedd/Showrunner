@@ -160,7 +160,7 @@ def test_a_failed_step_reads_its_file_again_with_the_ones_that_were_written(
 def test_the_place_stays_locked_until_the_files_are_read_again(setup: Setup, qtbot: QtBot) -> None:
     controller = setup.controller
     reading, release = threading.Event(), threading.Event()
-    stand_in = controller._read_file
+    stand_in = controller.run.read_file
     assert stand_in is not None
 
     def slow(path: Path) -> MediaFile:
@@ -168,7 +168,7 @@ def test_the_place_stays_locked_until_the_files_are_read_again(setup: Setup, qtb
         release.wait(10)
         return replace(stand_in(path), title="Slowly read")
 
-    controller._read_file = slow
+    controller.run.read_file = slow
     with qtbot.waitSignal(controller.jobs.ended, timeout=10_000):
         controller.apply()
     qtbot.waitUntil(reading.is_set)

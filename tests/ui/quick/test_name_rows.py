@@ -114,7 +114,7 @@ def test_a_click_on_a_name_drops_its_tracks_alone_and_a_second_click_gives_them_
     # The chip's own choice is not touched: it still reads kept, and its click is the chip's.
     header = controller.matrix["headers"][COMMENTARY]
     assert header["state"] == "kept"
-    assert (controller.change_text, controller._key is not None) == ("3 changes in 3 files", True)
+    assert (controller.change_text, controller.workspace.key is not None) == ("3 changes in 3 files", True)
     controller.toggle_name(COMMENTARY, DIRECTOR)
     assert controller.rules == []
     settle(controller, qtbot)
@@ -149,8 +149,8 @@ def test_a_name_is_kept_under_a_dropped_chip_and_the_chip_s_other_names_stay_dro
 
 
 def _verdicts(controller: WindowController) -> list[dict[str, str]]:
-    assert controller._key is not None
-    found = controller.batches.own_tracks(controller._key).rules
+    assert controller.workspace.key is not None
+    found = controller.batches.own_tracks(controller.workspace.key).rules
     return [{"verdict": r.verdict.value} for r in found]
 
 
@@ -237,8 +237,8 @@ def test_a_name_rule_changes_no_flag_of_the_chip(controller: WindowController, l
     header = controller.matrix["headers"][ENGLISH]
     assert (header["default"], controller.matrix["headers"][TURKISH]["default"]) == (True, True)
     assert controller.rules[0]["source"] == "from a name"  # the name's rule leads the stars' rules
-    assert controller._key is not None
-    rule = controller.batches.own_tracks(controller._key).rules[0]
+    assert controller.workspace.key is not None
+    rule = controller.batches.own_tracks(controller.workspace.key).rules[0]
     assert (rule.default.value, rule.forced.value) == ("leave", "leave")
     settle(controller, qtbot)
     # The stars stay where they were in every file; only the commentary of the first three files is dropped.

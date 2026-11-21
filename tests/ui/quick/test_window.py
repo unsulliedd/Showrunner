@@ -17,9 +17,10 @@ from showrunner.app.profiles.store import ProfileStore
 from showrunner.app.settings.app_settings import load_settings, save_settings
 from showrunner.app.storage.paths import workspace_path
 from showrunner.tools.probe import Programs
-from showrunner.ui.quick import window
+from showrunner.ui.quick import workspace
+from showrunner.ui.quick.folders import local_paths
 from showrunner.ui.quick.library import KIND, LABEL, NUMBER, PROBLEM, ROW_ID, SUMMARY
-from showrunner.ui.quick.window import WindowController, local_paths
+from showrunner.ui.quick.window import WindowController
 
 from .conftest import COMMENTARY
 
@@ -107,8 +108,8 @@ def test_the_header_is_built_once_per_selection(
     controller: WindowController, library: Library, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     built: list[str] = []
-    heading = window.heading
-    monkeypatch.setattr(window, "heading", lambda key, items: (built.append(key.kind.value), heading(key, items))[1])
+    heading = workspace.heading
+    monkeypatch.setattr(workspace, "heading", lambda key, items: (built.append(key.kind.value), heading(key, items))[1])
     controller.model.set_library(library)
     season = controller.tree.index_of(str(library.items[0].file.path)).parent()
     controller.select(season)
@@ -137,8 +138,8 @@ def test_an_edited_batch_is_discarded_before_it_switches(controller: WindowContr
     ProfileStore().duplicate("Default", "Series")
     controller.model.set_library(library)
     select_path(controller, library.items[0].file.path)
-    assert controller._key is not None
-    copy = controller.batches.copy(controller._key)
+    assert controller.workspace.key is not None
+    copy = controller.batches.copy(controller.workspace.key)
     copy.set_options("tracks", type(copy.profile.options["tracks"])(flags_from_names=False))
     assert controller.profile_edited
     controller.switch_profile("Series")
@@ -207,20 +208,20 @@ def test_a_dropped_folder_loads_and_is_remembered(qtbot: QtBot, tmp_path: Path, 
 
 def test_a_second_load_refreshes_the_selected_batch(controller: WindowController, library: Library) -> None:
     season = library.items[:10]
-    controller._on_loaded(LibraryLoad(items=season[:2]))
+    controller.folders._on_loaded(LibraryLoad(items=season[:2]))
     controller.select(controller.tree.index_of(str(season[0].file.path)).parent())
     assert controller.batch["facts"].startswith("2 episodes")
     selected = controller.selected
-    controller._on_loaded(LibraryLoad(items=season[2:]))
+    controller.folders._on_loaded(LibraryLoad(items=season[2:]))
     assert controller.selected == selected
     assert controller.batch["facts"].startswith("10 episodes")
 
 
 def test_the_status_bar_says_how_a_load_ended(controller: WindowController) -> None:
     assert controller.job_text == "No jobs running"
-    controller._on_loaded(LibraryLoad())
+    controller.folders._on_loaded(LibraryLoad())
     assert controller.job_text == "No new videos found."
-    controller._on_failed(OSError("denied"))
+    controller.folders._on_failed(OSError("denied"))
     assert controller.job_text == "The folder could not be read: denied"
 
 
@@ -245,7 +246,7 @@ def test_closing_the_folder_goes_back_to_home_and_starts_the_next_time_there(
 ) -> None:
     controller.close_folder()  # nothing is open: nothing happens
     controller.model.set_library(library)
-    controller._recent = {str(tmp_path): "2026-01-01T00:00:00"}
+    controller.folders._recent = {str(tmp_path): "2026-01-01T00:00:00"}
     controller.select(controller.tree.index(0, 0))
     controller.save_workspace()
     assert controller.loaded
@@ -264,17 +265,17 @@ def test_closing_the_folder_goes_back_to_home_and_starts_the_next_time_there(
 
 def test_the_folder_stays_open_while_a_batch_is_being_applied(controller: WindowController, library: Library) -> None:
     controller.model.set_library(library)
-    controller._applying = object()  # type: ignore[assignment]
+    controller.run._applying = object()  # type: ignore[assignment]
     controller.close_folder()
     assert controller.loaded
-    controller._applying = None
+    controller.run._applying = None
 
 
 def test_a_recent_folder_is_removed_from_the_list_only(controller: WindowController, tmp_path: Path) -> None:
     kept, gone = tmp_path / "Show Name (2020)", tmp_path / "Movie Name (2019)"
     kept.mkdir()
     gone.mkdir()
-    controller._recent = {str(kept): "2026-01-02T00:00:00", str(gone): "2026-01-01T00:00:00"}
+    controller.folders._recent = {str(kept): "2026-01-02T00:00:00", str(gone): "2026-01-01T00:00:00"}
     controller.remove_recent(str(gone))
     assert [entry["name"] for entry in controller.recent] == ["Show Name (2020)"]
     assert list(load_settings().value.recent_folders) == [str(kept)]

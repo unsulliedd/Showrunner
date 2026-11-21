@@ -1062,6 +1062,8 @@
   "queue.pause": "Pause",
   "queue.cancel": "Cancel",
   "queue.remove": "Remove",
+  "queue.clear": "Clear all",
+  "queue.clear_tip": "Removes every item from the queue except the one that is running, waiting items included. Nothing on disk changes.",
   "queue.retry": "Retry",
   "queue.kept": "Each item keeps the settings it had when it was added.",
   "queue.files.one": "1 file",

@@ -30,13 +30,13 @@ from .test_choices import COMMENTARY, ENGLISH, FORCED, open_season, rules, settl
 
 
 def tracks(controller: WindowController) -> TracksOptions:
-    return controller._tracks()
+    return controller.workspace.tracks()
 
 
 def write(controller: WindowController, *written: TrackRule) -> None:
     """Rules written by hand, after the choices the batch holds."""
     options = tracks(controller)
-    controller._set_tracks(replace(options, rules=[*options.rules, *written]))
+    controller.workspace.set_tracks(replace(options, rules=[*options.rules, *written]))
 
 
 def form(controller: WindowController) -> dict[str, Any]:
@@ -91,7 +91,7 @@ def test_a_new_rule_is_written_to_the_working_copy_and_the_plan_follows(
     assert rules(controller) == ["Drop subtitles in TUR flagged forced"]
     (rule,) = tracks(controller).rules
     assert (rule.from_choice, rule.enabled) == (False, True)
-    assert controller.batches.own(controller._key)  # type: ignore[arg-type]
+    assert controller.batches.own(controller.workspace.key)  # type: ignore[arg-type]
     settle(controller, qtbot)
     # The live plan, Overview's chips and Review follow like for any choice.
     assert controller.matrix["headers"][FORCED]["state"] == "dropped"
@@ -370,7 +370,7 @@ def test_a_locked_batch_cannot_be_written_to(
     editor = controller.rule_editor
     editor.open_new()
     editor.set_text("label", "Mine")
-    monkeypatch.setattr(controller, "_locked_paths", lambda: {i.file.path for i in controller._items})
+    monkeypatch.setattr(controller.run, "locked_paths", lambda: {i.file.path for i in controller.workspace.items})
     controller.batch_changed.emit()
     assert not form(controller)["can_save"]
     assert "being applied" in form(controller)["note"]
