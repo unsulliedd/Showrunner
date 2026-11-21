@@ -47,11 +47,10 @@ def test_strings_fill_placeholders_and_plurals(qapp: QApplication) -> None:
 def test_icon_ids_are_checked() -> None:
     assert svg_for("search/7e8894") is not None
     assert 'stroke="#7e8894"' in (svg_for("search/7e8894") or "")
-    assert svg_for("logo/e7eaee/8fa8ff") is not None
     assert svg_for("search") is None
     assert svg_for("search/zzzzzz") is None
     assert svg_for("nothing/7e8894") is None
-    assert svg_for("logo/e7eaee") is None
+    assert svg_for("search/7e8894/8fa8ff") is None
 
 
 @pytest.mark.parametrize("name", sorted(ICONS))

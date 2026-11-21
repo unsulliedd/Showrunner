@@ -1,6 +1,6 @@
 """Stroked line icons on a 24 px grid, drawn for QML by an image provider in any theme color.
 
-QML asks for `image://icon/<name>/<rrggbb>`; the logo takes two colors, `image://icon/logo/<ink>/<mark>`.
+QML asks for `image://icon/<name>/<rrggbb>`.
 """
 
 from __future__ import annotations
@@ -87,24 +87,12 @@ def icon_svg(name: str, color: str) -> str:
     )
 
 
-def logo_svg(ink: str, mark: str) -> str:
-    # A clapper frame whose top bar is the one control-colored mark in the chrome.
-    return (
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
-        f'<rect x="2.5" y="8" width="19" height="13" rx="3" fill="none" stroke="{ink}" stroke-width="1.8"/>'
-        f'<path d="M3.2 6.6l17-3.4.5 2.6-17 3.4z" fill="{mark}"/>'
-        f'<path d="M10 11.5v6l5-3z" fill="{ink}"/></svg>'
-    )
-
-
 def svg_for(image_id: str) -> str | None:
     """The SVG for a provider id, or None for an unknown name or a malformed color."""
     name, *colors = image_id.split("/")
     if not colors or not all(len(c) == 6 and all(ch in "0123456789abcdefABCDEF" for ch in c) for c in colors):
         return None
     hexes = [f"#{c}" for c in colors]
-    if name == "logo" and len(hexes) == 2:
-        return logo_svg(*hexes)
     return icon_svg(name, hexes[0]) if (name in ICONS or name in DRAWINGS) and len(hexes) == 1 else None
 
 
