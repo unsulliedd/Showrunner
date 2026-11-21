@@ -91,14 +91,14 @@ def test_detection_can_be_switched_off(make: Make, tmp_path: Path, turkish_cp125
 
 def test_two_candidates_for_one_episode_stay_visible(make: Make, tmp_path: Path) -> None:
     make("S14/Show (1992) S14E04 Title.mkv")
-    make("S14/Show.S14E04.720p.HDTV.x264-GROUP (Alpha).srt", b"x" * 10)
+    make("S14/Show.S14E04.720p.HDTV.x264-GROUP (Bravo).srt", b"x" * 10)
     make("S14/Show.S14E04.720p.HDTV.x264-GROUP (Other).srt", b"x" * 20)
     result = scan([tmp_path], ScanOptions(detect_untagged_languages=False))
     (item,) = result.items
     assert names(item) == ["Show.S14E04.720p.HDTV.x264-GROUP (Other).srt"]
     ((alternatives,),) = [(a,) for a in result.alternatives]
     assert alternatives.video == item.file.path
-    assert [s.path.name for s in alternatives.subtitles] == ["Show.S14E04.720p.HDTV.x264-GROUP (Alpha).srt"]
+    assert [s.path.name for s in alternatives.subtitles] == ["Show.S14E04.720p.HDTV.x264-GROUP (Bravo).srt"]
     assert result.unpaired == ()
 
 
@@ -116,8 +116,8 @@ def test_one_video_takes_one_file_per_language_and_flag(make: Make, tmp_path: Pa
 
 
 def test_unpaired_subtitles_and_folders_without_videos_stay_in_the_result(make: Make, tmp_path: Path) -> None:
-    make("Show S01E01 Alpha.mkv")
-    make("Show S01E01 Alpha.en.srt")
+    make("Show S01E01 Bravo.mkv")
+    make("Show S01E01 Bravo.en.srt")
     make("Unrelated Thing.en.srt")
     make("Extras/Making Of.en.srt")
     result = scan([tmp_path])
@@ -125,51 +125,51 @@ def test_unpaired_subtitles_and_folders_without_videos_stay_in_the_result(make: 
 
 
 def test_movie_in_its_own_folder_with_the_year_in_the_folder_name(make: Make, tmp_path: Path) -> None:
-    make("The Matrix (1999)/matrix.1080p.mkv")
-    make("The Matrix (1999)/matrix.1080p.en.srt")
-    make("Heat (1995)/heat.mkv")
+    make("The Example (1999)/example.1080p.mkv")
+    make("The Example (1999)/example.1080p.en.srt")
+    make("Bravo (1995)/bravo.mkv")
     result = scan([tmp_path])
     assert [(i.identity, names(i)) for i in result.items] == [
-        (Movie("Heat", 1995), []),
-        (Movie("The Matrix", 1999), ["matrix.1080p.en.srt"]),
+        (Movie("Bravo", 1995), []),
+        (Movie("The Example", 1999), ["example.1080p.en.srt"]),
     ]
 
 
 def test_many_movies_in_one_folder_pair_by_name(make: Make, tmp_path: Path) -> None:
-    for title in ("Heat (1995)", "Casino (1995)", "Ronin (1998)"):
+    for title in ("Bravo (1995)", "Alpha (1995)", "Delta (1998)"):
         make(f"Movies/{title}.1080p.mkv")
         make(f"Movies/{title}.tr.srt")
     result = scan([tmp_path])
     assert [(i.identity, names(i)) for i in result.items] == [
-        (Movie("Casino", 1995), ["Casino (1995).tr.srt"]),
-        (Movie("Heat", 1995), ["Heat (1995).tr.srt"]),
-        (Movie("Ronin", 1998), ["Ronin (1998).tr.srt"]),
+        (Movie("Alpha", 1995), ["Alpha (1995).tr.srt"]),
+        (Movie("Bravo", 1995), ["Bravo (1995).tr.srt"]),
+        (Movie("Delta", 1998), ["Delta (1998).tr.srt"]),
     ]
     assert result.unpaired == ()
 
 
 def test_subs_folder_beside_the_videos_counts_as_their_folder(make: Make, tmp_path: Path) -> None:
-    make("Show/Season 1/Show S01E01 Alpha.mkv")
-    make("Show/Season 1/Subs/Show S01E01 Alpha.en.srt")
+    make("Show/Season 1/Show S01E01 Bravo.mkv")
+    make("Show/Season 1/Subs/Show S01E01 Bravo.en.srt")
     (item,) = scan([tmp_path]).items
-    assert names(item) == ["Show S01E01 Alpha.en.srt"]
+    assert names(item) == ["Show S01E01 Bravo.en.srt"]
 
 
 def test_subs_folder_can_be_switched_off_and_its_files_stay_visible(make: Make, tmp_path: Path) -> None:
-    make("Show/Season 1/Show S01E01 Alpha.mkv")
-    subtitle = make("Show/Season 1/Subs/Show S01E01 Alpha.en.srt")
+    make("Show/Season 1/Show S01E01 Bravo.mkv")
+    subtitle = make("Show/Season 1/Subs/Show S01E01 Bravo.en.srt")
     result = scan([tmp_path], ScanOptions(subtitle_subfolders=False))
     assert result.items[0].subtitles == ()
     assert [s.path for s in result.unpaired] == [subtitle]
 
 
 def test_a_dropped_video_file_brings_the_subtitles_beside_it(make: Make) -> None:
-    video = make("Show/Show S01E01 Alpha.mkv")
-    make("Show/Show S01E01 Alpha.en.srt")
+    video = make("Show/Show S01E01 Bravo.mkv")
+    make("Show/Show S01E01 Bravo.en.srt")
     make("Show/Show S01E02 Beta.mkv")
     make("Show/Show S01E02 Beta.en.srt")  # belongs to a video that was not dropped
     result = scan([video])
-    assert [(i.file.path, names(i)) for i in result.items] == [(video, ["Show S01E01 Alpha.en.srt"])]
+    assert [(i.file.path, names(i)) for i in result.items] == [(video, ["Show S01E01 Bravo.en.srt"])]
     assert result.unpaired == ()
 
 

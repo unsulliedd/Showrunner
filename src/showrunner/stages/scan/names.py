@@ -91,7 +91,7 @@ def spaced(name: str) -> str:
 
 
 def is_release_word(word: str) -> bool:
-    # Only the part before a dash counts, so "x264-GROUP" is a release word and "Spider-Man" is not.
+    # Only the part before a dash counts, so "x264-GROUP" is a release word and "Half-Example" is not.
     head = word.casefold().strip(".,;:-").split("-")[0]
     return head in _RELEASE_WORDS or _RELEASE_PATTERN.fullmatch(head) is not None
 
@@ -143,7 +143,7 @@ def leading_title(text: str, *, stop_at_year: bool = False) -> str:
 
 
 def parse_movie_name(name: str) -> tuple[str, int | None]:
-    """Title and year of `The Matrix (1999) 1080p` or `The.Matrix.1999.1080p.BluRay-GROUP`."""
+    """Title and year of `The Example (1999) 1080p` or `The.Example.1999.1080p.BluRay-GROUP`."""
     text = spaced(name)
     found = find_year(text)
     if found:

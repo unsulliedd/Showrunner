@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 import threading
 import urllib.request
 import zipfile
@@ -232,7 +233,18 @@ def test_files_of_every_asset_land_in_one_folder(tmp_path: Path, spec_factory: C
     ]
 
 
-@pytest.mark.parametrize("evil", ["../escaped.txt", "sub/../../escaped.txt", "/abs/escaped.txt", "C:/escaped.txt"])
+@pytest.mark.parametrize(
+    "evil",
+    [
+        "../escaped.txt",
+        "sub/../../escaped.txt",
+        "/abs/escaped.txt",
+        pytest.param(
+            "C:/escaped.txt",
+            marks=pytest.mark.skipif(os.name != "nt", reason="a drive letter is a folder name off Windows"),
+        ),
+    ],
+)
 def test_zip_slip_is_rejected_and_nothing_is_written(tmp_path: Path, spec: DependencySpec, evil: str) -> None:
     tools = tmp_path / "data" / "tools"
     http = FakeHttp()

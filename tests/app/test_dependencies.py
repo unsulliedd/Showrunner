@@ -9,7 +9,7 @@ from showrunner.app.dependencies import service
 from showrunner.app.settings.app_settings import load_settings
 from showrunner.app.storage.paths import HOME_ENV_VAR, tools_dir
 from showrunner.tools.dependencies import install as install_module
-from showrunner.tools.dependencies.detect import DependencyStatus, State
+from showrunner.tools.dependencies.detect import DependencyStatus, State, file_name
 from showrunner.tools.dependencies.install import Asset, DownloadPlan
 from showrunner.tools.dependencies.specs import SPEC_BY_ID
 
@@ -66,5 +66,6 @@ def test_media_programs_use_only_programs_that_are_usable(monkeypatch: pytest.Mo
     monkeypatch.setattr(service, "check", lambda spec, cancel=None: statuses[spec.id])
     programs = service.media_programs()
     assert programs.mkvmerge == Path("mkv/mkvmerge.exe")
-    assert programs.mkvextract == Path("mkv/mkvextract.exe")
+    # Its sibling is named the way programs are on this system.
+    assert programs.mkvextract == Path("mkv") / file_name("mkvextract")
     assert programs.ffprobe is None

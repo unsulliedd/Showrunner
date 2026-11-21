@@ -62,8 +62,13 @@ LICENSES: tuple[tuple[str, str, Path | None], ...] = (
     ("jetbrains_mono", "ofl", FONTS_DIR / "jetbrains-mono" / "OFL.txt"),
     ("qt", "lgpl3", None),
 )
-# Links About offers once the project has a public address; until then each is shown off, with the reason.
-LINKS: tuple[str, ...] = ("release_notes", "source", "report")
+REPOSITORY = "https://github.com/unsulliedd/Showrunner"
+# The links About offers, by the key of their label. `open_link` opens only these.
+LINKS: dict[str, str] = {
+    "release_notes": f"{REPOSITORY}/releases",
+    "source": REPOSITORY,
+    "report": f"{REPOSITORY}/issues",
+}
 
 
 def mux_problems(options: MuxOptions) -> dict[str, str]:
@@ -322,7 +327,12 @@ class Settings(QObject):
 
     @Property(list, constant=True)
     def links(self) -> list[dict[str, str]]:
-        return [{"key": key, "label": tr(f"prefs.about.link.{key}")} for key in LINKS]
+        return [{"key": key, "label": tr(f"prefs.about.link.{key}"), "url": url} for key, url in LINKS.items()]
+
+    @Slot(str)
+    def open_link(self, url: str) -> None:
+        if url in LINKS.values():
+            QDesktopServices.openUrl(QUrl(url))
 
     @Slot(str)
     def open_license(self, path: str) -> None:

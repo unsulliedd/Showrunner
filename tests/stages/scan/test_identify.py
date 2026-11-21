@@ -46,17 +46,17 @@ def test_run_together_code_counts_only_inside_a_season_folder() -> None:
 @pytest.mark.parametrize(
     ("path", "alone", "expected"),
     [
-        ("lib/Movies/Alien (1979) 1080p.mkv", False, Movie("Alien", 1979)),
-        ("lib/Movies/Aliens.1986.BluRay.x264-GROUP.mkv", False, Movie("Aliens", 1986)),
+        ("lib/Movies/Example (1979) 1080p.mkv", False, Movie("Example", 1979)),
+        ("lib/Movies/Examples.1986.BluRay.x264-GROUP.mkv", False, Movie("Examples", 1986)),
         # One movie per folder: the folder name has the year.
-        ("lib/The Matrix (1999)/the.matrix.1080p.mkv", True, Movie("The Matrix", 1999)),
-        ("lib/The Matrix (1999)/movie.mkv", True, Movie("The Matrix", 1999)),
+        ("lib/The Example (1999)/the.example.1080p.mkv", True, Movie("The Example", 1999)),
+        ("lib/The Example (1999)/movie.mkv", True, Movie("The Example", 1999)),
         # A year in the file name wins over the folder.
-        ("lib/Collection/Heat (1995).mkv", True, Movie("Heat", 1995)),
+        ("lib/Collection/Alpha (1995).mkv", True, Movie("Alpha", 1995)),
         # No year anywhere: the file name.
         ("lib/Downloads/Some Movie 1080p.mkv", True, Movie("Some Movie", None)),
         # Many movies in one folder never borrow from the folder.
-        ("lib/Movies (2020)/Heat.mkv", False, Movie("Heat", None)),
+        ("lib/Movies (2020)/Alpha.mkv", False, Movie("Alpha", None)),
     ],
 )
 def test_movies(path: str, alone: bool, expected: Movie) -> None:

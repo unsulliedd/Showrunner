@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -77,8 +78,15 @@ def places(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
     return folders
 
 
+def variable(name: str) -> str:
+    """A reference to an environment variable in the syntax of this system, which is what a folder expands."""
+    return f"%{name}%" if os.name == "nt" else f"${name}"
+
+
 def spec_with_install_dir(spec_factory: Callable[..., DependencySpec], **kwargs: Any) -> DependencySpec:
-    return spec_factory(install_dirs=("%SHOWRUNNER_TEST_INSTALL%", "%SHOWRUNNER_UNSET_VARIABLE%"), **kwargs)
+    return spec_factory(
+        install_dirs=(variable("SHOWRUNNER_TEST_INSTALL"), variable("SHOWRUNNER_UNSET_VARIABLE")), **kwargs
+    )
 
 
 def test_resolution_order(places: dict[str, Path], spec_factory: Callable[..., DependencySpec]) -> None:

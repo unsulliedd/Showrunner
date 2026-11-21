@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Showrunner
 
-// About: the version, the links once the project has a public address, and the licences of what ships with it.
+// About: the version, the links to the project's pages, and the licences of what ships with it.
 SettingsPage {
     title: Strings.t("prefs.about.title")
     lead: Strings.t("prefs.about.lead")
@@ -30,14 +30,9 @@ SettingsPage {
                 kind: "outline"
                 iconName: "link"
                 text: modelData.label
-                // No public address is declared yet; the reason is said under the buttons.
-                enabled: false
+                onClicked: app.settings.open_link(modelData.url)
             }
         }
-    }
-
-    Hint {
-        text: Strings.t("prefs.about.no_address")
     }
 
     SettingLabel {

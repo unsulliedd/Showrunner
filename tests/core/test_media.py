@@ -56,7 +56,7 @@ def test_accessors_on_empty_file() -> None:
         make_file(),
         Chapter(0.0),
         Attachment(1, "cover.jpg", "image/jpeg", 10),
-        Movie("Heat"),
+        Movie("Alpha"),
         SubtitleFile(Path("a.srt")),
     ],
 )
@@ -86,4 +86,4 @@ def test_media_item_holds_identity_file_and_subtitles() -> None:
         case _:
             pytest.fail("expected an episode")
     assert item.subtitles == (subtitle,)
-    assert MediaItem(Movie("Heat", 1995), make_file()).subtitles == ()
+    assert MediaItem(Movie("Alpha", 1995), make_file()).subtitles == ()

@@ -25,7 +25,7 @@ from showrunner.stages.scan.names import (
         ("Show - 305 - Title", (3, 5)),
         ("Show.1204.Title", (12, 4)),
         # Years, resolutions and codec numbers are not codes.
-        ("The Matrix (1999) 1080p", None),
+        ("The Example (1999) 1080p", None),
         ("Movie 1992 720p x264", None),
         ("Movie 2160p HDR H 264", None),
         ("Show 1920x1080", None),
@@ -44,13 +44,13 @@ def test_run_together_code_is_off_unless_asked_for() -> None:
 @pytest.mark.parametrize(
     ("name", "expected"),
     [
-        ("The Matrix (1999) 1080p BluRay", ("The Matrix", 1999)),
-        ("The.Matrix.1999.1080p.BluRay.x264-GROUP", ("The Matrix", 1999)),
-        ("2001 A Space Odyssey (1968)", ("2001 A Space Odyssey", 1968)),
+        ("The Example (1999) 1080p BluRay", ("The Example", 1999)),
+        ("The.Example.1999.1080p.BluRay.x264-GROUP", ("The Example", 1999)),
+        ("2001 Example Trip (1968)", ("2001 Example Trip", 1968)),
         ("Movie Title [2010]", ("Movie Title", 2010)),
-        ("1917.2019.1080p.BluRay", ("1917", 2019)),
+        ("1950.2019.1080p.BluRay", ("1950", 2019)),
         ("No Year 1080p WEB-DL", ("No Year", None)),
-        ("Spider-Man (2002)", ("Spider-Man", 2002)),
+        ("Half-Example (2002)", ("Half-Example", 2002)),
     ],
 )
 def test_movie_name(name: str, expected: tuple[str, int | None]) -> None:

@@ -80,7 +80,7 @@ def test_hdr_names() -> None:
         ("Movie.Title.2021.2160p.BluRay.REMUX", "BluRay REMUX"),
         ("Movie.Title.2021.Hybrid.BluRay.Remux", "Hybrid BluRay REMUX"),
         ("Show Name - 1x05 - Episode Name", ""),
-        ("Charlotte's Web", ""),  # a bare WEB is a title word
+        ("Anna's Web", ""),  # a bare WEB is a title word
         ("Subway.S01E05", ""),  # markers sit between non-alphanumerics only
     ],
 )

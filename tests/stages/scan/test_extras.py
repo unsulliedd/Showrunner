@@ -76,14 +76,14 @@ def test_the_extras_of_a_dropped_subfolder_are_still_extras(tmp_path: Path, make
 
 
 def test_a_folder_of_movies_stays_movies(tmp_path: Path, make: Make) -> None:
-    make("Movies/Alien (1979).mkv")
-    make("Movies/Aliens (1986).mkv")
-    make("Movies/Extras/Alien Trailer.mkv")
+    make("Movies/Example (1979).mkv")
+    make("Movies/Examples (1986).mkv")
+    make("Movies/Extras/Example Trailer.mkv")
     make("Movies/Other/Something.mkv")
     assert set(identities(tmp_path).values()) == {
-        Movie("Alien", 1979),
-        Movie("Aliens", 1986),
-        Movie("Alien Trailer"),
+        Movie("Example", 1979),
+        Movie("Examples", 1986),
+        Movie("Example Trailer"),
         Movie("Something"),
     }
 

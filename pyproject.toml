@@ -27,6 +27,11 @@ dev = [
     "ruff>=0.17",
 ]
 
+[project.urls]
+Homepage = "https://github.com/unsulliedd/Showrunner"
+Source = "https://github.com/unsulliedd/Showrunner"
+Issues = "https://github.com/unsulliedd/Showrunner/issues"
+
 [project.scripts]
 showrunner-cli = "showrunner.cli.main:main"
 
