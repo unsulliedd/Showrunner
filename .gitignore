@@ -19,3 +19,6 @@ htmlcov/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Screenshots the media pages are rendered from
+/media/shots/

@@ -25,13 +25,15 @@ Item {
         Row {
             spacing: Theme.space_md
 
+            // The app icon itself, the same drawing as the window's, which has its own colours in both themes.
             Image {
+                objectName: "appIcon"
                 anchors.verticalCenter: parent.verticalCenter
                 width: Theme.icon_lg
                 height: Theme.icon_lg
                 sourceSize: Qt.size(Theme.icon_lg, Theme.icon_lg)
-                source: "image://icon/logo/" + Theme.ink.toString().substring(1, 7) + "/"
-                        + Theme.control.toString().substring(1, 7)
+                source: Qt.resolvedUrl("../../resources/icon.svg")
+                // The app name beside it names it.
                 Accessible.ignored: true
             }
 

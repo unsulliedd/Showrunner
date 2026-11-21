@@ -34,6 +34,10 @@ Item {
     readonly property bool label: form === "label"
     readonly property bool clickable: rows.some(row => row.clickable)
     // What the row says after the codec: the name, or what a tick does to a paired file nobody adds yet.
+    // A narrow Overview row takes a second line only when there is something to put on it, so a video track without a
+    // name stands as tall as its one line.
+    readonly property bool twoLines: form === "lines"
+                                     && (nameText !== "" || chip.count !== "" || (chip.from || chip.over || "") !== "")
     readonly property string nameText: chip.state === "paired" ? Strings.t("tracks.paired_add") : chip.name
     readonly property color textTone: dropped ? Theme.drop : Theme.ink
 
@@ -159,7 +163,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        height: control.form === "lines" ? Theme.row_lg + Theme.row_sm : Theme.row_lg
+        height: control.twoLines ? Theme.row_lg + Theme.row_sm : Theme.row_lg
 
         RowLayout {
             id: line
@@ -314,7 +318,7 @@ Item {
             anchors.leftMargin: Theme.space_md
             anchors.rightMargin: Theme.space_md
             height: Theme.row_sm
-            visible: control.form === "lines"
+            visible: control.twoLines
             spacing: Theme.space_md
 
             Count {

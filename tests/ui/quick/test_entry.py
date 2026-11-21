@@ -21,6 +21,21 @@ def test_the_window_asks_for_opengl_before_it_is_built(monkeypatch: pytest.Monke
     assert calls == [entry.QSGRendererInterface.GraphicsApi.OpenGL, ["showrunner"], "collector", "engine"]
 
 
+def test_the_window_has_the_app_icon_and_the_process_its_own_app_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = QApplication.instance()
+    ids: list[str] = []
+    monkeypatch.setattr(sys, "argv", ["showrunner"])
+    monkeypatch.setattr(entry, "QApplication", lambda args: app)
+    monkeypatch.setattr(entry, "_set_taskbar_identity", lambda: ids.append("set"))
+    monkeypatch.setattr(entry, "collect_on_gui_thread", lambda app: None)
+    monkeypatch.setattr(entry, "build_engine", lambda controller: _NoWindow())
+    assert entry.main() == 1
+    assert entry.ICON.is_file()
+    assert not app.windowIcon().isNull()
+    assert 256 in [size.width() for size in app.windowIcon().availableSizes()]
+    assert ids == ["set"]
+
+
 class _NoWindow:
     @staticmethod
     def rootObjects() -> list[object]:  # noqa: N802  # Qt's name

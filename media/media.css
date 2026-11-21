@@ -1,0 +1,8 @@
+@font-face{font-family:Inter;font-weight:400;src:url("../src/showrunner/ui/quick/fonts/inter/Inter-Regular.ttf")}
+@font-face{font-family:Inter;font-weight:500;src:url("../src/showrunner/ui/quick/fonts/inter/Inter-Medium.ttf")}
+@font-face{font-family:Inter;font-weight:600;src:url("../src/showrunner/ui/quick/fonts/inter/Inter-SemiBold.ttf")}
+@font-face{font-family:Inter;font-weight:700;src:url("../src/showrunner/ui/quick/fonts/inter/Inter-Bold.ttf")}
+html,body{margin:0}
+body{font-family:Inter,"Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.name{font-weight:700;letter-spacing:-.02em}
+.rule{width:32px;height:4px;border-radius:2px;background:#f4b544}

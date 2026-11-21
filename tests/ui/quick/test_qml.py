@@ -25,6 +25,7 @@ from showrunner.app.batches.batch import BatchKind
 from showrunner.app.library.library import Library
 from showrunner.core.naming import EpisodeCodeFormat, SpaceStyle
 from showrunner.tools.probe import Programs
+from showrunner.ui.app import ICON
 from showrunner.ui.i18n.catalog import STRINGS_DIR
 from showrunner.ui.quick import names, palette
 from showrunner.ui.quick.engine import QML_DIR, build_engine, prepare
@@ -464,6 +465,40 @@ def test_track_rows_line_up_in_columns_in_every_state_and_at_every_width(
     assert check() == 9
     assert load() == []
     assert qt_warnings() == []
+
+
+@pytest.mark.parametrize("mode", ["dark", "light"])
+def test_the_header_shows_the_app_icon_in_either_theme(
+    mode: str, load: Any, controller: WindowController, qt_warnings: Any
+) -> None:
+    controller.look.set_mode(mode)
+    load()
+    icon = _item(load.window.contentItem(), "appIcon")
+    assert icon.isVisible()
+    assert Path(icon.property("source").toLocalFile()) == ICON.with_suffix(".svg").resolve()
+    assert icon.property("progress") == 1.0  # loaded and drawn
+    assert icon.width() == icon.height() == load.run("Theme.icon_lg")
+    assert load() == []
+    assert qt_warnings() == []
+
+
+def test_a_narrow_row_without_a_second_line_to_show_stands_one_line_tall(
+    load: Any, controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    load()
+    controller.start()
+    controller.model.set_library(library)
+    controller.select(controller.tree.index_of(str(library.items[2].file.path)).parent())
+    qtbot.waitUntil(lambda: not controller.planning)
+    load.window.setWidth(1024)
+    qtbot.waitUntil(lambda: load.window.width() == 1024)
+    load()
+    root = load.window.contentItem()
+    video, named = _item(root, "chip0"), _item(root, "chip1")
+    assert video.property("form") == named.property("form") == "lines"
+    assert controller.overview["groups"][0]["chips"][0]["name"] == ""
+    assert video.height() < named.height()
+    assert video.height() == _item(video, "chipHeader").height()
 
 
 def test_an_open_chip_stays_inside_the_tracks_box_at_the_narrowest_window(

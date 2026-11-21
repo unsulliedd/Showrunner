@@ -1,9 +1,12 @@
 """Application start-up for the graphical interface: the Qt Quick window."""
 
+import ctypes
 import logging
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QIcon
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
 from PySide6.QtWidgets import QApplication
 
@@ -17,15 +20,25 @@ from showrunner.ui.quick.window import WindowController
 
 _log = logging.getLogger(__name__)
 
+ICON = Path(__file__).parent / "resources" / "icon.ico"
+
+
+def _set_taskbar_identity() -> None:
+    """Gives the process its own app id so the Windows taskbar groups its windows under this icon, not Python's."""
+    if sys.platform == "win32":
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_NAME)
+
 
 def main() -> int:
     # The video player draws through libmpv's OpenGL render API, so the window must use OpenGL rather than Direct3D,
     # the default on Windows. It has to be chosen before the first window exists.
     QQuickWindow.setGraphicsApi(QSGRendererInterface.GraphicsApi.OpenGL)
+    _set_taskbar_identity()
     # A QApplication rather than a QGuiApplication: the file and colour pickers are the platform's widget dialogs.
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
+    app.setWindowIcon(QIcon(str(ICON)))
     collect_on_gui_thread(app)
     settings = load_settings()
     for warning in settings.warnings:
