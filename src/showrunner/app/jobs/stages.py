@@ -4,9 +4,11 @@ the classes here only adapt them."""
 from __future__ import annotations
 
 import threading
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
+from functools import lru_cache
 from pathlib import Path
 from typing import ClassVar, Protocol
 
@@ -21,9 +23,11 @@ from showrunner.stages.mux import Failure, MuxPlan, MuxRefused, MuxResult, apply
 from showrunner.stages.subtitles import Step, StepKind, SubtitlePlan, plan_subtitles
 from showrunner.stages.subtitles.beside import BesideError, BesideFailure, finish_replace, write_beside
 from showrunner.stages.subtitles.clean import clean_runner
+from showrunner.stages.subtitles.read import ocr_runner, read_runner
 from showrunner.stages.subtitles.work import Runner, StepWork
 from showrunner.stages.tracks import PlanRefused, plan_tracks
-from showrunner.tools.cleanit import RuleSet
+from showrunner.tools.cleanit import OCR_EXTRA, OCR_SET, RuleBook, RuleSet
+from showrunner.tools.ocr import installed_languages
 from showrunner.tools.probe import Programs
 from showrunner.tools.recycle import recycle
 
@@ -106,9 +110,13 @@ MISSED = "missed"
 # only when an engine went missing between the plan and the run.
 NOT_AVAILABLE = "not-available"
 APPROVAL = StepKind.APPROVAL.value
-# The engines this version has, by the kind of work they do; an engine registers here. The pipeline's stages plan only
-# the work these can do, so a missing engine leaves its subtitles out and nothing else.
+# The engines that need no program, by the kind of work they do; an engine registers here. The pipeline adds the ones
+# that need a program it found (`reading_runners`), and its stages plan only the work these can do, so a missing engine
+# leaves its subtitles out and nothing else.
 RUNNERS: dict[StepKind, Runner] = {StepKind.CLEAN: clean_runner(RULES.book)}
+# The Jobs phases of a file's subtitle step in the order they run; a file shows the ones its plan holds. "beside"
+# writes the subtitles that go beside the video, once their work is done.
+SUBTITLE_PHASES = ("reference", "ocr", "read", "translate", "clean", "sync", "resplit", "approval", "beside")
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,13 +142,69 @@ def reference_phase(step: Step) -> str:
     return "ocr" if step.kind is StepKind.OCR else "reference"
 
 
+def subtitle_phases(plan: SubtitlePlan) -> tuple[str, ...]:
+    """The phases of a file's subtitle step: reading its reference, each kind of work its finished subtitles take,
+    then the approval when the file waits for one."""
+    held = {step.kind.value for finished in plan.finished for step in finished.steps}
+    if plan.reference is not None and plan.reference.step is not None:
+        held.add(reference_phase(plan.reference.step))
+    if plan.waits:
+        held.add(APPROVAL)
+    if plan.written:
+        held.add("beside")
+    return tuple(name for name in SUBTITLE_PHASES if name in held)
+
+
+@lru_cache(maxsize=8)
+def _models(tesseract: Path, folder_time: int | None) -> tuple[str, ...] | None:
+    found = installed_languages(tesseract)
+    return None if found is None else tuple(sorted(found))
+
+
+def ocr_languages(tesseract: Path | None) -> tuple[str, ...] | None:
+    """The Tesseract models installed, sorted, or None where OCR is not asked for or cannot say. Kept for as long as
+    the folder of the models beside the program is as it was, so adding a model is seen without a restart. The first
+    call runs the program, which takes a moment."""
+    if tesseract is None:
+        return None
+    try:
+        changed = (tesseract.parent / "tessdata").stat().st_mtime_ns
+    except OSError:
+        changed = None
+    return _models(tesseract, changed)
+
+
+def reading_runners(
+    mkvextract: Path | None, tesseract: Path | None, book: Callable[[], RuleBook] | None = None
+) -> dict[StepKind, Runner]:
+    """The engines that read a subtitle out of the video, for the programs found: a text track needs mkvextract, a
+    picture track Tesseract as well. A program that is missing leaves out its engine only."""
+    found: dict[StepKind, Runner] = {}
+    if mkvextract is not None:
+        found[StepKind.READ] = read_runner(mkvextract)
+        if tesseract is not None:
+            found[StepKind.OCR] = ocr_runner(mkvextract, tesseract, book or RULES.book)
+    return found
+
+
 def _results() -> ResultStore:
     return ResultStore(results_dir())
 
 
-def subtitle_plan(item: MediaItem, profile: Profile, can_do: Sequence[StepKind], cleanup: CleanupSets) -> SubtitlePlan:
+def subtitle_plan(
+    item: MediaItem,
+    profile: Profile,
+    can_do: Sequence[StepKind],
+    cleanup: CleanupSets,
+    models: tuple[str, ...] | None = None,
+) -> SubtitlePlan:
     return plan_subtitles(
-        item, profile.for_stage("subtitles"), profile.for_stage("tracks"), available=can_do, rule_sets=cleanup.sets
+        item,
+        profile.for_stage("subtitles"),
+        profile.for_stage("tracks"),
+        available=can_do,
+        rule_sets=cleanup.sets,
+        ocr_languages=models,
     )
 
 
@@ -181,6 +245,7 @@ class MetadataStage:
     source: str = ""  # the `{source}` token for the batch
     available: tuple[StepKind, ...] = ()  # the subtitle work that can run, which may ask for a new file
     cleanup: CleanupSets = field(default_factory=CleanupSets)
+    models: tuple[str, ...] | None = None  # the Tesseract models installed, sorted; None leaves them unchecked
 
     id: ClassVar[str] = "metadata"
     remuxes: ClassVar[bool] = False
@@ -192,7 +257,7 @@ class MetadataStage:
             profile.for_stage("naming"),
             profile.for_stage("tracks"),
             source=self.source,
-            remux=bool(subtitle_plan(item, profile, self.available, self.cleanup).into_video),
+            remux=bool(subtitle_plan(item, profile, self.available, self.cleanup, self.models).into_video),
         )
         if isinstance(result, MetadataRefused):
             return StagePlan(self.id, PlanState.REFUSED, result)
@@ -223,6 +288,7 @@ class MuxStage:
     results: ResultStore = field(default_factory=_results)  # where the finished subtitles it adds are kept
     available: tuple[StepKind, ...] = ()  # the subtitle work that can run, whose results it adds
     cleanup: CleanupSets = field(default_factory=CleanupSets)
+    models: tuple[str, ...] | None = None  # the Tesseract models installed, sorted; None leaves them unchecked
     # Not a setting of the batch, so not part of the stamp; tests put a stand-in for the shell here.
     recycle: Callable[[Sequence[Path]], None] = field(default=recycle, repr=False, compare=False)
 
@@ -230,7 +296,7 @@ class MuxStage:
     remuxes: ClassVar[bool] = True
 
     def plan(self, item: MediaItem, profile: Profile) -> StagePlan:
-        subtitles = subtitle_plan(item, profile, self.available, self.cleanup)
+        subtitles = subtitle_plan(item, profile, self.available, self.cleanup, self.models)
         result = plan_mux(
             item,
             profile.for_stage(self.id),
@@ -285,6 +351,7 @@ class SubtitlesStage:
     results: ResultStore = field(default_factory=_results)
     runners: Mapping[StepKind, Runner] = field(default_factory=dict, repr=False, compare=False)
     cleanup: CleanupSets = field(default_factory=CleanupSets)
+    models: tuple[str, ...] | None = None  # the Tesseract models installed, sorted; None leaves them unchecked
     # Not a setting of the batch, so not part of the stamp; tests put a stand-in for the shell here.
     recycle: Callable[[Sequence[Path]], None] = field(default=recycle, repr=False, compare=False)
     # Part of the stamp of a preview, unlike the runners themselves: what can run decides the plan.
@@ -297,7 +364,7 @@ class SubtitlesStage:
     remuxes: ClassVar[bool] = False
 
     def plan(self, item: MediaItem, profile: Profile) -> StagePlan:
-        result = subtitle_plan(item, profile, self.available, self.cleanup)
+        result = subtitle_plan(item, profile, self.available, self.cleanup, self.models)
         if result.finished:
             return StagePlan(self.id, PlanState.CHANGES, result, writes=True, needs_remux=bool(result.into_video))
         return StagePlan(self.id, PlanState.REFUSED if result.cannot else PlanState.UNCHANGED, result)
@@ -312,28 +379,43 @@ class SubtitlesStage:
             raise TypeError(f"not a subtitle plan: {type(work).__name__}")
         store = self.results
         store.prune()
-        total = sum(len(finished.steps) for finished in work.finished) + 1
-        count = {"done": 0, "reused": 0}
+        phases = subtitle_phases(work)
+        # The steps of each phase, so a phase reports how far through its own steps it is.
+        steps_in: Counter[str] = Counter(step.kind.value for finished in work.finished for step in finished.steps)
+        if work.reference is not None and work.reference.step is not None:
+            steps_in[reference_phase(work.reference.step)] += 1
+        steps_in["beside"] = int(bool(work.written))
+        count = {"reused": 0}
+        done_in: Counter[str] = Counter()
+        furthest = [0.0]
+
+        def report(phase: str, fraction: float) -> None:
+            """The fraction of the step over its phases. Finished subtitles run one after the other, each through its
+            own phases, so a later one can be in an earlier phase: the fraction never goes back, and the phase shown is
+            the furthest one reached."""
+            if progress is not None and phase in phases:
+                within = (done_in[phase] + fraction) / steps_in[phase]
+                furthest[0] = max(furthest[0], min((phases.index(phase) + within) / len(phases), 1.0))
+                progress(furthest[0])
 
         def run(given: StepWork, inputs: Sequence[Path], phase: str) -> str:
             """Reuse or run one step; the message of a step that cannot run, empty otherwise."""
-            count["done"] += 1
             if store.kept(given.output, inputs):
                 count["reused"] += 1
-                return ""
-            runner = self.runners.get(given.step.kind)
-            if runner is None:
-                return f"{NOT_AVAILABLE}: {phase}"
-            given.output.parent.mkdir(parents=True, exist_ok=True)
-            runner(given, cancel)
-            store.keep(given.output, inputs)
-            if progress is not None:
-                progress(count["done"] / total)
+            else:
+                runner = self.runners.get(given.step.kind)
+                if runner is None:
+                    return f"{NOT_AVAILABLE}: {phase}"
+                given.output.parent.mkdir(parents=True, exist_ok=True)
+                runner(replace(given, progress=lambda fraction: report(phase, fraction)), cancel)
+                store.keep(given.output, inputs)
+            report(phase, 1.0)
+            done_in[phase] += 1
             return ""
 
         reference: Path | None = None
         if work.reference is not None and (step := work.reference.step) is not None:
-            reference = store.reference(work)
+            reference = store.reference(work, self._ocr_rules() if step.kind is StepKind.OCR else "")
             track = work.reference.track
             given = StepWork(step, work.video, None, None, track.language if track else None, track, reference)
             if failed := run(given, [work.video], reference_phase(step)):
@@ -371,7 +453,16 @@ class SubtitlesStage:
                 return StepResult(False, str(error))
             except OSError as error:
                 return StepResult(False, f"{BesideFailure.WRITE.value}: {error}")
+        report("beside", 1.0)
         return StepResult(True, detail=count["reused"])
+
+    def _ocr_rules(self) -> str:
+        """The fingerprint of the OCR fixes, which a reference read by OCR is made with."""
+        return "+".join(
+            f"{name}:{self.cleanup.sets[name].fingerprint}"
+            for name in (OCR_SET, OCR_EXTRA)
+            if name in self.cleanup.sets
+        )
 
     def resume(self, plan: StagePlan, before: FileStamp, cancel: threading.Event | None) -> Resumed:
         # The kept results tell what is done, so running the step again repeats only what was not; a subtitle already
@@ -400,19 +491,23 @@ def pipeline(
     results: ResultStore | None = None,
     runners: Mapping[StepKind, Runner] | None = None,
     cleanup: CleanupSets | None = None,
+    tesseract: Path | None = None,
 ) -> tuple[Stage, ...]:
     """The stages in the order they run. A stage whose program is missing is left out, so its features are off
     and nothing else; a new stage is one more entry here. On a file Mux remuxes it writes the header as well and
     Metadata writes nothing, so Mux is that file's only writing step. Subtitles needs no program of its own: the work
-    of an engine that is missing (`runners`, `RUNNERS` by default) is left out, and without mkvmerge its work needs a
-    new file that cannot be written. `cleanup` are the rule sets plans may choose from, the user's rule store's by
-    default."""
+    of an engine that is missing (`runners`, by default `RUNNERS` and the readers of the programs found) is left out,
+    and without mkvmerge its work needs a new file that cannot be written. `cleanup` are the rule sets plans may
+    choose from, the user's rule store's by default. `tesseract` is the OCR program, and with it the models it has
+    decide which picture tracks can be read."""
     results = results or _results()
     cleanup = cleanup or CleanupSets(RULES.book().sets)
-    subtitles = SubtitlesStage(results, RUNNERS if runners is None else runners, cleanup)
+    models = ocr_languages(tesseract) if runners is None else None
+    engines = {**RUNNERS, **reading_runners(programs.mkvextract, tesseract)} if runners is None else runners
+    subtitles = SubtitlesStage(results, engines, cleanup, models)
     stages: list[Stage] = [TracksStage(), subtitles]
     if programs.mkvmerge is not None:
-        stages.append(MuxStage(programs.mkvmerge, programs, source, results, subtitles.available, cleanup))
+        stages.append(MuxStage(programs.mkvmerge, programs, source, results, subtitles.available, cleanup, models))
     if mkvpropedit is not None:
-        stages.append(MetadataStage(mkvpropedit, programs, source, subtitles.available, cleanup))
+        stages.append(MetadataStage(mkvpropedit, programs, source, subtitles.available, cleanup, models))
     return tuple(stages)

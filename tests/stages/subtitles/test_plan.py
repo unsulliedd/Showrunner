@@ -347,3 +347,32 @@ def test_two_embedded_tracks_of_one_language_get_two_names(b: SimpleNamespace) -
     stem = item.file.path.stem
     assert [f.target.name for f in plan.finished if f.target] == [f"{stem}.en.srt", f"{stem}.en.sdh.srt"]
     assert plan.cannot == ()
+
+
+def test_a_picture_reference_needs_a_tesseract_model_for_its_language(b: SimpleNamespace) -> None:
+    options = SubtitlesOptions(languages={"de": Wanted.WANTED})
+    item = episode(b, pgs(2, "eng"), paired=())
+    # Models are not asked about, or the language has one: the subtitle is planned.
+    for models in (None, {"eng", "tur"}):
+        assert [f.source for f in plan_subtitles(item, options, TracksOptions(), ocr_languages=models).finished] == [
+            Source.TRANSLATION
+        ]
+    plan = plan_subtitles(item, options, TracksOptions(), ocr_languages={"tur"})
+    assert plan.finished == ()
+    assert [(f.source, f.missing) for f in plan.left_out] == [(Source.TRANSLATION, (StepKind.OCR,))]
+    # A text reference is read without Tesseract.
+    text = episode(b, b.subtitle(2), paired=())
+    assert plan_subtitles(text, options, TracksOptions(), ocr_languages=set()).left_out == ()
+
+
+def test_a_chosen_group_is_matched_with_the_flags_the_place_reads_from_names(b: SimpleNamespace) -> None:
+    from showrunner.app.batches.choices import TrackSignature
+    from showrunner.stages.subtitles import choose_reference
+
+    named = replace(b.subtitle(2), name="SDH")  # named for the flag it does not carry
+    item = episode(b, named, paired=())
+    signature = TrackSignature.of(named, flags_from_names=False)
+    options = SubtitlesOptions(reference=Reference(ReferenceKind.TRACK, signature.match()))
+    assert choose_reference(item, options, flags_from_names=False).fallback is False
+    # Read with the flag from the name, the track is another group: the choice finds none and Automatic steps in.
+    assert choose_reference(item, options, flags_from_names=True).fallback is True

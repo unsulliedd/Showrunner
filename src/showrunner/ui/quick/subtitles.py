@@ -8,6 +8,7 @@ them.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import replace
 from enum import StrEnum
 from typing import Any
@@ -15,15 +16,20 @@ from typing import Any
 from PySide6.QtCore import QObject, Signal, Slot
 
 from showrunner.app.batches.batch import BatchKey
+from showrunner.app.batches.choices import TrackGroups, TrackSignature
 from showrunner.app.jobs.hashing import stamp
 from showrunner.app.library.loader import BackgroundJob
 from showrunner.app.rules import RULES, RuleStore
 from showrunner.app.rules.effect import file_effect
 from showrunner.core.language import Language
+from showrunner.core.media import MediaItem
+from showrunner.core.track import Track
 from showrunner.stages.subtitles import (
     Approval,
     Lines,
     Output,
+    Reference,
+    ReferenceKind,
     RuleSetUse,
     Source,
     StepKind,
@@ -31,16 +37,18 @@ from showrunner.stages.subtitles import (
     SubtitlesOptions,
     SyncEngine,
     Wanted,
+    choose_reference,
 )
 from showrunner.tools.cleanit import RuleBook, RuleSet
 from showrunner.ui.i18n.catalog import tr, tr_plural
 from showrunner.ui.quick.languages import LanguagePicker
-from showrunner.ui.quick.review import missing_phases
+from showrunner.ui.quick.review import NEEDS, missing_phases, reference_text, track_text
 from showrunner.ui.quick.tracks import code, item_number
 from showrunner.ui.quick.workspace import Workspace
 
 STAGE = "subtitles"
 _EFFECTS_KEPT = 4000  # counted files kept; a season is a few hundred
+_FALLBACKS_NAMED = 2  # files without the chosen reference named one by one; more are counted
 # The rows in the order of the work, each with the field it shows.
 ROWS = (
     ("wanted", "languages"),
@@ -57,11 +65,13 @@ CHOICES: dict[str, type[StrEnum]] = {"sync": SyncEngine, "lines": Lines, "approv
 # The value that cancels one received item of a per-item field.
 _NOT_HERE: dict[str, StrEnum] = {"languages": Wanted.NOT_HERE, "cleanup": RuleSetUse.PAUSED}
 _PICKER_TARGET = "wanted"
+# The Reference row's menu entries that are no group.
+_AUTOMATIC, _AUDIO = "automatic", "audio"
 # The Jobs phases of the work each row asks for, so a row says when its work is not available and is left out.
 _ROW_WORK: dict[str, tuple[str, ...]] = {
     "wanted": ("translate",),
     "reference": ("reference", "ocr"),
-    "cleanup": ("clean",),
+    "cleanup": ("clean", "read"),
     "sync": ("sync",),
     "lines": ("resplit",),
     "approval": ("approval",),
@@ -187,6 +197,18 @@ class SubtitleSettings(QObject):
             values.pop(item, None)
         self._set(**{name: values})
 
+    def pick_reference(self, key: str) -> None:
+        """A choice of the Reference row's menu: Automatic, the audio, or one group of the batch's subtitle tracks."""
+        if self._workspace.key is None:
+            return
+        groups = self._groups()
+        if key == _AUTOMATIC:
+            self._set(reference=Reference())
+        elif key == _AUDIO:
+            self._set(reference=Reference(ReferenceKind.AUDIO))
+        elif key.isdigit() and int(key) < len(groups):
+            self._set(reference=Reference(ReferenceKind.TRACK, groups[int(key)][0].match()))
+
     def pick_language(self) -> None:
         """Open the language picker for a wanted language to add."""
         if self._workspace.key is not None and not self._workspace.locked:
@@ -253,10 +275,93 @@ class SubtitleSettings(QObject):
                 ]
                 shown["count"] = self._cleanup_count()
         elif row == "reference":
-            shown["text"] = tr(f"subtitles.reference.{value.kind.name.lower()}")
+            shown.update(self._reference(value, options))
         else:
             shown["text"] = value or tr("subtitles.model.settings")
         return shown
+
+    def _flags_from_names(self) -> bool:
+        """Whether the flags a track's name implies count, as the place's Tracks choices say."""
+        assert self._workspace.key is not None
+        return self._workspace.batches.profile(self._workspace.key).for_stage("tracks").flags_from_names
+
+    def _groups(self) -> list[tuple[TrackSignature, Track, int]]:
+        """The groups of subtitle tracks the batch's videos hold, in the order first seen: the signature the Tracks
+        tab tells them apart by, a track of it, and how many files have one."""
+        items = self._workspace.items
+        grouping = TrackGroups.of(items, self._flags_from_names())
+        first: dict[TrackSignature, Track] = {}
+        files: Counter[TrackSignature] = Counter()
+        for item in items:
+            seen = {grouping.signature(track): track for track in item.file.subtitle_tracks}
+            files.update(seen.keys())
+            for signature, track in seen.items():
+                first.setdefault(signature, track)
+        return [(signature, track, files[signature]) for signature, track in first.items()]
+
+    def _reference(self, value: Reference, options: SubtitlesOptions) -> dict[str, Any]:
+        """The Reference row: its value in words, the menu of groups to pick from, what each file ends up working
+        against, and the files that lack the chosen group."""
+        groups = self._groups()
+        chosen = next(
+            (
+                track
+                for signature, track, _ in groups
+                if value.kind is ReferenceKind.TRACK and signature.match() == value.track
+            ),
+            None,
+        )
+        if value.kind is ReferenceKind.TRACK:
+            text = track_text(chosen) if chosen is not None else tr("subtitles.reference.track")
+        else:
+            text = tr(f"subtitles.reference.{value.kind.name.lower()}")
+        pick = [{"key": _AUTOMATIC, "text": tr("subtitles.reference.automatic"), "enabled": True}]
+        pick += [
+            {
+                "key": str(index),
+                "text": tr(
+                    "subtitles.reference.group", track=track_text(track), files=tr_plural("cleanup.files", count)
+                ),
+                "enabled": True,
+            }
+            for index, (_, track, count) in enumerate(groups)
+        ]
+        pick.append({"key": _AUDIO, "text": tr("subtitles.reference.audio"), "enabled": True})
+        used: dict[str, list[MediaItem]] = {}
+        lacking: list[MediaItem] = []
+        flags = self._flags_from_names()
+        for item in self._workspace.items:
+            reference = choose_reference(item, options, flags_from_names=flags)
+            used.setdefault(reference_text(reference), []).append(item)
+            if reference.fallback:
+                lacking.append(item)
+        found = [
+            tr("subtitles.reference.found", track=track, files=_files_text(files)) for track, files in used.items()
+        ]
+        return {
+            "text": text,
+            "pick": pick,
+            "found": f" {tr('status.separator')} ".join(found),
+            "fallbacks": self._fallbacks(lacking, chosen, options, flags),
+        }
+
+    @staticmethod
+    def _fallbacks(lacking: list[MediaItem], chosen: Track | None, options: SubtitlesOptions, flags: bool) -> str:
+        """The files the chosen group is missing in, each with the track Automatic used instead."""
+        if not lacking:
+            return ""
+        wanted = track_text(chosen) if chosen is not None else tr("subtitles.reference.track")
+        if len(lacking) > _FALLBACKS_NAMED:
+            return tr_plural("subtitles.reference.fallback_many", len(lacking), track=wanted)
+        return f" {tr('status.separator')} ".join(
+            tr(
+                "subtitles.reference.fallback",
+                file=_file_label(item),
+                track=wanted,
+                other=reference_text(choose_reference(item, options, flags_from_names=flags)),
+            )
+            for item in lacking
+        )
 
     def _item(self, key: BatchKey, name: str, item: str, state: StrEnum) -> dict[str, Any]:
         """One wanted language or rule set with its mark: from the place that set it, or over the one it cancels."""
@@ -414,11 +519,25 @@ class SubtitleSettings(QObject):
                     "file": item.file.path.name,
                     "now": now,
                     "plan": plan,
+                    "reference": tr("subtitles.list.reference", reference=reference_text(work.reference))
+                    if work is not None and work.reference is not None
+                    else "",
                 }
             )
         return rows
 
 
+def _file_label(item: MediaItem) -> str:
+    return item_number(item) or item.file.path.name
+
+
+def _files_text(files: list[MediaItem]) -> str:
+    """One file by its number, several by their count."""
+    return _file_label(files[0]) if len(files) == 1 else tr_plural("cleanup.files", len(files))
+
+
 def unavailable(phase: str) -> str:
-    """ "Sync is not available in this version yet." """
+    """ "Sync is not available in this version yet." A phase that needs a program says which."""
+    if phase in NEEDS:
+        return tr(f"subtitles.needs.{phase}")
     return tr("subtitles.unavailable", step=tr(f"jobs.phase.{phase}"))

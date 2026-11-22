@@ -3,7 +3,8 @@ no file. The screenshot script imports the library and the program statuses from
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+import threading
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,8 @@ from PySide6.QtQuick import QQuickWindow
 from PySide6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
 
+from showrunner.app.dependencies.service import mkvpropedit_from, programs_from
+from showrunner.app.jobs.stages import Stage, pipeline
 from showrunner.app.library.library import Library
 from showrunner.core.language import Language
 from showrunner.core.media import Attachment, Chapter, Episode, MediaFile, MediaItem, Movie, SubtitleFile
@@ -28,9 +31,12 @@ from showrunner.core.track import (
     VideoProperties,
 )
 from showrunner.stages.scan import Alternatives
+from showrunner.stages.subtitles import StepKind
+from showrunner.stages.subtitles.work import StepWork
 from showrunner.tools.dependencies.detect import DependencyStatus, State
 from showrunner.ui.quick.engine import build_engine
 from showrunner.ui.quick.window import WindowController
+from showrunner.ui.quick.workspace import Statuses
 
 NUMBERS = ("One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten")
 GB = 1024**3
@@ -239,3 +245,23 @@ def close_engine(engine: QQmlApplicationEngine, qtbot: QtBot) -> None:
         qtbot.waitUntil(lambda: incubation.incubatingObjectCount() == 0)
     engine.rootObjects()[0].close()
     engine.deleteLater()
+
+
+# Every kind of work but the wait for approval, as the engines of later versions will make them.
+ENGINES = tuple(kind for kind in StepKind if kind is not StepKind.APPROVAL)
+
+
+def never(work: StepWork, cancel: threading.Event | None) -> None:
+    raise AssertionError("these tests plan subtitle work, they never run it")
+
+
+def with_engines(statuses: Statuses) -> Sequence[Stage]:
+    return pipeline(programs_from(statuses), mkvpropedit_from(statuses), runners=dict.fromkeys(ENGINES, never))
+
+
+@pytest.fixture
+def engines(qapp: QApplication) -> Iterator[WindowController]:
+    """A window controller whose pipeline has an engine for every kind of work but approval."""
+    controller = WindowController(statuses=program_statuses, make_pipeline=with_engines)
+    yield controller
+    controller.deleteLater()

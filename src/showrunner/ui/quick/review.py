@@ -22,11 +22,13 @@ from showrunner.app.jobs.preview import FileOutcome, FilePreview
 from showrunner.app.profiles.profile import Profile
 from showrunner.core.language import Language
 from showrunner.core.media import Episode, MediaItem
-from showrunner.core.track import Track, TrackFlags, TrackKind
+from showrunner.core.naming.names import codec_display
+from showrunner.core.track import ObjectAudio, Track, TrackFlags, TrackKind, flags_with_name
 from showrunner.stages.metadata import MetadataPlan
 from showrunner.stages.metadata.plan import FLAG_FIELDS
 from showrunner.stages.mux.options import MuxOptions
-from showrunner.stages.subtitles import FinishedSubtitle, StepKind, SubtitlePlan
+from showrunner.stages.subtitles import FinishedSubtitle, ReferenceTrack, StepKind, SubtitlePlan
+from showrunner.stages.subtitles.plan import PGS
 from showrunner.stages.tracks import NO_LANGUAGE, TrackPlan, TracksOptions
 from showrunner.tools.mkvtoolnix.propedit import Property
 from showrunner.ui.i18n.catalog import tr, tr_plural
@@ -44,6 +46,10 @@ from showrunner.ui.quick.tracks import (
     seen,
 )
 
+# The flags that tell tracks of a language apart, in the order they are named.
+_WHAT = ("commentary", "hearing_impaired", "visual_impaired", "forced")
+# The phases whose work needs a program (and its data) that may be missing, so the words say which.
+NEEDS = ("reference", "read", "ocr")
 # The kinds of change of each group, in the order its card lists them.
 LINES: dict[ChangeGroup, tuple[str, ...]] = {
     ChangeGroup.TRACKS: ("new_file", "order", "flags"),
@@ -153,6 +159,23 @@ def review(given: ReviewInput) -> dict[str, object]:
     }
 
 
+def track_text(track: Track) -> str:
+    """A subtitle track in words, by language, format and what it is: "English SubRip", "English PGS (SDH)"."""
+    flags = flags_with_name(track)
+    what = [tr(f"tracks.what.{flag}") for flag in _WHAT if getattr(flags, flag)]
+    language = track.language.name if track.language is not None else tr("tracks.no_language")
+    named = f"{language} {codec_display(track.codec, ObjectAudio.NONE)}"
+    return f"{named} ({', '.join(what)})" if what else named
+
+
+def reference_text(reference: ReferenceTrack) -> str:
+    """What a file works against: the track, read by OCR where it is a picture, or the audio."""
+    if reference.track is None:
+        return tr("subtitles.reference.audio")
+    text = track_text(reference.track)
+    return tr("subtitles.reference.ocr_of", track=text) if reference.track.codec == PGS else text
+
+
 def missing_phases(finished: FinishedSubtitle) -> list[str]:
     """The Jobs phases of the work a left-out subtitle misses, its own steps first: "sync" says more than the reading
     of the reference it also needs. A reading that is not one of its steps is the reference's."""
@@ -176,7 +199,10 @@ def left_out(files: Sequence[FilePreview]) -> dict[str, int]:
 
 
 def unavailable_text(phase: str, count: int) -> str:
-    """ "Sync is not available in this version yet, so 9 subtitles are left out." """
+    """ "Sync is not available in this version yet, so 9 subtitles are left out." A phase that needs a program says
+    which."""
+    if phase in NEEDS:
+        return tr_plural(f"review.subtitles.needs.{phase}", count)
     return tr_plural("review.subtitles.unavailable", count, step=tr(f"jobs.phase.{phase}"))
 
 
@@ -479,6 +505,11 @@ def _subtitle_lines(file: FilePreview | None, out: bool) -> list[dict[str, objec
         label = tr("review.detail.subtitle_files") if not rows else ""
         sentence = tr("subtitles.written_earlier", file=finished.target.name)
         rows.append({**_line("file", "", "", out), "label": label, "text": sentence, "muted": True})
+    if work is not None and work.reference is not None:
+        text = tr("review.subtitle.reference", reference=reference_text(work.reference))
+        if work.reference.fallback:
+            text += " " + tr("subtitles.reference.fallback_short")
+        rows.append({**_line("file", "", "", out), "label": tr("review.detail.reference"), "text": text})
     return rows
 
 

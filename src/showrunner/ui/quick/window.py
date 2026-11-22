@@ -136,6 +136,7 @@ class WindowController(QObject):
         self.lines_panel = LinesPanel(workspace, parent=self)
         self._cleanup_editor = CleanupEditor(self.lines_panel.loaded, lambda: workspace.locked, parent=self)
         self._cleanup_editor.saved.connect(workspace.rules_changed)
+        self.lines_panel.track_read.connect(self._cleanup_editor.refresh)
         self.subtitle_settings.editor_asked.connect(self._cleanup_editor.open)
         self._rule_editor = RuleEditor(
             lambda: workspace.own_tracks() if workspace.key is not None else None,
@@ -379,6 +380,7 @@ class WindowController(QObject):
     follow_subtitles = _slot("subtitle_settings", "follow", str, qt_name="follow_subtitles")
     subtitles_as_it_is = _slot("subtitle_settings", "as_it_is", str, qt_name="subtitles_as_it_is")
     toggle_subtitle_item = _slot("subtitle_settings", "toggle_item", str, str, qt_name="toggle_subtitle_item")
+    pick_reference = _slot("subtitle_settings", "pick_reference", str, qt_name="pick_reference")
     pick_wanted_language = _slot("subtitle_settings", "pick_language", qt_name="pick_wanted_language")
     add_rule_set = _slot("subtitle_settings", "add_rule_set", str, qt_name="add_rule_set")
     edit_rule_sets = _slot("subtitle_settings", "edit_rule_sets", str, qt_name="edit_rule_sets")

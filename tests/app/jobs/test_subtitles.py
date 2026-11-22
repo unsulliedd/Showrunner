@@ -16,7 +16,17 @@ import pytest
 from showrunner.app.jobs.preview import preview
 from showrunner.app.jobs.results import KEEP_DAYS, ResultStore
 from showrunner.app.jobs.run import create_job, run_job
-from showrunner.app.jobs.stages import CleanupSets, MuxStage, PlanState, Stage, StagePlan, SubtitlesStage, TracksStage
+from showrunner.app.jobs.stages import (
+    CleanupSets,
+    MuxStage,
+    PlanState,
+    Stage,
+    StagePlan,
+    SubtitlesStage,
+    TracksStage,
+    pipeline,
+    subtitle_phases,
+)
 from showrunner.app.jobs.store import JobStore, StepState
 from showrunner.app.profiles import registered  # noqa: F401
 from showrunner.app.profiles.profile import Profile
@@ -32,6 +42,7 @@ from showrunner.stages.subtitles import (
     SubtitlePlan,
     SubtitlesOptions,
     SyncEngine,
+    Wanted,
 )
 from showrunner.stages.subtitles.work import StepWork
 from showrunner.stages.tracks import PairedFile, TracksOptions
@@ -380,3 +391,78 @@ def test_a_second_run_after_a_new_file_run_has_nothing_to_do(setup, tmp_path: Pa
     assert subtitles is not None
     assert (subtitles.state, file.writes) == (PlanState.UNCHANGED, ())
     assert [f.target for f in subtitles.plan.written_earlier] == [written.path]
+
+
+def embedded_setup(setup):
+    """The English text track of the video, wanted and cleaned; the paired Turkish file stays out of it."""
+    item, profile, engines, results = setup
+    options = replace(WORK, sync=SyncEngine.AS_IT_IS, languages={"en": Wanted.WANTED})
+    return item, profile.with_options("subtitles", options), engines, results
+
+
+def test_an_embedded_text_track_in_a_wanted_language_is_read_and_cleaned(setup, tmp_path: Path) -> None:
+    item, profile, engines, results = embedded_setup(setup)
+    given = stages(engines, results)
+    work = SubtitlesStage(results, dict.fromkeys(ENGINES, engines), CLEANUP).plan(item, profile).plan
+    assert isinstance(work, SubtitlePlan)
+    embedded = next(f for f in work.finished if f.track is not None)
+    assert run(JobStore(tmp_path / "jobs.sqlite3"), item, profile, given) == (StepState.DONE, "")
+    assert read_cues(results.final(work, embedded)) == [Cue(1.0, 2.0, "HELLO")]
+    # Taking the track out ran once for the embedded subtitle, and the paired file was cleaned beside it.
+    assert (engines.ran[StepKind.READ], engines.ran[StepKind.CLEAN]) == (1, 2)
+
+
+def test_the_reference_is_read_once_and_a_phase_reports_its_own_share(setup, tmp_path: Path) -> None:
+    item, profile, engines, results = setup
+    stage = SubtitlesStage(results, dict.fromkeys(ENGINES, engines), CLEANUP)
+    plan = stage.plan(item, profile)
+    assert isinstance(plan.plan, SubtitlePlan)
+    phases = subtitle_phases(plan.plan)
+    assert phases == ("reference", "clean", "sync")
+    seen: list[float] = []
+    assert stage.apply(plan, None, seen.append).ok
+    # Each of the three phases is a third of the step: the reference read, the cleaning, the sync.
+    assert seen == [pytest.approx(x) for x in (1 / 3, 2 / 3, 1.0)]
+    assert engines.ran == {StepKind.READ: 1, StepKind.CLEAN: 1, StepKind.SYNC: 1}
+
+
+def test_the_reference_is_kept_by_the_rules_that_read_it(setup) -> None:
+    item, profile, engines, results = setup
+    work = SubtitlesStage(results, dict.fromkeys(ENGINES, engines), CLEANUP).plan(item, profile).plan
+    assert isinstance(work, SubtitlePlan)
+    assert results.reference(work, "a") != results.reference(work, "b")
+    assert results.reference(work) == results.reference(work, "")
+
+
+def test_the_pipeline_has_an_engine_for_each_program_it_found(tmp_path: Path) -> None:
+    def reads(programs: Programs, tesseract: Path | None) -> tuple[StepKind, ...]:
+        (subtitles,) = (s for s in pipeline(programs, None, tesseract=tesseract) if isinstance(s, SubtitlesStage))
+        return subtitles.available
+
+    assert StepKind.READ not in reads(Programs(), None)
+    assert StepKind.READ in reads(Programs(mkvextract=Path("mkvextract")), None)
+    assert StepKind.OCR not in reads(Programs(mkvextract=Path("mkvextract")), None)
+    # Tesseract alone cannot take a track out of the video.
+    assert StepKind.OCR not in reads(Programs(), tmp_path / "tesseract")
+    assert StepKind.OCR in reads(Programs(mkvextract=Path("mkvextract")), tmp_path / "tesseract")
+
+
+def test_the_progress_of_a_file_never_goes_back_across_its_subtitles(setup) -> None:
+    item, profile, _engines, results = setup
+
+    class Translating(Engines):
+        def __call__(self, work: StepWork, cancel: threading.Event | None) -> None:
+            if work.step.kind is StepKind.TRANSLATE:
+                write_cues(work.output, [Cue(1.0, 2.0, "Hallo")])
+            else:
+                super().__call__(work, cancel)
+
+    both = profile.with_options("subtitles", replace(WORK, languages={"de": Wanted.WANTED}))
+    stage = SubtitlesStage(results, dict.fromkeys(StepKind, Translating()), CLEANUP)
+    plan = stage.plan(item, both)
+    assert isinstance(plan.plan, SubtitlePlan)
+    assert len(plan.plan.finished) == 2  # the paired file, synced, and a translation
+    seen: list[float] = []
+    stage.apply(plan, None, seen.append)
+    assert seen == sorted(seen)
+    assert seen[-1] == pytest.approx(1.0)

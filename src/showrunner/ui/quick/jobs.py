@@ -20,7 +20,7 @@ from typing import Any
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 
 from showrunner.app.jobs.run import JobResult, Read, StepRecord
-from showrunner.app.jobs.stages import APPROVAL, MISSED, NOT_AVAILABLE, Stage, reference_phase
+from showrunner.app.jobs.stages import MISSED, NOT_AVAILABLE, SUBTITLE_PHASES, Stage, subtitle_phases
 from showrunner.app.jobs.store import FINAL, JobStore, JobSummary, StepState, StoredJob, UnresumableJobError
 from showrunner.app.jobs.worker import JobRunner
 from showrunner.stages.metadata.apply import ApplyResult
@@ -34,9 +34,8 @@ _log = logging.getLogger(__name__)
 # The steps a file goes through inside one stage's step, as the drawer names them. A remux is the mux stage's own
 # order: the original moves only after the new file passed its check.
 PHASES: dict[str, tuple[str, ...]] = {"mux": ("write", "check", "original", "rename"), "metadata": ("edit",)}
-# The subtitle step's phases in the order they run; a file shows the ones its plan holds. "beside" writes the
-# subtitles that go beside the video, once their work is done.
-SUBTITLE_PHASES = ("reference", "ocr", "read", "translate", "clean", "sync", "resplit", "approval", "beside")
+# The phases that show how far they are, in percent, while they run.
+_PERCENT_PHASES = ("write", "ocr")
 _BESIDE_FAILURES = {failure.value for failure in BesideFailure}
 # Where a remux stopped, by the phase that failed.
 _FAILED_PHASE = {
@@ -87,19 +86,6 @@ def mux_text(plan: MuxPlan | None, result: MuxResult) -> list[str]:
     lines = [tr(f"jobs.failure.{result.failure.value}", detail=result.detail)]
     lines += [check_text(problem) for problem in result.problems]
     return lines
-
-
-def subtitle_phases(plan: SubtitlePlan) -> tuple[str, ...]:
-    """The phases of a file's subtitle step: reading its reference, each kind of work its finished subtitles take,
-    then the approval when the file waits for one."""
-    held = {step.kind.value for finished in plan.finished for step in finished.steps}
-    if plan.reference is not None and plan.reference.step is not None:
-        held.add(reference_phase(plan.reference.step))
-    if plan.waits:
-        held.add(APPROVAL)
-    if plan.written:
-        held.add("beside")
-    return tuple(name for name in SUBTITLE_PHASES if name in held)
 
 
 def beside_text(plan: SubtitlePlan) -> list[str]:
@@ -319,6 +305,9 @@ class JobProgress:
             # A remux reports its progress while it writes; once written, it is checked, and the original moves only
             # after that, which takes a moment.
             at = 1 if len(names) > 1 and fraction >= 1.0 else 0
+            if isinstance(work, SubtitlePlan):
+                # The step reports its fraction over its phases, each a share of it.
+                at = min(int(fraction * len(names)), len(names) - 1)
             marks = ["done"] * at + ["active" if self.running else "stopped"] + ["waiting"] * (len(names) - at - 1)
         elif state is StepState.FAILED:
             failed = _FAILED_PHASE.get(detail.failure, names[0]) if isinstance(detail, MuxResult) else names[0]
@@ -333,12 +322,16 @@ class JobProgress:
             marks = ["skipped"] * len(names)
         else:
             marks = ["waiting"] * len(names)
-        percent = round(self.fractions.get(position, 0.0) * 100)
+        fraction = self.fractions.get(position, 0.0)
+        percent = round(fraction * 100)
+        if isinstance(work, SubtitlePlan):
+            # The share of the phase itself that is done, for the phases that show one.
+            percent = round((fraction * len(names) - min(int(fraction * len(names)), len(names) - 1)) * 100)
         return [
             {
                 "label": tr(f"jobs.phase.{name}"),
                 "state": mark,
-                "percent": percent if mark == "active" and name == "write" else -1,
+                "percent": percent if mark == "active" and name in _PERCENT_PHASES else -1,
             }
             for name, mark in zip(names, marks, strict=True)
         ]

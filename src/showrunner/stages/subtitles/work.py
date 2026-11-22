@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from showrunner.core.language import Language
@@ -23,8 +23,10 @@ class StepWork:
     language: (
         Language | None
     )  # of the finished subtitle: the rules to clean it with, the legacy code page it is read in
-    track: Track | None  # for a step that reads one; no engine reads it yet
+    track: Track | None  # for a step that reads one out of the video
     output: Path  # where the step writes its result, in the format of its extension
+    # Takes the fraction of the step done, from 0 to 1, for a step that takes long enough to show it.
+    progress: Callable[[float], None] | None = field(default=None, compare=False)
 
 
 # Runs one step, writing `output`; raises on failure. Called on a background thread.

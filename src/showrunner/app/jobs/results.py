@@ -48,10 +48,11 @@ class ResultStore:
         """The result that goes into the new file: the last step's."""
         return self.output(plan, finished, len(finished.steps) - 1)
 
-    def reference(self, plan: SubtitlePlan) -> Path:
-        """Where the file's reference is kept once read, as text."""
+    def reference(self, plan: SubtitlePlan, rules: str = "") -> Path:
+        """Where the file's reference is kept once read, as text. `rules` is the fingerprint of the rules the reading
+        applies (the OCR fixes), so a changed rule reads it again."""
         track = plan.reference.track if plan.reference else None
-        return self.root / _digest((str(plan.video), track.id if track else None)) / "reference.srt"
+        return self.root / _digest((str(plan.video), track.id if track else None, rules)) / "reference.srt"
 
     def kept(self, output: Path, inputs: Sequence[Path]) -> bool:
         """Whether `output` is there and was made from `inputs` as they are now."""

@@ -4,45 +4,17 @@ engine can do is left out and said so, in the tab and in Review."""
 
 from __future__ import annotations
 
-import threading
-from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from typing import Any
 
-import pytest
-from PySide6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
 
-from showrunner.app.dependencies.service import mkvpropedit_from, programs_from
-from showrunner.app.jobs.stages import Stage, pipeline
 from showrunner.app.library.library import Library
 from showrunner.core.track import TrackKind
-from showrunner.stages.subtitles import StepKind
-from showrunner.stages.subtitles.work import StepWork
 from showrunner.ui.quick.window import WindowController
-from showrunner.ui.quick.workspace import Statuses
 
-from .conftest import neutral_library, program_statuses
+from .conftest import neutral_library
 from .test_choices import open_season, settle
-
-# Every kind of work but the wait for approval, as the engines of later versions will make them.
-ENGINES = tuple(kind for kind in StepKind if kind is not StepKind.APPROVAL)
-
-
-def never(work: StepWork, cancel: threading.Event | None) -> None:
-    raise AssertionError("these tests plan subtitle work, they never run it")
-
-
-def with_engines(statuses: Statuses) -> Sequence[Stage]:
-    return pipeline(programs_from(statuses), mkvpropedit_from(statuses), runners=dict.fromkeys(ENGINES, never))
-
-
-@pytest.fixture
-def engines(qapp: QApplication) -> Iterator[WindowController]:
-    """A window controller whose pipeline has an engine for every kind of work but approval."""
-    controller = WindowController(statuses=program_statuses, make_pipeline=with_engines)
-    yield controller
-    controller.deleteLater()
 
 
 def row(controller: WindowController, key: str) -> dict[str, Any]:

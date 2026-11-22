@@ -95,6 +95,12 @@ def mkvpropedit_from(statuses: dict[str, DependencyStatus]) -> Path | None:
     return status.executable("mkvpropedit") if status is not None and status.state is State.FOUND else None
 
 
+def tesseract_from(statuses: dict[str, DependencyStatus]) -> Path | None:
+    """The OCR program; None when it is missing or outdated."""
+    status = statuses.get("tesseract")
+    return status.executable("tesseract") if status is not None and status.state is State.FOUND else None
+
+
 def probe_file(path: Path, programs: Programs | None = None, cancel: threading.Event | None = None) -> MediaFile:
     """Read one file. Callers that read many files pass `programs` once instead of detecting for each."""
     return probe(path, programs or media_programs(cancel), cancel=cancel)

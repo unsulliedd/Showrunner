@@ -22,6 +22,7 @@ from showrunner.stages.subtitles.beside import is_result, language_name, new_fil
 from showrunner.stages.subtitles.options import Approval, Lines, Output, ReferenceKind, SubtitlesOptions, SyncEngine
 from showrunner.stages.tracks import KindTest, PlanRefused, TrackMatch, TracksOptions, matches, plan_tracks, stand_in
 from showrunner.tools.cleanit import RuleSet
+from showrunner.tools.ocr import tesseract_code
 
 PGS = "S_HDMV/PGS"  # the picture format OCR reads
 # The language Automatic prefers for the reference: translation models translate best from English.
@@ -77,8 +78,8 @@ class ReferenceTrack:
     """What a file's sync, re-split and translation work against."""
 
     track: Track | None  # None: the audio
-    # The place chose a group this file has no track of, so Automatic found this one. Not shown yet; the Reference
-    # row is to name such files.
+    # The place chose a group this file has no track of, so Automatic found this one; the Reference row and Review name
+    # such files.
     fallback: bool = False
 
     @property
@@ -156,6 +157,7 @@ def plan_subtitles(
     prefer: str = DEFAULT_REFERENCE_LANGUAGE,
     available: Collection[StepKind] = frozenset(StepKind),
     rule_sets: Mapping[str, RuleSet] | None = None,
+    ocr_languages: Collection[str] | None = None,
 ) -> SubtitlePlan:
     """The finished subtitles the place's options ask for in this file. Into the video, the paired files are the ones
     the track plan adds, so a run that leaves the track choices out leaves their subtitle work out too; beside the
@@ -166,7 +168,8 @@ def plan_subtitles(
     again before it writes. `prefer` is the language
     Automatic looks for first in the reference. `available` are the kinds of work that can run: a finished subtitle
     that needs another one is left out. `rule_sets` are the cleanup sets that exist, by name: a subtitle is cleaned with
-    the chosen sets whose rules cover its language."""
+    the chosen sets whose rules cover its language. `ocr_languages` are the Tesseract models installed, so a picture
+    reference in a language with none cannot be read; None leaves that unchecked."""
     rule_sets = rule_sets or {}
     video = item.file.path
     if options == _NOTHING:
@@ -208,7 +211,7 @@ def plan_subtitles(
                     Source.EMBEDDED,
                     kept.track.language,
                     steps,
-                    _track_format(kept.track),
+                    track_format(kept.track),
                     track=kept.track,
                     waits=every,
                 )
@@ -219,7 +222,7 @@ def plan_subtitles(
                 add_paired(paired)
     # A translation takes the reference's timing, so it is not synced either.
     absent = [tag for tag in options.wanted() if not _present(item, tag)]
-    reference = _reference(item, options, prefer) if absent or sync else None
+    reference = choose_reference(item, options, prefer, tracks.flags_from_names) if absent or sync else None
     for tag in absent:
         if (language := Language.parse(tag)) is not None:
             # The reference is cleaned for its own language before it is translated, the translation for its own.
@@ -249,7 +252,7 @@ def plan_subtitles(
             taken.add(key)
         if reasons:
             cannot.append(replace(finished, cannot=reasons))
-        elif missing := _missing(finished, reference, available):
+        elif missing := _missing(finished, reference, available, ocr_languages):
             left_out.append(replace(finished, missing=missing))
         else:
             ready.append(finished)
@@ -307,30 +310,50 @@ def _reasons(finished: FinishedSubtitle, reference: ReferenceTrack | None) -> tu
 
 
 def _missing(
-    finished: FinishedSubtitle, reference: ReferenceTrack | None, available: Collection[StepKind]
+    finished: FinishedSubtitle,
+    reference: ReferenceTrack | None,
+    available: Collection[StepKind],
+    ocr_languages: Collection[str] | None,
 ) -> tuple[StepKind, ...]:
     """The kinds of work the finished subtitle needs that are not available: its steps, the reading of the reference
-    it works against, and the wait for approval."""
+    it works against, and the wait for approval. Reading a picture reference is not available either where Tesseract
+    has no model for its language."""
     needed = {step.kind for step in finished.steps}
+    lacking: set[StepKind] = set()
     if finished.uses_reference and reference is not None and (read := reference.step) is not None:
         needed.add(read.kind)
+        if (
+            read.kind is StepKind.OCR
+            and ocr_languages is not None
+            and reference.track is not None
+            and tesseract_code(reference.track.language) not in ocr_languages
+        ):
+            lacking.add(StepKind.OCR)
     if finished.waits:
         needed.add(StepKind.APPROVAL)
-    return tuple(kind for kind in StepKind if kind in needed and kind not in available)
+    return tuple(kind for kind in StepKind if kind in needed and (kind not in available or kind in lacking))
 
 
-def _reference(item: MediaItem, options: SubtitlesOptions, prefer: str) -> ReferenceTrack:
+def choose_reference(
+    item: MediaItem,
+    options: SubtitlesOptions,
+    prefer: str = DEFAULT_REFERENCE_LANGUAGE,
+    flags_from_names: bool = True,
+) -> ReferenceTrack:
+    """The track a file's sync, re-split and translation work against: the place's choice where the file has a track of
+    that group, else Automatic's, which is a track in the `prefer` language first, a text track before a picture one.
+    The flags a track's name implies count as set when `flags_from_names`, as in the groups of the Tracks tab."""
     chosen = options.reference
     if chosen.kind is ReferenceKind.AUDIO:
         return ReferenceTrack(None)
     subtitles = item.file.subtitle_tracks
-    chosen_track = next((t for t in subtitles if matches(chosen.track, t)), None)
+    chosen_track = next((t for t in subtitles if matches(chosen.track, t, flags_from_name=flags_from_names)), None)
     if chosen.kind is ReferenceKind.TRACK and chosen_track is not None:
         return ReferenceTrack(chosen_track)
     preferred = TrackMatch(kind=KindTest.SUBTITLE, languages=[prefer])
     picture = [t for t in subtitles if t.codec == PGS]
     text = [t for t in subtitles if _text(t)]
-    in_language = [t for t in (*text, *picture) if matches(preferred, t)]
+    in_language = [t for t in (*text, *picture) if matches(preferred, t, flags_from_name=flags_from_names)]
     track = next(iter((*in_language, *text, *picture)), None)
     return ReferenceTrack(track, fallback=chosen.kind is ReferenceKind.TRACK)
 
@@ -339,7 +362,8 @@ def _text(track: Track) -> bool:
     return track.kind is TrackKind.SUBTITLE and track.subtitle is not None and track.subtitle.text_based
 
 
-def _track_format(track: Track) -> str:
+def track_format(track: Track) -> str:
+    """The extension a text track has outside the video: what mkvextract writes it as."""
     return _TEXT_FORMATS.get(track.codec.upper(), "srt")
 
 

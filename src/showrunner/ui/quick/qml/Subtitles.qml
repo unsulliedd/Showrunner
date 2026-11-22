@@ -202,13 +202,65 @@ Item {
                             }
                         }
 
-                        UiText {
+                        ColumnLayout {
                             visible: row.modelData.text !== undefined
                             Layout.fillWidth: true
-                            text: row.modelData.text ?? ""
-                            color: row.modelData.received ? Theme.muted : Theme.ink
-                            font.pixelSize: Theme.text_sm
-                            elide: Text.ElideRight
+                            spacing: 0
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: Theme.space_sm
+
+                                UiText {
+                                    objectName: "subtitleValue_" + row.modelData.key
+                                    Layout.fillWidth: true
+                                    text: row.modelData.text ?? ""
+                                    color: row.modelData.received ? Theme.muted : Theme.ink
+                                    font.pixelSize: Theme.text_sm
+                                    elide: Text.ElideRight
+                                }
+
+                                ActionButton {
+                                    id: pickReference
+
+                                    objectName: "referencePick"
+                                    visible: row.modelData.pick !== undefined
+                                    kind: "ghost"
+                                    size: Theme.row_sm
+                                    iconName: "down"
+                                    text: Strings.t("subtitles.reference.pick")
+                                    enabled: !app.locked
+                                    onClicked: referenceMenu.popup(pickReference, 0, pickReference.height)
+                                }
+
+                                ActionMenu {
+                                    id: referenceMenu
+
+                                    actions: row.modelData.pick ?? []
+                                    onPicked: key => Qt.callLater(() => app.pick_reference(key))
+                                }
+                            }
+
+                            // What each file works against, and the files the chosen track is missing in.
+                            UiText {
+                                objectName: "referenceFound"
+                                Layout.fillWidth: true
+                                visible: (row.modelData.found ?? "") !== ""
+                                text: row.modelData.found ?? ""
+                                color: Theme.faint
+                                font.pixelSize: Theme.text_xs
+                                elide: Text.ElideRight
+                            }
+
+                            UiText {
+                                objectName: "referenceFallbacks"
+                                Layout.fillWidth: true
+                                visible: (row.modelData.fallbacks ?? "") !== ""
+                                text: row.modelData.fallbacks ?? ""
+                                color: Theme.change
+                                font.pixelSize: Theme.text_xs
+                                elide: Text.ElideRight
+                            }
                         }
 
                         Item {
@@ -374,6 +426,14 @@ Item {
                                             font.pixelSize: Theme.text_sm
                                         }
                                     }
+                                }
+
+                                UiText {
+                                    objectName: "fileReference_" + file.index
+                                    visible: (file.modelData.reference ?? "") !== ""
+                                    text: file.modelData.reference ?? ""
+                                    color: Theme.faint
+                                    font.pixelSize: Theme.text_xs
                                 }
                             }
                         }

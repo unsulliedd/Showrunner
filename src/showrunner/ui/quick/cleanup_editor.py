@@ -88,6 +88,10 @@ class CleanupEditor(QObject):
         self._built = None
         self.changed.emit()
 
+    def refresh(self) -> None:
+        """The loaded subtitle changed (a track was read out of the video): the test is made again."""
+        self._changed()
+
     @Slot(str)
     def open(self, name: str = "") -> None:
         """Open on the set `name`, or the first set when it is empty or gone."""
