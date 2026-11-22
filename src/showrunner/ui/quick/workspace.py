@@ -44,9 +44,9 @@ _log = logging.getLogger(__name__)
 WORKSPACE_TABS: tuple[tuple[str, str, bool], ...] = (
     ("overview", "list", False),
     ("tracks", "audio", False),
+    ("subtitles", "subs", False),
     ("names", "names", False),
     ("review", "eye", False),
-    ("subtitles", "subs", True),
     ("artwork", "image", True),
     ("chapters", "chapters", True),
 )
@@ -56,6 +56,7 @@ _PLACE_SIGNALS = {"overview": "overview_changed", "tracks": "matrix_changed", "r
 SIDE_PANELS: dict[str, tuple[str, ...]] = {
     "overview": ("inspector", "chapters", "attachments"),
     "tracks": ("rules", "inspector"),
+    "subtitles": ("inspector",),
     "names": ("tokens", "inspector"),
     "review": (),
 }
@@ -280,6 +281,7 @@ class Workspace(QObject):
         counts = self.shown.get("counts", {})
         per_place = {
             "tracks": counts.get("tracks", 0),
+            "subtitles": counts.get("subtitles", 0),
             "names": counts.get("names", 0),
             "review": self.change_count,
         }
@@ -494,7 +496,7 @@ class Workspace(QObject):
             self.view = BatchView.build(
                 self.items, tracks, files, self._failures(), self._received(), self._file_rules()
             )
-            counts = dict.fromkeys(("tracks", "names"), 0)
+            counts = dict.fromkeys(("tracks", "subtitles", "names"), 0)
             implied = 0
             for file in files:
                 if file.item.file.path not in self.excluded_files:

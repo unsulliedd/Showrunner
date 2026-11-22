@@ -9,6 +9,7 @@ ones, skipped this time only.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,6 +26,7 @@ from showrunner.core.track import Track, TrackFlags, TrackKind
 from showrunner.stages.metadata import MetadataPlan
 from showrunner.stages.metadata.plan import FLAG_FIELDS
 from showrunner.stages.mux.options import MuxOptions
+from showrunner.stages.subtitles import FinishedSubtitle, StepKind, SubtitlePlan
 from showrunner.stages.tracks import NO_LANGUAGE, TrackPlan, TracksOptions
 from showrunner.tools.mkvtoolnix.propedit import Property
 from showrunner.ui.i18n.catalog import tr, tr_plural
@@ -46,8 +48,10 @@ from showrunner.ui.quick.tracks import (
 LINES: dict[ChangeGroup, tuple[str, ...]] = {
     ChangeGroup.TRACKS: ("new_file", "order", "flags"),
     ChangeGroup.NAMES: ("titles", "names", "languages", "implied"),
+    ChangeGroup.SUBTITLES: ("subtitles", "subtitle_file"),
 }
-GROUP_ICONS = {ChangeGroup.TRACKS: "audio", ChangeGroup.NAMES: "names"}
+GROUP_ICONS = {ChangeGroup.TRACKS: "audio", ChangeGroup.NAMES: "names", ChangeGroup.SUBTITLES: "subs"}
+_SINGLE = ("new_file", "order", "subtitle_file")  # kinds of change a file has at most one of
 FILTERS = ("all", "look")
 # A file's state in Review: in the run, in it but needing a look, unticked (skipped this time), or excluded.
 OUT_STATES = ("out", "excluded")
@@ -80,8 +84,8 @@ class ReviewInput:
 
 def parts(file: FilePreview | None) -> dict[str, int]:
     """A file's changes by kind: the new file, its track order and the flags the rules move (Tracks and new files),
-    then titles, track names, languages and the flags a name implies (Names and flags). They add up to
-    `count_changes`."""
+    then titles, track names, languages and the flags a name implies (Names and flags), then the finished
+    subtitles and the new file only they ask for (Subtitles). They add up to `count_changes`."""
     if file is None:
         return dict.fromkeys((key for keys in LINES.values() for key in keys), 0)
     return dict(file_parts(file))
@@ -131,19 +135,58 @@ def review(given: ReviewInput) -> dict[str, object]:
     changes, files = totals(given)
     run_view = BatchView.build(given.items, given.tracks, given.run, given.failures)
     full_view = BatchView.build(given.items, given.tracks, given.full, given.failures)
-    rows = [_row(given, item, run_view, full_view, run_parts[item.file.path]) for item in given.items]
+    shown = _shown_groups(given, full_parts)
+    rows = [_row(given, item, run_view, full_view, run_parts[item.file.path], shown) for item in given.items]
     counts = {"all": len(rows), "look": sum(r["state"] == "look" for r in rows)}
     stays = ([tr("review.stays.file_names")] if not given.mux.suffix else []) + [tr(f"review.stays.{k}") for k in STAYS]
+    if ChangeGroup.SUBTITLES not in shown:
+        stays.insert(0, tr("review.stays.subtitles"))
     return {
         "count": changes,
         "files": files,
         "title": _changes_in(changes, files) if changes else tr("review.nothing"),
-        "groups": [_group(given, group, included, writing, run_parts, full_parts) for group in ChangeGroup],
+        "groups": [_group(given, group, included, writing, run_parts, full_parts) for group in shown],
         "stays": stays,
         "filters": [{"key": key, "label": tr(f"review.filter.{key}"), "count": counts[key]} for key in FILTERS],
         "rows": _with_seasons(given.items, [r for r in rows if _shown(given.filter, str(r["state"]))]),
         "apply_text": _apply_text(given, full_parts, changes, files) if changes else tr("review.apply_none"),
     }
+
+
+def missing_phases(finished: FinishedSubtitle) -> list[str]:
+    """The Jobs phases of the work a left-out subtitle misses, its own steps first: "sync" says more than the reading
+    of the reference it also needs. A reading that is not one of its steps is the reference's."""
+    own = {step.kind for step in finished.steps}
+    phases = [kind.value for kind in finished.missing if kind in own]
+    phases += ["reference" if kind is StepKind.READ else kind.value for kind in finished.missing if kind not in own]
+    return phases
+
+
+def left_out(files: Sequence[FilePreview]) -> dict[str, int]:
+    """How many finished subtitles the files' plans leave out for work this version cannot do, by the main phase each
+    misses."""
+    return dict(
+        Counter(
+            missing_phases(finished)[0]
+            for file in files
+            if (stage := file.plan_for("subtitles")) is not None and isinstance(stage.plan, SubtitlePlan)
+            for finished in stage.plan.left_out
+        )
+    )
+
+
+def unavailable_text(phase: str, count: int) -> str:
+    """ "Sync is not available in this version yet, so 9 subtitles are left out." """
+    return tr_plural("review.subtitles.unavailable", count, step=tr(f"jobs.phase.{phase}"))
+
+
+def _shown_groups(given: ReviewInput, full_parts: dict[Path, dict[str, int]]) -> list[ChangeGroup]:
+    """The groups Review shows a card for: Subtitles only where it plans work, is unticked or is set otherwise in a
+    place inside, since a batch without subtitle settings has it under "Stays as it is" instead."""
+    work = any(_group_count(full_parts[i.file.path], ChangeGroup.SUBTITLES) for i in given.items)
+    held = given.held_inside.get(ChangeGroup.SUBTITLES, 0)
+    keep = work or held or ChangeGroup.SUBTITLES in given.groups_out or bool(left_out(given.full))
+    return [group for group in ChangeGroup if keep or group is not ChangeGroup.SUBTITLES]
 
 
 def _with_seasons(items: Sequence[MediaItem], rows: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -236,6 +279,8 @@ def _problems(given: ReviewInput, group: ChangeGroup) -> list[str]:
     """Why a group plans nothing or less than asked, worded, with a missing program first. What blocks a stage only
     in files whose own options differ from the open place's follows, naming those files."""
     found = [tr(f"review.program.{group.value}")] if given.mkvtoolnix_missing else []
+    if group is ChangeGroup.SUBTITLES:
+        found += [unavailable_text(phase, count) for phase, count in left_out(given.full).items()]
     shown = _blocked(given.blocks, given.mux, group)
     found += shown
     by_options: dict[int, tuple[Profile, list[MediaItem]]] = {}
@@ -260,7 +305,7 @@ def _blocked(blocks: Mapping[str, StageBlock], mux: MuxOptions, group: ChangeGro
             found.append(tr("review.blocked.rules", rules=tr("common.list_separator").join(map(str, numbers))))
         if block := blocks.get("mux"):
             found += [tr(f"review.blocked.{name.value}", folder=mux.keep_folder) for name in block.names]
-    else:
+    elif group is ChangeGroup.NAMES:
         found += blocked_lines(blocks.get("metadata"))
     return found
 
@@ -269,7 +314,12 @@ def _blocked(blocks: Mapping[str, StageBlock], mux: MuxOptions, group: ChangeGro
 
 
 def _row(
-    given: ReviewInput, item: MediaItem, run_view: BatchView, full_view: BatchView, found: dict[str, int]
+    given: ReviewInput,
+    item: MediaItem,
+    run_view: BatchView,
+    full_view: BatchView,
+    found: dict[str, int],
+    groups: Sequence[ChangeGroup],
 ) -> dict[str, object]:
     path = item.file.path
     run_file, full_file = run_view.file(item), full_view.file(item)
@@ -309,7 +359,7 @@ def _row(
                 "on": _group_count(found, group) > 0 and state not in OUT_STATES,
                 "out": _group_count(every, group) > 0 and (group in given.groups_out or state in OUT_STATES),
             }
-            for group in ChangeGroup
+            for group in groups
         ],
         "detail": _detail(given, item, run_file, full_file),
     }
@@ -318,7 +368,7 @@ def _row(
 def _summary(found: dict[str, int]) -> str:
     """ "3 changes · new file, 2 flags"."""
     what = [
-        tr(f"review.part.{key}") if key in ("new_file", "order") else tr_plural(f"review.part.{key}", n)
+        tr(f"review.part.{key}") if key in _SINGLE else tr_plural(f"review.part.{key}", n)
         for key, n in found.items()
         if n
     ]

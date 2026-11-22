@@ -225,6 +225,11 @@ Panel {
                 visible: workspace.place === "tracks"
             }
 
+            Subtitles {
+                anchors.fill: parent
+                visible: workspace.place === "subtitles"
+            }
+
             Names {
                 anchors.fill: parent
                 visible: workspace.place === "names"

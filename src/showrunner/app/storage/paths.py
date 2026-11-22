@@ -28,6 +28,11 @@ def settings_path() -> Path:
     return data_dir() / "settings.json"
 
 
+def results_dir() -> Path:
+    """Where the results of slow subtitle work are kept for a resume."""
+    return data_dir() / "subtitles"
+
+
 def theme_path() -> Path:
     return data_dir() / "theme.json"
 

@@ -31,6 +31,7 @@ from showrunner.core.naming.names import channel_layout, codec_display
 from showrunner.core.track import ObjectAudio, Track, TrackFlags, TrackKind
 from showrunner.stages.metadata import MetadataPlan
 from showrunner.stages.mux.options import Original
+from showrunner.stages.subtitles import SubtitlePlan
 from showrunner.stages.tracks import (
     NO_LANGUAGE,
     FlagShape,
@@ -735,6 +736,11 @@ class BatchView:
         stage = file.plan_for("tracks") if file is not None else None
         if stage is not None and isinstance(stage.plan, PlanRefused):
             return refused_text(stage.plan)
+        subtitles = file.plan_for("subtitles") if file is not None else None
+        if subtitles is not None and isinstance(subtitles.plan, SubtitlePlan) and subtitles.plan.cannot:
+            cannot = subtitles.plan.cannot[0]
+            reason = tr(f"subtitles.cannot.{cannot.cannot[0].value}")
+            return tr("subtitles.warning.cannot", language=code(cannot.language), reason=reason)
         if file is not None and file.outcome is FileOutcome.NEEDS_REMUX:
             return tr("tracks.warning.needs_remux")
         if file is not None and file.outcome is FileOutcome.UNWRITTEN:

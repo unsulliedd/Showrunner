@@ -21,7 +21,7 @@ from showrunner.ui.quick.workspace import Workspace
 _log = logging.getLogger(__name__)
 
 # The fields a view marks with where their value comes from, each beside its control. The track rules and the paired
-# files are marked on their chips instead.
+# files are marked on their chips instead, the wanted languages and rule sets item by item.
 _MARKED_FIELDS: tuple[tuple[str, str], ...] = (
     *(("naming", name) for name in (TITLE_TEMPLATE, *TRACK_TEMPLATES)),
     *(("naming", name.removesuffix("_template") + "_space") for name in (TITLE_TEMPLATE, *TRACK_TEMPLATES)),
@@ -33,6 +33,7 @@ _MARKED_FIELDS: tuple[tuple[str, str], ...] = (
     ("mux", "original"),
     ("tracks", "order"),
     ("tracks", "flags_from_names"),
+    *(("subtitles", name) for name in ("reference", "sync", "lines", "model", "approval")),
 )
 
 

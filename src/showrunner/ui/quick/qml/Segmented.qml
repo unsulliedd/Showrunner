@@ -14,6 +14,15 @@ Rectangle {
 
     signal picked(string key)
 
+    // Segments share the width evenly, so every one gets room for the longest label; without this a group that
+    // does not fill its row has no width and its segments draw over one another.
+    implicitWidth: {
+        let widest = 0
+        for (let i = 0; i < row.children.length; i++)
+            widest = Math.max(widest, row.children[i].implicitContentWidth ?? 0)
+        const count = model.length
+        return count * (widest + 2 * Theme.space_md) + (count - 1) * row.spacing + 2 * row.anchors.margins
+    }
     implicitHeight: Theme.row_lg
     radius: Theme.radius_md
     color: Theme.well

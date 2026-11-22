@@ -4,17 +4,21 @@ the classes here only adapt them."""
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import ClassVar, Protocol
 
 from showrunner.app.jobs.hashing import FileStamp, stamp
+from showrunner.app.jobs.results import ResultStore
 from showrunner.app.profiles.profile import Profile
+from showrunner.app.storage.paths import results_dir
 from showrunner.core.media import MediaItem
 from showrunner.stages.metadata import MetadataPlan, MetadataRefused, apply_metadata, plan_metadata
 from showrunner.stages.mux import Failure, MuxPlan, MuxRefused, MuxResult, apply_mux, plan_mux, resume_mux
+from showrunner.stages.subtitles import Step, StepKind, SubtitlePlan, plan_subtitles
+from showrunner.stages.subtitles.work import Runner, StepWork
 from showrunner.stages.tracks import PlanRefused, plan_tracks
 from showrunner.tools.probe import Programs
 from showrunner.tools.recycle import recycle
@@ -93,6 +97,32 @@ class Stage(Protocol):
 RECHECK = Resumed(Recovery.RECHECK)
 # The message of a metadata step whose edits the file does not show when read back: "missed: <missed>/<planned>".
 MISSED = "missed"
+# The message of a subtitle step whose engine is missing at Apply: "not-available: <phase>", the phase being a step
+# kind, `reference_phase` for the reference, or "approval". The plan leaves out work no engine can do, so this is said
+# only when an engine went missing between the plan and the run.
+NOT_AVAILABLE = "not-available"
+APPROVAL = StepKind.APPROVAL.value
+# The engines this version has, by the kind of work they do; an engine registers here. The pipeline's stages plan only
+# the work these can do, so a missing engine leaves its subtitles out and nothing else.
+RUNNERS: dict[StepKind, Runner] = {}
+
+
+def available(runners: Mapping[StepKind, Runner]) -> tuple[StepKind, ...]:
+    """The kinds of work `runners` can do, in the order they run."""
+    return tuple(kind for kind in StepKind if kind in runners)
+
+
+def reference_phase(step: Step) -> str:
+    """How a reference read is named in a step's message and the drawer: apart from reading a track to clean it."""
+    return "ocr" if step.kind is StepKind.OCR else "reference"
+
+
+def _results() -> ResultStore:
+    return ResultStore(results_dir())
+
+
+def subtitle_plan(item: MediaItem, profile: Profile, can_do: Sequence[StepKind]) -> SubtitlePlan:
+    return plan_subtitles(item, profile.for_stage("subtitles"), profile.for_stage("tracks"), available=can_do)
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +160,7 @@ class MetadataStage:
     mkvpropedit: Path
     programs: Programs  # for the read after the edit
     source: str = ""  # the `{source}` token for the batch
+    available: tuple[StepKind, ...] = ()  # the subtitle work that can run, which may ask for a new file
 
     id: ClassVar[str] = "metadata"
     remuxes: ClassVar[bool] = False
@@ -141,6 +172,7 @@ class MetadataStage:
             profile.for_stage("naming"),
             profile.for_stage("tracks"),
             source=self.source,
+            remux=bool(subtitle_plan(item, profile, self.available).finished),
         )
         if isinstance(result, MetadataRefused):
             return StagePlan(self.id, PlanState.REFUSED, result)
@@ -168,6 +200,8 @@ class MuxStage:
     mkvmerge: Path
     programs: Programs  # for the read that checks the new file
     source: str = ""  # the `{source}` token, for the names Metadata gives
+    results: ResultStore = field(default_factory=_results)  # where the finished subtitles it adds are kept
+    available: tuple[StepKind, ...] = ()  # the subtitle work that can run, whose results it adds
     # Not a setting of the batch, so not part of the stamp; tests put a stand-in for the shell here.
     recycle: Callable[[Sequence[Path]], None] = field(default=recycle, repr=False, compare=False)
 
@@ -175,6 +209,7 @@ class MuxStage:
     remuxes: ClassVar[bool] = True
 
     def plan(self, item: MediaItem, profile: Profile) -> StagePlan:
+        subtitles = subtitle_plan(item, profile, self.available)
         result = plan_mux(
             item,
             profile.for_stage(self.id),
@@ -182,6 +217,7 @@ class MuxStage:
             profile.for_stage("metadata"),
             profile.for_stage("naming"),
             source=self.source,
+            finished=[(finished, self.results.final(subtitles, finished)) for finished in subtitles.finished],
         )
         if result is None:
             return StagePlan(self.id, PlanState.UNCHANGED)
@@ -215,6 +251,86 @@ class MuxStage:
         return Resumed(Recovery.SETTLED, _mux_step(plan.plan, result))
 
 
+@dataclass(frozen=True, slots=True)
+class SubtitlesStage:
+    """The slow subtitle work of a file (reading the reference, translation, cleanup, sync, re-split), each result kept
+    for a resume; the finished subtitles then go into the new file through Mux. It writes nothing beside the video.
+
+    `runners` carry out the steps, by kind, and say what can run (`available`): a finished subtitle that needs other
+    work is left out of the plan, and the file's other changes go on without it."""
+
+    results: ResultStore = field(default_factory=_results)
+    runners: Mapping[StepKind, Runner] = field(default_factory=dict, repr=False, compare=False)
+    # Part of the stamp of a preview, unlike the runners themselves: what can run decides the plan.
+    available: tuple[StepKind, ...] = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "available", available(self.runners))
+
+    id: ClassVar[str] = "subtitles"
+    remuxes: ClassVar[bool] = False
+
+    def plan(self, item: MediaItem, profile: Profile) -> StagePlan:
+        result = subtitle_plan(item, profile, self.available)
+        if result.finished:
+            return StagePlan(self.id, PlanState.CHANGES, result, writes=True, needs_remux=True)
+        return StagePlan(self.id, PlanState.REFUSED if result.cannot else PlanState.UNCHANGED, result)
+
+    def apply(
+        self, plan: StagePlan, cancel: threading.Event | None, progress: StepProgress | None = None
+    ) -> StepResult:
+        """The detail of a finished step is how many results were reused from an earlier run; no view shows it
+        yet."""
+        work = plan.plan
+        if not isinstance(work, SubtitlePlan):
+            raise TypeError(f"not a subtitle plan: {type(work).__name__}")
+        store = self.results
+        store.prune()
+        total = sum(len(finished.steps) for finished in work.finished) + 1
+        count = {"done": 0, "reused": 0}
+
+        def run(given: StepWork, inputs: Sequence[Path], phase: str) -> str:
+            """Reuse or run one step; the message of a step that cannot run, empty otherwise."""
+            count["done"] += 1
+            if store.kept(given.output, inputs):
+                count["reused"] += 1
+                return ""
+            runner = self.runners.get(given.step.kind)
+            if runner is None:
+                return f"{NOT_AVAILABLE}: {phase}"
+            given.output.parent.mkdir(parents=True, exist_ok=True)
+            runner(given, cancel)
+            store.keep(given.output, inputs)
+            if progress is not None:
+                progress(count["done"] / total)
+            return ""
+
+        reference: Path | None = None
+        if work.reference is not None and (step := work.reference.step) is not None:
+            reference = store.reference(work)
+            track = work.reference.track
+            given = StepWork(step, work.video, None, None, track.language if track else None, track, reference)
+            if failed := run(given, [work.video], reference_phase(step)):
+                return StepResult(False, failed)
+        for finished in work.finished:
+            source = finished.paired.path if finished.paired is not None else None
+            for index, step in enumerate(finished.steps):
+                output = store.output(work, finished, index)
+                inputs = [work.video, *([source] if source else []), *([reference] if reference else [])]
+                given = StepWork(step, work.video, source, reference, finished.language, finished.track, output)
+                if failed := run(given, inputs, step.kind.value):
+                    return StepResult(False, failed)
+                source = output
+        # Nothing approves in this version: a plan waits only where approval is registered as available.
+        if work.waits:
+            return StepResult(False, f"{NOT_AVAILABLE}: {APPROVAL}")
+        return StepResult(True, detail=count["reused"])
+
+    def resume(self, plan: StagePlan, before: FileStamp, cancel: threading.Event | None) -> Resumed:
+        # The kept results tell what is done, so running the step again repeats only what was not.
+        return Resumed(Recovery.REDO)
+
+
 def _mux_step(plan: MuxPlan, result: MuxResult) -> StepResult:
     message = "" if result.ok else f"{result.failure}: {result.detail}".rstrip(": ")
     moved = plan.output if result.ok and plan.output != plan.source else None
@@ -228,13 +344,24 @@ def renamed_to(plan: StagePlan) -> Path | None:
     return mux.output if isinstance(mux, MuxPlan) and mux.output != mux.source else None
 
 
-def pipeline(programs: Programs, mkvpropedit: Path | None, *, source: str = "") -> tuple[Stage, ...]:
+def pipeline(
+    programs: Programs,
+    mkvpropedit: Path | None,
+    *,
+    source: str = "",
+    results: ResultStore | None = None,
+    runners: Mapping[StepKind, Runner] | None = None,
+) -> tuple[Stage, ...]:
     """The stages in the order they run. A stage whose program is missing is left out, so its features are off
     and nothing else; a new stage is one more entry here. On a file Mux remuxes it writes the header as well and
-    Metadata writes nothing, so Mux is that file's only writing step."""
-    stages: list[Stage] = [TracksStage()]
+    Metadata writes nothing, so Mux is that file's only writing step. Subtitles needs no program of its own: the work
+    of an engine that is missing (`runners`, `RUNNERS` by default) is left out, and without mkvmerge its work needs a
+    new file that cannot be written."""
+    results = results or _results()
+    subtitles = SubtitlesStage(results, RUNNERS if runners is None else runners)
+    stages: list[Stage] = [TracksStage(), subtitles]
     if programs.mkvmerge is not None:
-        stages.append(MuxStage(programs.mkvmerge, programs, source))
+        stages.append(MuxStage(programs.mkvmerge, programs, source, results, subtitles.available))
     if mkvpropedit is not None:
-        stages.append(MetadataStage(mkvpropedit, programs, source))
+        stages.append(MetadataStage(mkvpropedit, programs, source, subtitles.available))
     return tuple(stages)

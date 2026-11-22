@@ -86,9 +86,9 @@ class HeaderChange:
 class MetadataPlan:
     path: Path
     changes: tuple[HeaderChange, ...]
-    # True when the track rules drop a track or add a subtitle file. The remux then writes `changes` and
-    # the final flags of the track plan, so the header is not edited in place and `changes` holds no
-    # default or forced flag from the track plan.
+    # True when the track rules drop a track or add a subtitle file, or a finished subtitle asks for a new file. The
+    # remux then writes `changes` and the final flags of the track plan, so the header is not edited in place and
+    # `changes` holds no default or forced flag from the track plan.
     needs_remux: bool = False
 
 
@@ -149,8 +149,10 @@ def plan_metadata(
     tracks: TracksOptions,
     *,
     source: str = "",
+    remux: bool = False,
 ) -> MetadataPlan | MetadataRefused:
-    """The header changes for the file, or the problems that stop the plan."""
+    """The header changes for the file, or the problems that stop the plan. `remux`: the file gets a new file for
+    another reason than its track plan (a finished subtitle), which then writes the header too."""
     file = item.file
     refusals: list[MetadataProblem] = []
     if not file.ids_from_mkvmerge:
@@ -162,6 +164,7 @@ def plan_metadata(
     # refuse to change still gets the languages they give.
     language_rules, from_names = tracks.rules, tracks.flags_from_names
     track_plan, tracks = named_tracks(item, tracks)
+    needs_remux = track_plan.needs_remux or remux
     invalid: list[MetadataProblem] = []  # a problem of the options, which refuses every file
     language = _language(options.untagged_language, invalid)
     given: dict[str, str] = {}  # the tag a rule gives, as the rule writes it, to the tag it comes to
@@ -197,7 +200,7 @@ def plan_metadata(
         if wanted:
             was = track.language.ietf if track.language else ""
             changes.append(HeaderChange(Property.LANGUAGE, was, wanted, track.id))
-        changes += _flag_changes(planned, track_plan.needs_remux, options.write_implied_flags, ruled)
+        changes += _flag_changes(planned, needs_remux, options.write_implied_flags, ruled)
 
     problems = [
         MetadataProblem(MetadataProblemKind.TEMPLATE, template, tuple(template_problems))
@@ -209,7 +212,7 @@ def plan_metadata(
         return MetadataRefused(tuple(refusals + invalid))
     if problems:
         return MetadataRefused(tuple(problems))
-    return MetadataPlan(file.path, tuple(changes), track_plan.needs_remux)
+    return MetadataPlan(file.path, tuple(changes), needs_remux)
 
 
 def language_after(track: Track, rules: list[TrackRule], from_names: bool, untagged: str = "") -> str:

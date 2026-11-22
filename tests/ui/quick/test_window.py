@@ -87,7 +87,13 @@ def test_an_episode_opens_its_own_place(controller: WindowController, library: L
         {"key": "attachments", "count": 2},
     ]
     assert controller.side_tabs("review") == []
-    assert [tab["key"] for tab in controller.workspace_tabs][:4] == ["overview", "tracks", "names", "review"]
+    assert [tab["key"] for tab in controller.workspace_tabs][:5] == [
+        "overview",
+        "tracks",
+        "subtitles",
+        "names",
+        "review",
+    ]
 
 
 def test_groups_open_their_batch(controller: WindowController, library: Library) -> None:

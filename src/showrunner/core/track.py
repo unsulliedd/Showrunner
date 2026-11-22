@@ -57,7 +57,7 @@ class AudioProperties:
 
 @dataclass(frozen=True, slots=True)
 class SubtitleProperties:
-    text_based: bool = True  # not read yet; the subtitle stage skips image subtitles by it
+    text_based: bool = True  # False for a picture format (PGS, VobSub), which only OCR reads
 
 
 @dataclass(frozen=True, slots=True)

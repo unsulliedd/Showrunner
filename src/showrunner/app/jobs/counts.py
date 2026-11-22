@@ -3,7 +3,8 @@
 
 A change is one edit to one file. Tracks and new files: the new file, its track order, and each flag (default,
 forced) that moves to other tracks of a kind. Names and flags: the title, each track's name and language, and each
-flag a name implies. A tab counts only what it shows: Names the titles and track names, Tracks everything else.
+flag a name implies. Subtitles: each finished subtitle, however many steps it takes, and the new file only subtitles
+ask for. A tab counts only what it shows: Names the titles and track names, Subtitles its own, Tracks everything else.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from showrunner.app.jobs.groups import ChangeGroup
 from showrunner.app.jobs.preview import FilePreview
 from showrunner.core.track import Track, TrackFlags, TrackKind
 from showrunner.stages.metadata import MetadataPlan
+from showrunner.stages.subtitles import SubtitlePlan
 from showrunner.stages.tracks import Flag, TrackPlan
 from showrunner.tools.mkvtoolnix.propedit import Property
 
@@ -68,9 +70,10 @@ def name_parts(plan: MetadataPlan, tracks: TrackPlan | None = None) -> dict[str,
 
 def file_parts(file: FilePreview) -> dict[str, int]:
     """A file's changes by kind: the new file, its track order and the flags the rules move (Tracks and new files),
-    then titles, track names, languages and the flags a name implies (Names and flags); a refused or blocked stage
-    counts none. Counted once per plan: a refresh reads every file's counts several times, and the next refresh
-    reads them again while the plan stays. The result is shared: callers copy it before changing it."""
+    then titles, track names, languages and the flags a name implies (Names and flags), then the finished subtitles
+    and the new file only they ask for (Subtitles); a refused or blocked stage counts none. Counted once per plan:
+    a refresh reads every file's counts several times, and the next refresh reads them again while the plan stays.
+    The result is shared: callers copy it before changing it."""
     held = _counted.get(id(file))
     if held is not None and held[0] is file:
         return held[1]
@@ -86,6 +89,10 @@ def file_parts(file: FilePreview) -> dict[str, int]:
         found.update(name_parts(metadata.plan, tracks))
     else:
         found.update(dict.fromkeys(("titles", "names", "languages", "implied"), 0))
+    subtitles = file.plan_for("subtitles")
+    work = subtitles.plan if subtitles is not None and isinstance(subtitles.plan, SubtitlePlan) else None
+    found["subtitles"] = len(work.finished) if work is not None else 0
+    found["subtitle_file"] = int(found["subtitles"] > 0 and not found["new_file"])
     if len(_counted) >= _COUNTED_LIMIT:
         _counted.clear()
     _counted[id(file)] = (file, found)  # the file is held, so its id is not given to another one while it is here
@@ -102,15 +109,18 @@ def count_changes(file: FilePreview) -> dict[ChangeGroup, int]:
     return {
         ChangeGroup.TRACKS: found["new_file"] + found["order"] + found["flags"],
         ChangeGroup.NAMES: found["titles"] + found["names"] + found["languages"] + found["implied"],
+        ChangeGroup.SUBTITLES: found["subtitles"] + found["subtitle_file"],
     }
 
 
 def tab_counts(file: FilePreview) -> dict[str, int]:
-    """The changes each tab shows in one file: Names the titles and track names, Tracks the rest (the new file, the
-    order, flags and languages), whose choices its chips and rules hold."""
+    """The changes each tab shows in one file: Names the titles and track names, Subtitles the finished subtitles
+    and the new file only they ask for, Tracks the rest (the new file, the order, flags and languages), whose choices
+    its chips and rules hold."""
     found = file_parts(file)
     names = found["titles"] + found["names"]
-    return {"tracks": sum(found.values()) - names, "names": names}
+    subtitles = found["subtitles"] + found["subtitle_file"]
+    return {"tracks": sum(found.values()) - names - subtitles, "names": names, "subtitles": subtitles}
 
 
 def implied_flags(file: FilePreview) -> int:

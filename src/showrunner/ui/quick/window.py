@@ -45,6 +45,7 @@ from showrunner.ui.quick.rule_editor import RuleEditor
 from showrunner.ui.quick.run import Run
 from showrunner.ui.quick.settings import Settings
 from showrunner.ui.quick.sizes import Sizes, available_screens
+from showrunner.ui.quick.subtitles import SubtitleSettings
 from showrunner.ui.quick.templates import Templates
 from showrunner.ui.quick.window_state import Rect
 from showrunner.ui.quick.workspace import SAVE_DELAY_MS, MakePipeline, Statuses, Workspace, default_pipeline
@@ -88,6 +89,7 @@ class WindowController(QObject):
     plans_changed = Signal()  # the live plan or the choices of the selected batch changed
     planning_changed = Signal()
     names_changed = Signal()  # what the Names place or the Tokens panel shows changed
+    subtitles_changed = Signal()  # what the Subtitles place shows changed
     # What one place shows changed; each is emitted only while its place shows, and on switching to it.
     overview_changed = Signal()
     matrix_changed = Signal()
@@ -127,6 +129,7 @@ class WindowController(QObject):
         self.found.languages_read.connect(self._language_picker.refresh_languages)
         self.choices = Choices(workspace, self._language_picker, parent=self)
         self.templates = Templates(workspace, parent=self)
+        self.subtitle_settings = SubtitleSettings(workspace, self._language_picker, parent=self)
         self._rule_editor = RuleEditor(
             lambda: workspace.own_tracks() if workspace.key is not None else None,
             workspace.set_tracks,
@@ -144,6 +147,7 @@ class WindowController(QObject):
             (self.folders, ("filter_changed", "recent_changed", "home_changed")),
             (self.places, ("discard_asked", "revert_asked")),
             (self.templates, ("names_changed",)),
+            (self.subtitle_settings, ("subtitles_changed",)),
             (self.found, ("programs_changed",)),
         ):
             for name in names:
@@ -354,6 +358,15 @@ class WindowController(QObject):
     set_untagged_language = _slot("choices", "set_untagged_language", str)
     set_flags_from_names = _slot("choices", "set_flags_from_names", bool)
     set_write_implied_flags = _slot("choices", "set_write_implied_flags", bool)
+
+    # Subtitles
+
+    subtitles = _property("QVariantMap", "subtitle_settings", "subtitles", subtitles_changed)
+    set_subtitle_choice = _slot("subtitle_settings", "set_choice", str, str, qt_name="set_subtitle_choice")
+    follow_subtitles = _slot("subtitle_settings", "follow", str, qt_name="follow_subtitles")
+    subtitles_as_it_is = _slot("subtitle_settings", "as_it_is", str, qt_name="subtitles_as_it_is")
+    toggle_subtitle_item = _slot("subtitle_settings", "toggle_item", str, str, qt_name="toggle_subtitle_item")
+    pick_wanted_language = _slot("subtitle_settings", "pick_language", qt_name="pick_wanted_language")
 
     # Names
 

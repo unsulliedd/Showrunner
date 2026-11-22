@@ -20,11 +20,12 @@ from typing import Any
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 
 from showrunner.app.jobs.run import JobResult, Read, StepRecord
-from showrunner.app.jobs.stages import MISSED, Stage
+from showrunner.app.jobs.stages import APPROVAL, MISSED, NOT_AVAILABLE, Stage, reference_phase
 from showrunner.app.jobs.store import FINAL, JobStore, JobSummary, StepState, StoredJob, UnresumableJobError
 from showrunner.app.jobs.worker import JobRunner
 from showrunner.stages.metadata.apply import ApplyResult
 from showrunner.stages.mux import Failure, MuxPlan, MuxResult, VerifyProblem
+from showrunner.stages.subtitles import SubtitlePlan
 from showrunner.ui.i18n.catalog import tr, tr_plural
 
 _log = logging.getLogger(__name__)
@@ -32,6 +33,8 @@ _log = logging.getLogger(__name__)
 # The steps a file goes through inside one stage's step, as the drawer names them. A remux is the mux stage's own
 # order: the original moves only after the new file passed its check.
 PHASES: dict[str, tuple[str, ...]] = {"mux": ("write", "check", "original", "rename"), "metadata": ("edit",)}
+# The subtitle step's phases in the order they run; a file shows the ones its plan holds.
+SUBTITLE_PHASES = ("reference", "ocr", "read", "translate", "clean", "sync", "resplit", "approval")
 # Where a remux stopped, by the phase that failed.
 _FAILED_PHASE = {
     Failure.OUTPUT_EXISTS: "write",
@@ -83,11 +86,24 @@ def mux_text(plan: MuxPlan | None, result: MuxResult) -> list[str]:
     return lines
 
 
+def subtitle_phases(plan: SubtitlePlan) -> tuple[str, ...]:
+    """The phases of a file's subtitle step: reading its reference, each kind of work its finished subtitles take,
+    then the approval when the file waits for one."""
+    held = {step.kind.value for finished in plan.finished for step in finished.steps}
+    if plan.reference is not None and plan.reference.step is not None:
+        held.add(reference_phase(plan.reference.step))
+    if plan.waits:
+        held.add(APPROVAL)
+    return tuple(name for name in SUBTITLE_PHASES if name in held)
+
+
 def reason_text(message: str) -> str:
     """A failed step's stored message in words: a remux stores its failure as "kind: detail", a metadata step whose
     edits the file does not show as "missed: <missed>/<planned>"; any other message is already the error's own
     text."""
     kind, _, detail = message.partition(": ")
+    if kind == NOT_AVAILABLE and detail in SUBTITLE_PHASES:
+        return tr("jobs.failure.not_available", step=tr(f"jobs.phase.{detail}"))
     if kind in {f.value for f in Failure}:
         return tr(f"jobs.failure.{kind}", detail=detail)
     if kind == MISSED:
@@ -272,7 +288,10 @@ class JobProgress:
 
     def _phases(self, position: int) -> list[dict[str, Any]]:
         step = self.job.steps[position]
-        names = PHASES.get(step.plan.stage, ("edit",))
+        work = step.plan.plan
+        names = (subtitle_phases(work) if isinstance(work, SubtitlePlan) else ()) or PHASES.get(
+            step.plan.stage, ("edit",)
+        )
         state = self.states[position]
         record = self.records.get(position)
         detail = record.detail if record is not None else None
@@ -286,6 +305,9 @@ class JobProgress:
             marks = ["done"] * at + ["active" if self.running else "stopped"] + ["waiting"] * (len(names) - at - 1)
         elif state is StepState.FAILED:
             failed = _FAILED_PHASE.get(detail.failure, names[0]) if isinstance(detail, MuxResult) else names[0]
+            kind, _, phase = (record.message if record is not None else "").partition(": ")
+            if kind == NOT_AVAILABLE:
+                failed = phase
             at = names.index(failed) if failed in names else 0
             marks = ["done"] * at + ["failed"] + ["waiting"] * (len(names) - at - 1)
         elif state in (StepState.STALE, StepState.SKIPPED):

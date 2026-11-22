@@ -2,7 +2,9 @@
 
 A season, an episode or a movie holds only the fields it set itself, by stage: `{"tracks": {"order": [...]}}`. Every
 field set there wins over the parent's, the track rules aside: the place's own rules go first and the parent's follow
-(`layered_rules`), so a choice made on a show still decides every track the season leaves to it. A field holds a value
+(`layered_rules`), so a choice made on a show still decides every track the season leaves to it. The subtitle fields
+keyed by item (`PER_ITEM`) are laid over the received ones item by item, so a place that adds a language still
+receives the languages its parent adds later, and cancels one with that item's own value. A field holds a value
 or is absent; equal to the default is still set, so a season can give back a show's `False` its `True`. Removing a
 field, or the whole layer, makes the place follow its parent again.
 """
@@ -16,11 +18,13 @@ from showrunner.app.batches.choices import layered_rules, repeats_received
 from showrunner.app.profiles.profile import Profile
 from showrunner.core.options.registry import REGISTRY, OptionsRegistry
 from showrunner.core.options.serialization import LoadWarning, from_fields, to_fields
+from showrunner.stages.subtitles import PER_ITEM_FIELDS
 
 # Stage id -> field name -> the value the place set.
 type Layer = dict[str, dict[str, Any]]
 
 RULES = ("tracks", "rules")
+PER_ITEM = frozenset(("subtitles", name) for name in PER_ITEM_FIELDS)
 
 
 def combine(profile: Profile, layer: Layer) -> Profile:
@@ -30,6 +34,9 @@ def combine(profile: Profile, layer: Layer) -> Profile:
         changes = dict(values)
         if (stage_id, "rules") == RULES and "rules" in changes:
             changes["rules"] = layered_rules(changes["rules"], options.rules)
+        for name, value in changes.items():
+            if (stage_id, name) in PER_ITEM:
+                changes[name] = {**getattr(options, name), **value}
         profile = profile.with_options(stage_id, replace(options, **changes))
     return profile
 
@@ -44,6 +51,9 @@ def with_options(layer: Layer, stage_id: str, options: Any, received: Any) -> La
         if (stage_id, field.name) == RULES:
             if value:
                 own[field.name] = list(value)
+        elif (stage_id, field.name) in PER_ITEM:
+            if items := own_items(value, getattr(received, field.name)):
+                own[field.name] = items
         elif value != getattr(received, field.name):
             own[field.name] = value
     rest = {key: values for key, values in layer.items() if key != stage_id}
@@ -70,6 +80,9 @@ def normalized(layer: Layer, received: Profile) -> Layer:
                         rules = slim
                 if rules:
                     own[name] = rules
+            elif (stage_id, name) in PER_ITEM:
+                if items := own_items(value, getattr(options, name)):
+                    own[name] = items
             elif value != getattr(options, name):
                 own[name] = value
         if own:
@@ -77,14 +90,20 @@ def normalized(layer: Layer, received: Profile) -> Layer:
     return result
 
 
+def own_items(value: dict[str, Any], received: dict[str, Any]) -> dict[str, Any]:
+    """The items of a per-item field that differ from what the place receives; the others follow the parent."""
+    return {key: item for key, item in value.items() if key not in received or received[key] != item}
+
+
 def own_rules(layer: Layer) -> list[Any]:
     return list(layer.get("tracks", {}).get("rules", []))
 
 
 def choice_count(layer: Layer) -> int:
-    """How many choices a layer holds: each own rule is one, every other field set is one."""
+    """How many choices a layer holds: each own rule and each own item of a per-item field is one, every other field
+    set is one."""
     return sum(
-        len(value) if (stage_id, name) == RULES else 1
+        len(value) if (stage_id, name) == RULES or (stage_id, name) in PER_ITEM else 1
         for stage_id, values in layer.items()
         for name, value in values.items()
     )

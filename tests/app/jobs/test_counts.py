@@ -79,7 +79,7 @@ def test_names_count_apart_from_the_flags_the_rules_move(profile: Profile) -> No
     planned = profile.with_options("tracks", rules(turkish_audio)).with_options("naming", naming)
     (file,) = preview([ITEM], planned, STAGES, stamped=False).files
     # The title and two track names; the default moving to Turkish audio, written in place, is a track change.
-    assert count_changes(file) == {ChangeGroup.TRACKS: 1, ChangeGroup.NAMES: 3}
+    assert count_changes(file) == {ChangeGroup.TRACKS: 1, ChangeGroup.NAMES: 3, ChangeGroup.SUBTITLES: 0}
 
 
 def test_a_refused_plan_counts_nothing(profile: Profile) -> None:
@@ -101,7 +101,7 @@ def test_a_forced_flag_a_name_implies_counts_as_a_name_change(profile: Profile) 
     implied = replace(profile.for_stage("metadata"), write_implied_flags=True)
     planned = profile.with_options("naming", naming).with_options("metadata", implied)
     (file,) = preview([item], planned, STAGES, stamped=False).files
-    assert count_changes(file) == {ChangeGroup.TRACKS: 0, ChangeGroup.NAMES: 1}
+    assert count_changes(file) == {ChangeGroup.TRACKS: 0, ChangeGroup.NAMES: 1, ChangeGroup.SUBTITLES: 0}
 
 
 def test_a_new_order_is_one_change_beside_the_new_file() -> None:
@@ -132,13 +132,13 @@ def test_a_tab_counts_only_what_it_shows(profile: Profile) -> None:
     )
     (file,) = preview([item], planned, STAGES, stamped=False).files
     # The title and two track names are Names'; the default that moves and the flag the name implies are Tracks'.
-    assert tab_counts(file) == {"tracks": 2, "names": 3}
+    assert tab_counts(file) == {"tracks": 2, "names": 3, "subtitles": 0}
     assert implied_flags(file) == 1
     assert sum(tab_counts(file).values()) == sum(count_changes(file).values())
     # With the option off nothing is implied, and the tabs still add up to the groups.
     plain = planned.with_options("metadata", replace(implied, write_implied_flags=False))
     (file,) = preview([item], plain, STAGES, stamped=False).files
-    assert (tab_counts(file), implied_flags(file)) == ({"tracks": 1, "names": 3}, 0)
+    assert (tab_counts(file), implied_flags(file)) == ({"tracks": 1, "names": 3, "subtitles": 0}, 0)
 
 
 def test_a_file_is_counted_once_per_plan_and_its_parts_add_up_to_the_groups(profile: Profile) -> None:

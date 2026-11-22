@@ -177,7 +177,7 @@ def verify(plan: MuxPlan, after: MediaFile) -> tuple[VerifyProblem, ...]:
             ("flags", _flags(want.flags), _flags(got.flags)),
         ]
         # A track copied from the video keeps its codec; a subtitle file's codec is mkvmerge's to choose.
-        if want.planned.external is None:
+        if want.planned.external is None and want.content is None:
             pairs.append(("codec", source.codec, got.codec))
             # In a new order the channels also tell apart two audio tracks that differ in nothing else. Only then:
             # mkvmerge reads the channels again from some audio streams, so a remux that keeps the order is not
@@ -201,18 +201,20 @@ def verify(plan: MuxPlan, after: MediaFile) -> tuple[VerifyProblem, ...]:
 
 
 def _merge_spec(plan: MuxPlan, output: Path) -> Merge:
-    added = [subtitle.path for subtitle in plan.added]
+    inputs: list[Path] = []  # after the source, one file per track that is not the source's
     tracks = []
     for track in plan.tracks:
         external = track.planned.external
-        if external is None:
+        file = track.content or (external.path if external is not None else None)
+        if file is None:
             source, track_id, charset = 0, track.planned.track.id, ""
         else:
-            source, track_id, charset = added.index(external.path) + 1, 0, _charset(external.path, track)
+            inputs.append(file)
+            source, track_id, charset = len(inputs), 0, _charset(file, track)
         tracks.append(
             OutputTrack(source, track_id, track.planned.track.kind, track.name, track.language, track.flags, charset)
         )
-    return Merge(output, (plan.source, *added), tuple(tracks), plan.title)
+    return Merge(output, (plan.source, *inputs), tuple(tracks), plan.title)
 
 
 def _charset(path: Path, track: MuxTrack) -> str:

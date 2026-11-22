@@ -19,6 +19,7 @@ from showrunner.app.profiles.profile import Profile
 from showrunner.app.profiles.store import ProfileStore
 from showrunner.core.media import Episode, MediaItem
 from showrunner.stages.mux.options import MuxOptions, Original
+from showrunner.stages.subtitles import Wanted
 from showrunner.stages.tracks import TrackMatch, TrackRule, TracksOptions, Verdict
 from showrunner.tools.probe import Programs
 from showrunner.ui.quick.review import ReviewInput, parts, review, totals
@@ -74,7 +75,7 @@ def test_the_changes_are_grouped_by_kind_and_add_up(season: list[MediaItem]) -> 
     assert shown["apply_text"] == "Apply 2 of 2 kinds to 10 files"
     assert [g["label"] for g in shown["groups"]] == ["Tracks and new files · 10 files", "Names and flags · 10 files"]
     assert tracks["original_text"] == "Originals: Recycle Bin"
-    assert shown["stays"] == ["File names", "Chapters", "Attachments", "Artwork"]
+    assert shown["stays"] == ["Subtitles", "File names", "Chapters", "Attachments", "Artwork"]
 
 
 def test_an_unticked_kind_says_what_it_would_do_and_counts_nothing(season: list[MediaItem]) -> None:
@@ -172,6 +173,8 @@ def test_parts_add_up_to_the_counts(season: list[MediaItem]) -> None:
         "names": 0,
         "languages": 0,
         "implied": 0,
+        "subtitles": 0,
+        "subtitle_file": 0,
     }
     assert parts(None) == dict.fromkeys(parts(file), 0)
     assert Path(file.item.file.path).name == "Show.Name.S01E01.mkv"
@@ -245,3 +248,17 @@ def test_over_more_seasons_a_divider_names_each_season_above_its_first_file(libr
     # One season alone needs no divider.
     season = [i for i in show if BatchKey.of(i) == BatchKey.of(show[0])]
     assert all(r["season"] == "" for r in built(season, profile_for(season))["rows"])
+
+
+def test_a_names_problem_stays_on_the_names_card(season: list[MediaItem]) -> None:
+    profile = profile_for(season)
+    naming = replace(profile.for_stage("naming"), title_template="{no_such_token}")
+    subtitles = replace(profile.for_stage("subtitles"), languages={"de": Wanted.WANTED})
+    profile = profile.with_options("naming", naming).with_options("subtitles", subtitles)
+    groups = {g["key"]: g for g in built(season, profile)["groups"]}
+    assert groups["names"]["problems"] != []
+    # No engine translates in this version, so the subtitles card says that, and only that.
+    assert groups["subtitles"]["problems"] == [
+        "Translate is not available in this version yet, so 10 subtitles are left out. The rest of each file goes on"
+        " without them."
+    ]

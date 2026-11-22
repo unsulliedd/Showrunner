@@ -9,6 +9,7 @@ from showrunner.core.naming import options as naming
 from showrunner.stages.metadata import options as metadata
 from showrunner.stages.mux import options as mux
 from showrunner.stages.scan import options as scan
+from showrunner.stages.subtitles import options as subtitles
 from showrunner.stages.tracks import options as tracks
 
-OPTIONS_MODULES = (naming, scan, tracks, mux, metadata)
+OPTIONS_MODULES = (naming, scan, tracks, subtitles, mux, metadata)

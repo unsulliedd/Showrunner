@@ -230,6 +230,20 @@ class Batches:
                 return key
         return above
 
+    def item_origin(self, key: BatchKey, stage_id: str, name: str, item: str) -> BatchKey | None:
+        """`field_origin` for one item of a per-item field (a wanted language, a rule set): the nearest place that set
+        it, a kept place for an item from above that its keep cancels; None when nothing set it."""
+        if key.parent is None:
+            return key if item in getattr(self.copy(key).profile.for_stage(stage_id), name) else None
+        if item in self.own(key).get(stage_id, {}).get(name, {}):
+            return key
+        above = self.item_origin(key.parent, stage_id, name, item)
+        if key in self._kept and above is not None:
+            received = getattr(self._received(key, {}).for_stage(stage_id), name)
+            if received.get(item) != getattr(self.profile(key.parent).for_stage(stage_id), name).get(item):
+                return key
+        return above
+
     def file_profiles(self, items: Sequence[MediaItem], under: BatchKey) -> dict[Path, Profile]:
         """Each file's options, the files lying in place `under` (see `BatchKey.in_show`). Files whose places set
         nothing of their own share their parent's object, so a planner can plan them as one group."""

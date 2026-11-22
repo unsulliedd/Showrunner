@@ -183,8 +183,10 @@ def test_the_options_key_follows_options_stages_and_blocks(profile: Profile) -> 
 
 
 def test_the_pipeline_leaves_out_a_stage_without_its_program() -> None:
-    assert [s.id for s in pipeline(Programs(), None)] == ["tracks"]
-    assert [s.id for s in pipeline(Programs(), Path("mkvpropedit"))] == ["tracks", "metadata"]
+    assert [s.id for s in pipeline(Programs(), None)] == ["tracks", "subtitles"]
+    assert [s.id for s in pipeline(Programs(), Path("mkvpropedit"))] == ["tracks", "subtitles", "metadata"]
+    with_mux = pipeline(Programs(mkvmerge=Path("mkvmerge")), None)
+    assert [s.id for s in with_mux] == ["tracks", "subtitles", "mux"]
 
 
 def test_an_unstamped_preview_reads_no_file(tmp_path: Path, profile: Profile) -> None:
