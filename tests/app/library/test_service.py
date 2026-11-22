@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from showrunner.app.library import service
-from showrunner.app.library.service import load_library
+from showrunner.app.library.service import load_library, read_subtitles
 from showrunner.core.media import MediaFile
 from showrunner.tools.probe import ProbeError, Programs
 
@@ -129,3 +129,17 @@ def test_a_cancel_while_the_programs_are_checked_ends_the_load_as_cancelled(
     load = load_library([tmp_path / "Show"], read=fake_read, cancel=cancel)
     assert load.cancelled
     assert len(load.items) == 1
+
+
+def test_written_subtitles_are_read_as_a_scan_reads_them(tmp_path: Path) -> None:
+    video = tmp_path / "Show.S01E01.mkv"
+    written = tmp_path / "Show.S01E01_cleaned.tr.forced.srt"
+    written.write_text("1\n00:00:01,000 --> 00:00:02,000\nmerhaba\n", encoding="utf-8")
+    found = read_subtitles({video: (written, tmp_path / "Show.S01E01.de.srt")})
+    ((subtitle,),) = found.values()
+    assert (subtitle.path, subtitle.language.ietf if subtitle.language else "", subtitle.forced) == (
+        written,
+        "tr",
+        True,
+    )
+    assert read_subtitles({video: (tmp_path / "missing.srt",)}) == {}

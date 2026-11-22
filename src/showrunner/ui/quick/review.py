@@ -181,11 +181,12 @@ def unavailable_text(phase: str, count: int) -> str:
 
 
 def _shown_groups(given: ReviewInput, full_parts: dict[Path, dict[str, int]]) -> list[ChangeGroup]:
-    """The groups Review shows a card for: Subtitles only where it plans work, is unticked or is set otherwise in a
-    place inside, since a batch without subtitle settings has it under "Stays as it is" instead."""
+    """The groups Review shows a card for: Subtitles only where it plans work, is unticked, is set otherwise in a
+    place inside or is blocked, since a batch without subtitle settings has it under "Stays as it is" instead."""
     work = any(_group_count(full_parts[i.file.path], ChangeGroup.SUBTITLES) for i in given.items)
     held = given.held_inside.get(ChangeGroup.SUBTITLES, 0)
-    keep = work or held or ChangeGroup.SUBTITLES in given.groups_out or bool(left_out(given.full))
+    blocked = bool(_blocked(given.blocks, given.mux, ChangeGroup.SUBTITLES))
+    keep = work or held or blocked or ChangeGroup.SUBTITLES in given.groups_out or bool(left_out(given.full))
     return [group for group in ChangeGroup if keep or group is not ChangeGroup.SUBTITLES]
 
 
@@ -307,6 +308,8 @@ def _blocked(blocks: Mapping[str, StageBlock], mux: MuxOptions, group: ChangeGro
             found += [tr(f"review.blocked.{name.value}", folder=mux.keep_folder) for name in block.names]
     elif group is ChangeGroup.NAMES:
         found += blocked_lines(blocks.get("metadata"))
+    elif (block := blocks.get("subtitles")) is not None and block.new_file_text:
+        found.append(tr("review.blocked.new_file_text"))
     return found
 
 
@@ -452,6 +455,30 @@ def _detail(
         before_names = [tracks[i].name for i in renamed if i in tracks]
         rows.append(_line("names", _joined(before_names), _joined(list(renamed.values())), names_out))
     rows += _edits(item, full_file if tracks_out else run_file, named, renamed, tracks_out, names_out)
+    subtitles_out = ChangeGroup.SUBTITLES in given.groups_out
+    rows += _subtitle_lines(full_file if subtitles_out else run_file, subtitles_out)
+    return rows
+
+
+def _subtitle_lines(file: FilePreview | None, out: bool) -> list[dict[str, object]]:
+    """One sentence per finished subtitle: where it goes, naming the file it is written to beside the video."""
+    stage = file.plan_for("subtitles") if file is not None else None
+    work = stage.plan if stage is not None and isinstance(stage.plan, SubtitlePlan) else None
+    rows = []
+    for number, finished in enumerate(work.finished if work is not None else ()):
+        language = finished.language.name if finished.language is not None else tr("tracks.no_language")
+        if finished.target is None:
+            sentence = tr("review.subtitle.into_video", language=language)
+        else:
+            key = "review.subtitle.replaces" if finished.replaces else "review.subtitle.beside"
+            sentence = tr(key, language=language, file=finished.target.name)
+        label = tr("review.detail.subtitle_files") if number == 0 else ""
+        rows.append({**_line("file", "", "", out), "label": label, "text": sentence})
+    for finished in work.written_earlier if work is not None else ():
+        assert finished.target is not None
+        label = tr("review.detail.subtitle_files") if not rows else ""
+        sentence = tr("subtitles.written_earlier", file=finished.target.name)
+        rows.append({**_line("file", "", "", out), "label": label, "text": sentence, "muted": True})
     return rows
 
 
@@ -531,6 +558,7 @@ def _line(
         "pills": pills,
         "mono": mono,
         "text": "",  # a sentence in place of before and after
+        "muted": False,  # a sentence about what an earlier run did, drawn faint
     }
 
 
@@ -539,10 +567,14 @@ def _file_after(given: ReviewInput, file: FilePreview | None) -> str:
     plan = stage.plan if stage is not None else None
     if file is not None and file.outcome is FileOutcome.NEEDS_REMUX:
         return tr("inspector.new_file.cannot")
-    if isinstance(plan, TrackPlan) and plan.needs_remux:
-        profile = given.profiles.get(file.item.file.path) if file is not None else None
+    # A new file for its tracks or for the subtitles that go into it.
+    if file is not None and (
+        (isinstance(plan, TrackPlan) and plan.needs_remux) or any(p.needs_remux for p in file.writes)
+    ):
+        profile = given.profiles.get(file.item.file.path)
         mux = profile.for_stage("mux") if profile is not None else given.mux
         return tr(f"review.file_after.{mux.original.value}", folder=mux.keep_folder)
-    if file is not None and file.writes:
+    # Subtitles written beside the video leave the video itself as it is.
+    if file is not None and any(p.stage != "subtitles" for p in file.writes):
         return tr("review.file_after.in_place")
     return tr("review.file_after.stays")

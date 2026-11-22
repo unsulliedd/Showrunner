@@ -21,7 +21,7 @@ from showrunner.core.media import MediaItem
 Finished = Callable[[str, str], bool]
 
 # A blocked stage's options are planned as if they asked for nothing, so that no other stage reads them either.
-_BLOCKED_GROUP = {"tracks": ChangeGroup.TRACKS, "metadata": ChangeGroup.NAMES}
+_BLOCKED_GROUP = {"tracks": ChangeGroup.TRACKS, "metadata": ChangeGroup.NAMES, "subtitles": ChangeGroup.SUBTITLES}
 
 
 class FileOutcome(StrEnum):

@@ -203,7 +203,7 @@ Item {
                     Layout.preferredWidth: 1
                     visible: modelData.text !== ""
                     text: modelData.text
-                    color: modelData.out ? Theme.faint : Theme.change
+                    color: modelData.out ? Theme.faint : modelData.muted ? Theme.muted : Theme.change
                     font.pixelSize: Theme.text_sm
                     wrapMode: Text.WordWrap
                 }

@@ -105,6 +105,20 @@ def test_files_read_again_after_apply_take_their_place_and_lose_the_subtitles_mo
     assert [i.file.path for i in library.items][1:] == [i.file.path for i in sample_library.items][1:]
 
 
+def test_subtitles_written_beside_a_video_are_paired_with_it(sample_library: Library) -> None:
+    first = sample_library.item(path_of(sample_library, "S01E01"))
+    assert first is not None
+    replaced = replace(first.subtitles[0], sdh=True)
+    new = SubtitleFile(first.file.path.with_name("Alpha S01E01_cleaned.tr.srt"), first.subtitles[0].language)
+    library = sample_library.with_files({}, subtitles={first.file.path: (replaced, new)})
+    item = library.item(first.file.path)
+    assert item is not None
+    assert item.subtitles == (replaced, new)
+    # A file a remux took into the video in the same run is not paired again.
+    gone = sample_library.with_files({}, gone=[new.path], subtitles={first.file.path: (new,)})
+    assert new not in gone.item(first.file.path).subtitles  # type: ignore[union-attr]
+
+
 def test_extras_are_counted_apart_from_episodes_and_movies(sample_library: Library) -> None:
     extra = replace(sample_library.items[0], identity=Extra("Alpha", "Making Of", 2020))
     extra = replace(extra, file=replace(extra.file, path=Path("lib/Alpha/Extras/Making Of.mkv")))

@@ -26,6 +26,7 @@ from showrunner.app.jobs.worker import JobRunner
 from showrunner.stages.metadata.apply import ApplyResult
 from showrunner.stages.mux import Failure, MuxPlan, MuxResult, VerifyProblem
 from showrunner.stages.subtitles import SubtitlePlan
+from showrunner.stages.subtitles.beside import BesideFailure
 from showrunner.ui.i18n.catalog import tr, tr_plural
 
 _log = logging.getLogger(__name__)
@@ -33,8 +34,10 @@ _log = logging.getLogger(__name__)
 # The steps a file goes through inside one stage's step, as the drawer names them. A remux is the mux stage's own
 # order: the original moves only after the new file passed its check.
 PHASES: dict[str, tuple[str, ...]] = {"mux": ("write", "check", "original", "rename"), "metadata": ("edit",)}
-# The subtitle step's phases in the order they run; a file shows the ones its plan holds.
-SUBTITLE_PHASES = ("reference", "ocr", "read", "translate", "clean", "sync", "resplit", "approval")
+# The subtitle step's phases in the order they run; a file shows the ones its plan holds. "beside" writes the
+# subtitles that go beside the video, once their work is done.
+SUBTITLE_PHASES = ("reference", "ocr", "read", "translate", "clean", "sync", "resplit", "approval", "beside")
+_BESIDE_FAILURES = {failure.value for failure in BesideFailure}
 # Where a remux stopped, by the phase that failed.
 _FAILED_PHASE = {
     Failure.OUTPUT_EXISTS: "write",
@@ -94,7 +97,19 @@ def subtitle_phases(plan: SubtitlePlan) -> tuple[str, ...]:
         held.add(reference_phase(plan.reference.step))
     if plan.waits:
         held.add(APPROVAL)
+    if plan.written:
+        held.add("beside")
     return tuple(name for name in SUBTITLE_PHASES if name in held)
+
+
+def beside_text(plan: SubtitlePlan) -> list[str]:
+    """The subtitle files a finished step wrote beside the video, by name, from its stored plan: a resumed job does
+    not hold the results of the steps an earlier run finished."""
+    return [
+        tr("jobs.result.beside_replaced" if finished.replaces else "jobs.result.beside", name=finished.target.name)
+        for finished in plan.finished
+        if finished.target is not None
+    ]
 
 
 def reason_text(message: str) -> str:
@@ -104,6 +119,8 @@ def reason_text(message: str) -> str:
     kind, _, detail = message.partition(": ")
     if kind == NOT_AVAILABLE and detail in SUBTITLE_PHASES:
         return tr("jobs.failure.not_available", step=tr(f"jobs.phase.{detail}"))
+    if kind in _BESIDE_FAILURES:
+        return tr(f"jobs.failure.{kind}", detail=detail)
     if kind in {f.value for f in Failure}:
         return tr(f"jobs.failure.{kind}", detail=detail)
     if kind == MISSED:
@@ -308,6 +325,8 @@ class JobProgress:
             kind, _, phase = (record.message if record is not None else "").partition(": ")
             if kind == NOT_AVAILABLE:
                 failed = phase
+            elif kind in _BESIDE_FAILURES:
+                failed = "beside"
             at = names.index(failed) if failed in names else 0
             marks = ["done"] * at + ["failed"] + ["waiting"] * (len(names) - at - 1)
         elif state in (StepState.STALE, StepState.SKIPPED):
@@ -344,6 +363,8 @@ class JobProgress:
                 lines += mux_text(plan, record.detail)
             elif isinstance(record.detail, ApplyResult) and record.detail.ok:
                 lines.append(edited_text(record.detail))
+            elif record.state is StepState.DONE and isinstance(work := step.plan.plan, SubtitlePlan) and work.written:
+                lines += beside_text(work)
             elif record.state is StepState.DONE:
                 lines.append(tr("jobs.result.done"))
             else:
@@ -407,6 +428,16 @@ class Jobs(QObject):
     def files(self) -> set[Path]:
         """The files of the last job, running or ended."""
         return {f.path for f in self._progress.files} if self._progress is not None else set()
+
+    def beside_files(self) -> dict[Path, tuple[Path, ...]]:
+        """By video, the subtitle files the last job's subtitle steps write beside it, from the stored plans."""
+        if self._progress is None:
+            return {}
+        return {
+            step.path: work.written
+            for step in self._progress.job.steps
+            if isinstance(work := step.plan.plan, SubtitlePlan) and work.written
+        }
 
     def start(self, job_id: int, name: str, *, queued: bool = False) -> None:
         """Run a stored job, new or interrupted, `queued` when the queue runs it. Raises `UnresumableJobError` for one

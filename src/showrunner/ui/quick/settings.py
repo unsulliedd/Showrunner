@@ -19,6 +19,7 @@ from showrunner import __version__
 from showrunner.app.profiles.errors import ProfileError, ProfileExistsError
 from showrunner.app.settings.app_settings import Startup, load_settings, save_settings
 from showrunner.stages.mux.options import MuxOptions, Original, check_names
+from showrunner.stages.subtitles.options import SubtitlesOptions, bad_new_file_text
 from showrunner.ui.i18n.catalog import tr
 from showrunner.ui.quick.look import Look
 from showrunner.ui.quick.programs import Programs
@@ -203,6 +204,10 @@ class Settings(QObject):
             _log.exception("Could not read the profile %s", name)
             return {"name": name, "readable": False}
         mux: MuxOptions = saved.for_stage("mux")
+        subtitles: SubtitlesOptions = saved.for_stage("subtitles")
+        problems = mux_problems(mux)
+        if bad_new_file_text(subtitles.new_file_text):
+            problems["new_file_text"] = tr("review.blocked.new_file_text")
         return {
             "name": name,
             "readable": True,
@@ -212,7 +217,8 @@ class Settings(QObject):
             "original": mux.original.value,
             "keep_folder": mux.keep_folder,
             "suffix": mux.suffix,
-            "problems": mux_problems(mux),
+            "new_file_text": subtitles.new_file_text,
+            "problems": problems,
             "batches": len(self._window.batches.following(name)),
         }
 
@@ -241,6 +247,12 @@ class Settings(QObject):
     @Slot(str)
     def set_suffix(self, suffix: str) -> None:
         self._edit("mux", suffix=suffix)
+
+    @Slot(str)
+    def set_new_file_text(self, text: str) -> None:
+        """Kept as typed: one that cannot name a file shows its problem here and blocks the subtitle plans that would
+        use it, as a bad suffix does."""
+        self._edit("subtitles", new_file_text=text)
 
     @Slot(str, result=str)
     def rename(self, new_name: str) -> str:

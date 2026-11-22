@@ -1,4 +1,4 @@
 """Showrunner: takes TV shows and movies to finished."""
 
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 APP_NAME = "Showrunner"

@@ -23,6 +23,7 @@ from showrunner.core.language import Language
 from showrunner.stages.subtitles import (
     Approval,
     Lines,
+    Output,
     RuleSetUse,
     Source,
     StepKind,
@@ -49,9 +50,10 @@ ROWS = (
     ("lines", "lines"),
     ("model", "model"),
     ("approval", "approval"),
+    ("output", "output"),
 )
 # The rows chosen from a few values, drawn as segments.
-CHOICES: dict[str, type[StrEnum]] = {"sync": SyncEngine, "lines": Lines, "approval": Approval}
+CHOICES: dict[str, type[StrEnum]] = {"sync": SyncEngine, "lines": Lines, "approval": Approval, "output": Output}
 # The value that cancels one received item of a per-item field.
 _NOT_HERE: dict[str, StrEnum] = {"languages": Wanted.NOT_HERE, "cleanup": RuleSetUse.PAUSED}
 _PICKER_TARGET = "wanted"
@@ -383,11 +385,24 @@ class SubtitleSettings(QObject):
                     steps.append(tr("subtitles.step.approve"))
                 reasons = [tr(f"subtitles.cannot.{reason.value}") for reason in finished.cannot]
                 reasons += [unavailable(phase) for phase in missing_phases(finished)[:1]]
+                joined = tr("subtitles.list.steps_separator").join(steps)
+                if finished.target is not None:
+                    joined = tr("subtitles.list.to_file", steps=joined, file=finished.target.name)
                 plan.append(
                     {
                         "code": code(finished.language),
-                        "steps": tr("subtitles.list.steps_separator").join(steps),
+                        "steps": joined,
                         "cannot": tr("common.list_separator").join(reasons),
+                    }
+                )
+            for finished in work.written_earlier if work is not None else ():
+                assert finished.target is not None
+                plan.append(
+                    {
+                        "code": code(finished.language),
+                        "steps": tr("subtitles.written_earlier", file=finished.target.name),
+                        "cannot": "",
+                        "muted": True,
                     }
                 )
             for subtitle in work.not_added if work is not None and not plan else ():

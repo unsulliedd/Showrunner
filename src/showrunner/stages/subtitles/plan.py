@@ -1,9 +1,10 @@
 """The subtitle work for one file: which finished subtitles it gets and the steps each needs. Pure logic: the plan names
 the work and its inputs, and nothing is read, run or written until Apply.
 
-A finished subtitle is one subtitle, in one language, that goes into the new file. It is made in three cases only:
-a paired file the track plan adds gets the cleanup, sync and re-split the place asks for; a wanted language no
-subtitle of the file has is translated from the reference; an embedded text track in a wanted language is cleaned.
+A finished subtitle is one subtitle, in one language, that goes into the new file or beside the video, as the place's
+Output asks. It is made in three cases only: a paired file gets the cleanup, sync and re-split the place asks for (into
+the video only where the track plan adds it, beside the video whether it does or not); a wanted language no subtitle of
+the file has is translated from the reference; an embedded text track in a wanted language is cleaned.
 """
 
 from __future__ import annotations
@@ -17,7 +18,8 @@ from showrunner.core.cue import FORMATS
 from showrunner.core.language import Language
 from showrunner.core.media import MediaItem, SubtitleFile
 from showrunner.core.track import Track, TrackKind
-from showrunner.stages.subtitles.options import Approval, Lines, ReferenceKind, SubtitlesOptions, SyncEngine
+from showrunner.stages.subtitles.beside import is_result, language_name, new_file_name
+from showrunner.stages.subtitles.options import Approval, Lines, Output, ReferenceKind, SubtitlesOptions, SyncEngine
 from showrunner.stages.tracks import KindTest, PlanRefused, TrackMatch, TracksOptions, matches, plan_tracks, stand_in
 from showrunner.tools.cleanit import RuleSet
 
@@ -52,6 +54,9 @@ class Cannot(StrEnum):
 
     NO_REFERENCE = "no-reference"  # a translation needs a subtitle to translate from
     NO_TEXT_REFERENCE = "no-text-reference"  # re-split needs the reference's lines
+    # Beside the video: a file of the name it would be written to lies there already, or another finished subtitle of
+    # the file is written to it. Never overwritten.
+    TARGET_EXISTS = "target-exists"
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +102,13 @@ class FinishedSubtitle:
     cannot: tuple[Cannot, ...] = ()
     # The kinds of work it needs that this version cannot do, in the order they run; such a subtitle is left out.
     missing: tuple[StepKind, ...] = ()
+    # Where the subtitle stage writes it beside the video; None for one that goes into the new file through Mux.
+    target: Path | None = None
+
+    @property
+    def replaces(self) -> bool:
+        """Written in place of its paired file, which goes to the Recycle Bin once the new one is checked."""
+        return self.paired is not None and self.target == self.paired.path
 
     @property
     def uses_reference(self) -> bool:
@@ -117,10 +129,23 @@ class SubtitlePlan:
     # Text subtitle files beside the video that the track plan does not add: the place's subtitle work cannot reach
     # them until Tracks adds them.
     not_added: tuple[SubtitleFile, ...] = ()
+    # Beside the video as new files: the ones whose new file the scan found beside the video, named with the place's
+    # new-file text, so an earlier run wrote it and nothing is planned for them.
+    written_earlier: tuple[FinishedSubtitle, ...] = ()
 
     @property
     def waits(self) -> bool:
         return any(finished.waits for finished in self.finished)
+
+    @property
+    def into_video(self) -> tuple[FinishedSubtitle, ...]:
+        """The finished subtitles that go into the new file, so the video needs one for them."""
+        return tuple(finished for finished in self.finished if finished.target is None)
+
+    @property
+    def written(self) -> tuple[Path, ...]:
+        """The files the subtitle stage writes beside the video."""
+        return tuple(finished.target for finished in self.finished if finished.target is not None)
 
 
 def plan_subtitles(
@@ -132,8 +157,13 @@ def plan_subtitles(
     available: Collection[StepKind] = frozenset(StepKind),
     rule_sets: Mapping[str, RuleSet] | None = None,
 ) -> SubtitlePlan:
-    """The finished subtitles the place's options ask for in this file. The paired files are the ones the track plan
-    adds, so a run that leaves the track choices out leaves their subtitle work out too. `prefer` is the language
+    """The finished subtitles the place's options ask for in this file. Into the video, the paired files are the ones
+    the track plan adds, so a run that leaves the track choices out leaves their subtitle work out too; beside the
+    video, every text file paired with the video is worked on, but for the ones an earlier run named with the new-file
+    text. A new file the scan already paired with the video was written by an earlier run, so its original plans no
+    work (`written_earlier`); any other target that names a file the scan paired with the video, other than the one it
+    replaces, or another subtitle's target, cannot be written. The plan reads nothing from disk, so Apply checks
+    again before it writes. `prefer` is the language
     Automatic looks for first in the reference. `available` are the kinds of work that can run: a finished subtitle
     that needs another one is left out. `rule_sets` are the cleanup sets that exist, by name: a subtitle is cleaned with
     the chosen sets whose rules cover its language."""
@@ -152,14 +182,20 @@ def plan_subtitles(
     )
     resplit = (Step(StepKind.RESPLIT, model=options.model),) if sync and options.lines is Lines.RESPLIT else ()
     every = options.approval is Approval.EVERY
+    beside = options.output is not Output.VIDEO
 
     found: list[FinishedSubtitle] = []
+
+    def add_paired(paired: SubtitleFile) -> None:
+        format_ = FORMATS.get(paired.path.suffix.casefold())
+        # A picture file beside the video has no text to clean, sync or re-split.
+        if format_ is not None and (steps := _clean(chosen, rule_sets, paired.language) + sync + resplit):
+            found.append(FinishedSubtitle(Source.PAIRED, paired.language, steps, format_, paired, waits=every))
+
     for kept in track_plan.kept:
-        if (paired := kept.external) is not None:
-            format_ = FORMATS.get(paired.path.suffix.casefold())
-            # A picture file beside the video has no text to clean, sync or re-split.
-            if format_ is not None and (steps := _clean(chosen, rule_sets, paired.language) + sync + resplit):
-                found.append(FinishedSubtitle(Source.PAIRED, paired.language, steps, format_, paired, waits=every))
+        if kept.external is not None:
+            if not beside:
+                add_paired(kept.external)
         elif (
             _text(kept.track)
             and (clean := _clean(chosen, rule_sets, kept.track.language))
@@ -177,6 +213,10 @@ def plan_subtitles(
                     waits=every,
                 )
             )
+    if beside:
+        for paired in item.subtitles:
+            if options.output is not Output.NEW_FILE or not is_result(paired.path.name, options.new_file_text):
+                add_paired(paired)
     # A translation takes the reference's timing, so it is not synced either.
     absent = [tag for tag in options.wanted() if not _present(item, tag)]
     reference = _reference(item, options, prefer) if absent or sync else None
@@ -189,9 +229,25 @@ def plan_subtitles(
             waits = every or options.approval is Approval.TRANSLATIONS
             found.append(FinishedSubtitle(Source.TRANSLATION, language, steps, "srt", waits=waits))
 
-    ready, cannot, left_out = [], [], []
+    ready, cannot, left_out, earlier = [], [], [], []
+    # Compared without case, as Windows names files.
+    scanned = {str(subtitle.path).casefold() for subtitle in item.subtitles}
+    taken = set(scanned)
     for finished in found:
-        if reasons := _reasons(finished, reference):
+        reasons = _reasons(finished, reference)
+        if beside:
+            finished = replace(finished, target=_target(finished, video, options))
+            key = str(finished.target).casefold()
+            # Named with the new-file text after its own paired file, so it is that file's result.
+            result = options.output is Output.NEW_FILE and finished.paired is not None and key in scanned
+            if result:
+                earlier.append(finished)
+                taken.add(key)
+                continue
+            if key in taken and not finished.replaces:
+                reasons += (Cannot.TARGET_EXISTS,)
+            taken.add(key)
+        if reasons:
             cannot.append(replace(finished, cannot=reasons))
         elif missing := _missing(finished, reference, available):
             left_out.append(replace(finished, missing=missing))
@@ -200,8 +256,13 @@ def plan_subtitles(
     if not any(finished.uses_reference for finished in ready):
         reference = None
     added = {kept.external.path for kept in track_plan.kept if kept.external is not None}
-    not_added = tuple(s for s in item.subtitles if s.path not in added and s.path.suffix.casefold() in FORMATS)
-    return SubtitlePlan(video, tuple(ready), reference, tuple(cannot), tuple(left_out), not_added)
+    # Beside the video the work reaches every paired file, so none waits for Tracks to add it.
+    not_added = (
+        ()
+        if beside
+        else tuple(s for s in item.subtitles if s.path not in added and s.path.suffix.casefold() in FORMATS)
+    )
+    return SubtitlePlan(video, tuple(ready), reference, tuple(cannot), tuple(left_out), not_added, tuple(earlier))
 
 
 _NOTHING = SubtitlesOptions()
@@ -219,6 +280,19 @@ def _covering(
 def _clean(chosen: tuple[str, ...], rule_sets: Mapping[str, RuleSet], language: Language | None) -> tuple[Step, ...]:
     names, rules = _covering(chosen, rule_sets, language)
     return (Step(StepKind.CLEAN, names, rules),) if names else ()
+
+
+def _target(finished: FinishedSubtitle, video: Path, options: SubtitlesOptions) -> Path:
+    """Where a finished subtitle is written beside the video: in place of its paired file, beside it named with the
+    new-file text, or, for one with no file of its own, named by its language."""
+    if finished.paired is None:
+        flags = finished.track.flags if finished.track is not None else None
+        forced, sdh = (flags.forced, flags.hearing_impaired) if flags is not None else (False, False)
+        return video.with_name(language_name(video.stem, finished.language, finished.format, forced=forced, sdh=sdh))
+    path = finished.paired.path
+    if options.output is Output.REPLACE:
+        return path
+    return path.with_name(new_file_name(path.name, options.new_file_text))
 
 
 def _reasons(finished: FinishedSubtitle, reference: ReferenceTrack | None) -> tuple[Cannot, ...]:

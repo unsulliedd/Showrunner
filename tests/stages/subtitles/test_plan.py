@@ -12,6 +12,7 @@ from showrunner.stages.subtitles import (
     Approval,
     Cannot,
     Lines,
+    Output,
     Reference,
     ReferenceKind,
     RuleSetUse,
@@ -249,3 +250,100 @@ def test_a_rule_that_changes_changes_the_step(b: SimpleNamespace) -> None:
         ).finished
         == ()
     )
+
+
+# Beside the video
+
+CLEAN_HI = SubtitlesOptions(cleanup={"Hearing impaired": RuleSetUse.USED})
+
+
+def beside(output: Output, base: SubtitlesOptions = CLEAN_HI) -> SubtitlesOptions:
+    return replace(base, output=output)
+
+
+def test_into_the_video_has_no_target(b: SimpleNamespace) -> None:
+    plan = plan_subtitles(episode(b), CLEAN_HI, ADD_TURKISH)
+    (finished,) = plan.finished
+    assert finished.target is None
+    assert plan.into_video == plan.finished
+    assert plan.written == ()
+
+
+def test_beside_reaches_a_paired_file_tracks_does_not_add(b: SimpleNamespace) -> None:
+    item = episode(b)
+    assert plan_subtitles(item, CLEAN_HI, TracksOptions()).finished == ()
+    plan = plan_subtitles(item, beside(Output.REPLACE), TracksOptions())
+    (finished,) = plan.finished
+    assert finished.source is Source.PAIRED
+    assert finished.target == TURKISH.path
+    assert finished.replaces
+    assert plan.into_video == ()
+    assert plan.not_added == ()
+
+
+def test_a_new_file_is_named_with_the_text(b: SimpleNamespace) -> None:
+    options = beside(Output.NEW_FILE)
+    (finished,) = plan_subtitles(episode(b), options, ADD_TURKISH).finished
+    assert finished.target == Path("Show Name - S01E01_cleaned.tr.srt")
+    assert not finished.replaces
+
+
+def test_a_rerun_after_a_new_file_run_plans_nothing_and_flags_nothing(b: SimpleNamespace) -> None:
+    done = SubtitleFile(Path("Show Name - S01E01_cleaned.tr.srt"), Language("tur"))
+    plan = plan_subtitles(episode(b, paired=(TURKISH, done)), beside(Output.NEW_FILE), TracksOptions())
+    assert (plan.finished, plan.cannot, plan.left_out) == ((), (), ())
+    (earlier,) = plan.written_earlier
+    assert (earlier.paired, earlier.target) == (TURKISH, done.path)
+
+
+def test_a_result_named_in_another_case_is_written_earlier_too(b: SimpleNamespace) -> None:
+    upper = SubtitleFile(Path("Show Name - S01E01_CLEANED.tr.srt"), Language("tur"))
+    plan = plan_subtitles(episode(b, paired=(TURKISH, upper)), beside(Output.NEW_FILE), TracksOptions())
+    assert (plan.finished, plan.cannot) == ((), ())
+    assert [f.paired for f in plan.written_earlier] == [TURKISH]
+
+
+def test_a_foreign_file_in_the_way_of_a_new_file_is_still_a_problem(b: SimpleNamespace) -> None:
+    options = SubtitlesOptions(languages={"de": Wanted.WANTED}, output=Output.NEW_FILE)
+    item = episode(b, b.subtitle(2), paired=())
+    there = SubtitleFile(item.file.path.with_name(f"{item.file.path.stem}.de.srt"), None)
+    plan = plan_subtitles(episode(b, b.subtitle(2), paired=(there,)), options, TracksOptions())
+    assert plan.written_earlier == ()
+    assert [c.cannot for c in plan.cannot] == [(Cannot.TARGET_EXISTS,)]
+
+
+def test_a_translation_is_written_by_its_language(b: SimpleNamespace) -> None:
+    options = SubtitlesOptions(languages={"de": Wanted.WANTED}, output=Output.NEW_FILE)
+    item = episode(b, b.subtitle(2), paired=())
+    (finished,) = plan_subtitles(item, options, TracksOptions()).finished
+    assert finished.source is Source.TRANSLATION
+    assert finished.target == item.file.path.with_name(f"{item.file.path.stem}.de.srt")
+
+
+def test_a_translation_over_a_file_that_lies_there_is_a_problem(b: SimpleNamespace) -> None:
+    options = SubtitlesOptions(languages={"de": Wanted.WANTED}, output=Output.REPLACE)
+    item = episode(b, b.subtitle(2), paired=())
+    there = SubtitleFile(item.file.path.with_name(f"{item.file.path.stem}.de.srt"), None)
+    # The scan found the file without a language, so German counts as absent.
+    plan = plan_subtitles(episode(b, b.subtitle(2), paired=(there,)), options, TracksOptions())
+    assert plan.finished == ()
+    assert [c.cannot for c in plan.cannot] == [(Cannot.TARGET_EXISTS,)]
+
+
+def test_a_cleaned_embedded_track_is_written_beside_by_its_language(b: SimpleNamespace) -> None:
+    options = replace(CLEAN_HI, languages={"en": Wanted.WANTED}, output=Output.REPLACE)
+    item = episode(b, b.subtitle(2), paired=())
+    plan = plan_subtitles(item, options, TracksOptions())
+    (finished,) = plan.finished
+    assert finished.source is Source.EMBEDDED
+    assert finished.target == item.file.path.with_name(f"{item.file.path.stem}.en.srt")
+    assert plan.into_video == ()
+
+
+def test_two_embedded_tracks_of_one_language_get_two_names(b: SimpleNamespace) -> None:
+    options = replace(CLEAN_HI, languages={"en": Wanted.WANTED}, output=Output.NEW_FILE)
+    item = episode(b, b.subtitle(2), b.subtitle(3, hearing_impaired=True), paired=())
+    plan = plan_subtitles(item, options, TracksOptions())
+    stem = item.file.path.stem
+    assert [f.target.name for f in plan.finished if f.target] == [f"{stem}.en.srt", f"{stem}.en.sdh.srt"]
+    assert plan.cannot == ()

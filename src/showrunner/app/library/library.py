@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from enum import IntEnum
 from pathlib import Path
@@ -46,6 +46,12 @@ class LibraryLoad:
 
 def _variant(subtitle: SubtitleFile) -> tuple:
     return subtitle.language, subtitle.forced, subtitle.sdh
+
+
+def _attached(item: MediaItem, subtitles: Iterable[SubtitleFile]) -> MediaItem:
+    for subtitle in subtitles:
+        item = attach(item, subtitle)
+    return item
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,12 +141,20 @@ class Library:
             roots=tuple(r for r in self.roots if r not in folders),
         )
 
-    def with_files(self, files: dict[Path, MediaFile], gone: Iterable[Path] = ()) -> Library:
+    def with_files(
+        self,
+        files: dict[Path, MediaFile],
+        gone: Iterable[Path] = (),
+        subtitles: Mapping[Path, Iterable[SubtitleFile]] | None = None,
+    ) -> Library:
         """The library with these files, read again after they were written, in place of the ones at the paths
         they are keyed by; a file read under a new name keeps its place in a show or movie. The subtitle files in
-        `gone` were moved away (added to a new file) and are no longer paired."""
+        `gone` were moved away (added to a new file) and are no longer paired. `subtitles` were written beside the
+        videos at the paths they are keyed by: each is paired with its video, in place of a file at the same path."""
         gone = set(gone)
+        written = subtitles or {}
         items = (replace(i, file=files[i.file.path]) if i.file.path in files else i for i in self.items)
+        items = (_attached(i, written.get(i.file.path, ())) for i in items)
         items = (replace(i, subtitles=tuple(s for s in i.subtitles if s.path not in gone)) for i in items)
         return replace(self, items=tuple(sorted(items, key=lambda i: natural_key(i.file.path))))
 

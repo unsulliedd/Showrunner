@@ -281,3 +281,22 @@ def test_the_shortcuts_name_the_keys_that_move_tracks_in_the_order(controller: W
     entries = {entry["text"]: entry["keys"] for entry in controller.settings.shortcuts}
     assert entries["Tracks: move the focused column in the track order"] == ["Ctrl+Left", "Ctrl+Right"]
     assert entries["Movie Overview: move the focused track card in the track order"] == ["Ctrl+Up", "Ctrl+Down"]
+
+
+def test_the_new_file_text_reaches_the_batch_and_a_bad_one_is_named(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    assert controller.save_profile_as("Series") == ""
+    settings = controller.settings
+    settings.open("profiles")
+    assert settings.profile["new_file_text"] == "_cleaned"
+    assert "new_file_text" not in settings.profile["problems"]
+    settings.set_new_file_text(".clean")
+    profile = controller.batches.profile(controller.workspace.key)  # type: ignore[arg-type]
+    assert profile.for_stage("subtitles").new_file_text == ".clean"
+    assert controller.store.load("Series").value.for_stage("subtitles").new_file_text == ".clean"
+    settle(controller, qtbot)
+    for bad in ("", "a/b", "a\b"):
+        settings.set_new_file_text(bad)
+        assert settings.profile["problems"]["new_file_text"].startswith("The text for new subtitle files")

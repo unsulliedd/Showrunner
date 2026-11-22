@@ -6,6 +6,7 @@ from showrunner.app.jobs.blocked import blocked_stages
 from showrunner.app.profiles import registered  # noqa: F401
 from showrunner.app.profiles.profile import Profile
 from showrunner.core.naming import CustomKind, CustomToken, ProblemKind
+from showrunner.stages.subtitles import Output
 from showrunner.stages.tracks import TrackMatch, TrackRule
 
 
@@ -60,3 +61,11 @@ def test_file_title_blocks_the_title_template_only() -> None:
     (problem,) = blocks["metadata"].templates["title_template"]
     assert (problem.kind, problem.detail) == (ProblemKind.NOT_HERE, "file_title")
     assert blocked_stages(profile(naming={"title_template": "", "audio_track_template": "{file_title} {codec}"})) == {}
+
+
+def test_a_bad_new_file_text_blocks_subtitles_only_while_new_files_are_chosen() -> None:
+    assert blocked_stages(profile(subtitles={"new_file_text": "a/b"})) == {}
+    blocks = blocked_stages(profile(subtitles={"new_file_text": "a/b", "output": Output.NEW_FILE}))
+    assert list(blocks) == ["subtitles"]
+    assert (blocks["subtitles"].new_file_text, blocks["subtitles"].count) == (True, 1)
+    assert blocked_stages(profile(subtitles={"output": Output.NEW_FILE})) == {}

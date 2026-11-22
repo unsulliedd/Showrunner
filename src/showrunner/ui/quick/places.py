@@ -33,7 +33,7 @@ _MARKED_FIELDS: tuple[tuple[str, str], ...] = (
     ("mux", "original"),
     ("tracks", "order"),
     ("tracks", "flags_from_names"),
-    *(("subtitles", name) for name in ("reference", "sync", "lines", "model", "approval")),
+    *(("subtitles", name) for name in ("reference", "sync", "lines", "model", "approval", "output")),
 )
 
 

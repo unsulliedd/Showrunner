@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable, Collection, Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from pathlib import Path
 
 from showrunner.app.dependencies.service import media_programs
 from showrunner.app.library.cache import CachedReader, load_cache, save_cache
 from showrunner.app.library.library import LibraryLoad
-from showrunner.core.media import MediaFile, MediaItem
+from showrunner.core.media import MediaFile, MediaItem, SubtitleFile
 from showrunner.stages.scan import ScanOptions, probe_items, scan
 from showrunner.stages.scan.probing import Progress, Reader
+from showrunner.stages.scan.subtitles import read_subtitle
 from showrunner.tools.probe import Programs, probe
 
 _log = logging.getLogger(__name__)
@@ -92,3 +93,20 @@ def read_again(
     if cache is not None and cached.changed:
         save_cache(cache, cached.entries)
     return files
+
+
+def read_subtitles(paths: Mapping[Path, Sequence[Path]]) -> dict[Path, tuple[SubtitleFile, ...]]:
+    """The subtitle files a job wrote beside each video, by the video's path, read as a scan reads them. A file that
+    is not there (its step did not get to it, or a remux took it into the video) is left out."""
+    found: dict[Path, tuple[SubtitleFile, ...]] = {}
+    for video, written in paths.items():
+        read = []
+        for path in written:
+            try:
+                if path.is_file():
+                    read.append(read_subtitle(path))
+            except OSError:
+                _log.exception("Could not read %s again", path)
+        if read:
+            found[video] = tuple(read)
+    return found

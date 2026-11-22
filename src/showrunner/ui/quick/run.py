@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
@@ -25,10 +25,10 @@ from showrunner.app.jobs.run import JobResult, Read, StalePreviewError, create_j
 from showrunner.app.jobs.stages import Stage
 from showrunner.app.jobs.store import JobStore, StepState
 from showrunner.app.library.loader import BackgroundJob
-from showrunner.app.library.service import read_again
+from showrunner.app.library.service import read_again, read_subtitles
 from showrunner.app.profiles.profile import Profile
 from showrunner.app.storage.paths import read_cache_path
-from showrunner.core.media import MediaFile
+from showrunner.core.media import MediaFile, SubtitleFile
 from showrunner.stages.mux import MuxResult, Original
 from showrunner.tools.probe import probe
 from showrunner.ui.i18n.catalog import tr, tr_plural
@@ -322,24 +322,31 @@ class Run(QObject):
                     written[record.path] = record.written or written.get(record.path, record.path)
                 if isinstance(record.detail, MuxResult):
                     gone += record.detail.taken
-        self._read_again(written, gone)
+        self._read_again(written, gone, self.jobs.beside_files())
         self._on_lock_changed()
 
     # Reading files again
 
-    def _read_again(self, paths: dict[Path, Path], gone: Sequence[Path] = ()) -> None:
+    def _read_again(
+        self, paths: dict[Path, Path], gone: Sequence[Path] = (), beside: Mapping[Path, Sequence[Path]] | None = None
+    ) -> None:
         """Read files again on a pool thread through the read cache, keyed by the path the library knows them by; a
-        file that cannot be read keeps what was read before until the next load. The files stay locked until then."""
+        file that cannot be read keeps what was read before until the next load. The files stay locked until then.
+        `beside` are the subtitle files written beside each video, read so the library pairs them with it."""
         known = {i.file.path for i in self._workspace.model.library.items}
         targets = {old: new for old, new in paths.items() if old in known}
-        if not targets and not gone:
+        subtitles = {video: written for video, written in (beside or {}).items() if video in known}
+        if not targets and not gone and not subtitles:
             return
         programs = programs_from(self._workspace.statuses or {})
         injected, cache = self.read_file, read_cache_path()
         reader = probe if injected is None else lambda path, _programs, *, cancel: injected(path)
 
-        def work() -> tuple[dict[Path, MediaFile], tuple[Path, ...], frozenset[Path]]:
-            return read_again(targets, programs, read=reader, cache=cache), tuple(gone), frozenset(targets)
+        def work() -> tuple[
+            dict[Path, MediaFile], tuple[Path, ...], frozenset[Path], dict[Path, tuple[SubtitleFile, ...]]
+        ]:
+            files = read_again(targets, programs, read=reader, cache=cache)
+            return files, tuple(gone), frozenset(targets), read_subtitles(subtitles)
 
         self._reading |= targets.keys()
         job = BackgroundJob(work)
@@ -347,10 +354,13 @@ class Run(QObject):
         job.failed.connect(self._on_read_again_failed)
         job.start()
 
-    def _on_read_again(self, result: tuple[dict[Path, MediaFile], tuple[Path, ...], frozenset[Path]]) -> None:
-        files, gone, targets = result
+    def _on_read_again(
+        self,
+        result: tuple[dict[Path, MediaFile], tuple[Path, ...], frozenset[Path], dict[Path, tuple[SubtitleFile, ...]]],
+    ) -> None:
+        files, gone, targets, subtitles = result
         self._reading -= targets
-        self._workspace.model.replace_files(files, gone)
+        self._workspace.model.replace_files(files, gone, subtitles)
         # The batch is selected again, so it holds the files as read now; a file with a new name opens its season.
         self._workspace.reselect()
         self._on_lock_changed()

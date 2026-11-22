@@ -92,7 +92,8 @@ def file_parts(file: FilePreview) -> dict[str, int]:
     subtitles = file.plan_for("subtitles")
     work = subtitles.plan if subtitles is not None and isinstance(subtitles.plan, SubtitlePlan) else None
     found["subtitles"] = len(work.finished) if work is not None else 0
-    found["subtitle_file"] = int(found["subtitles"] > 0 and not found["new_file"])
+    # A subtitle written beside the video asks for no new file.
+    found["subtitle_file"] = int(work is not None and bool(work.into_video) and not found["new_file"])
     if len(_counted) >= _COUNTED_LIMIT:
         _counted.clear()
     _counted[id(file)] = (file, found)  # the file is held, so its id is not given to another one while it is here

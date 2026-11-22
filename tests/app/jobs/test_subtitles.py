@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import threading
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import ClassVar
@@ -23,7 +24,15 @@ from showrunner.core.cue import Cue, read_cues, write_cues
 from showrunner.core.language import Language
 from showrunner.core.media import Episode, MediaFile, MediaItem, SubtitleFile
 from showrunner.core.track import AudioProperties, SubtitleProperties, Track, TrackKind, VideoProperties
-from showrunner.stages.subtitles import Approval, RuleSetUse, StepKind, SubtitlePlan, SubtitlesOptions, SyncEngine
+from showrunner.stages.subtitles import (
+    Approval,
+    Output,
+    RuleSetUse,
+    StepKind,
+    SubtitlePlan,
+    SubtitlesOptions,
+    SyncEngine,
+)
 from showrunner.stages.subtitles.work import StepWork
 from showrunner.stages.tracks import PairedFile, TracksOptions
 from showrunner.tools.cleanit import RuleDef, RuleSet
@@ -229,3 +238,145 @@ def test_the_mux_reads_the_final_result(setup) -> None:
     mux = mux_stage(results, ENGINES).plan(item, profile)
     assert mux.plan.tracks[-1].content == final(item, profile, results)
     assert mux.plan.added == item.subtitles  # moved away with the original once the new file is in place
+
+
+# Beside the video
+
+ONLY_CLEAN = SubtitlesOptions(cleanup={"Hearing impaired": RuleSetUse.USED})
+
+
+class Bin:
+    """Stands in for the Recycle Bin: moves the files into a folder; `kill` makes the process die right after."""
+
+    def __init__(self, folder: Path) -> None:
+        self.folder = folder
+        self.kill = False
+
+    def __call__(self, paths: Sequence[Path]) -> None:
+        self.folder.mkdir(exist_ok=True)
+        for path in paths:
+            path.rename(self.folder / path.name)
+        if self.kill:
+            self.kill = False
+            raise Killed
+
+
+def beside(output: Output) -> Profile:
+    """Cleanup alone, written beside the video, with no track choice: nothing else asks for a new file."""
+    return Profile.defaults("Test").with_options("subtitles", replace(ONLY_CLEAN, output=output))
+
+
+def beside_stages(engines: Engines, results: ResultStore, recycle: Bin) -> tuple[Stage, ...]:
+    subtitles = SubtitlesStage(results, dict.fromkeys(ENGINES, engines), CLEANUP, recycle=recycle)
+    return (TracksStage(), subtitles)
+
+
+def texts(path: Path) -> list[str]:
+    return [cue.text for cue in read_cues(path)]
+
+
+def test_replacing_writes_the_subtitle_alone_and_recycles_the_original(setup, tmp_path: Path) -> None:
+    item, _, engines, results = setup
+    profile, recycle = beside(Output.REPLACE), Bin(tmp_path / "bin")
+    given = beside_stages(engines, results, recycle)
+    (file,) = preview([item], profile, given).files
+    # No stage here can write a new file, and none is needed.
+    assert [(plan.stage, plan.needs_remux) for plan in file.writes] == [("subtitles", False)]
+    assert run(JobStore(tmp_path / "jobs.sqlite3"), item, profile, given) == (StepState.DONE, "")
+    assert texts(item.subtitles[0].path) == ["MERHABA"]
+    assert texts(tmp_path / "bin" / item.subtitles[0].path.name) == ["merhaba"]
+
+
+def test_a_new_file_is_written_beside_the_original(setup, tmp_path: Path) -> None:
+    item, _, engines, results = setup
+    profile = beside(Output.NEW_FILE)
+    assert run(JobStore(tmp_path / "jobs.sqlite3"), item, profile, beside_stages(engines, results, Bin(tmp_path))) == (
+        StepState.DONE,
+        "",
+    )
+    assert texts(tmp_path / "Show Name - S01E01_cleaned.tr.srt") == ["MERHABA"]
+    assert texts(item.subtitles[0].path) == ["merhaba"]
+
+
+def test_a_crash_after_the_recycle_is_finished_by_the_resume(setup, tmp_path: Path) -> None:
+    item, _, engines, results = setup
+    profile, recycle = beside(Output.REPLACE), Bin(tmp_path / "bin")
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    given = beside_stages(engines, results, recycle)
+    job = create_job(store, preview([item], profile, given), profile, given)
+    recycle.kill = True
+    with pytest.raises(Killed):
+        run_job(store, job, given, read=lambda path: item.file)
+    original = item.subtitles[0].path
+    # The original is in the Recycle Bin and the checked copy waits beside it under its hidden name.
+    assert not original.exists()
+    assert store.load(job).steps[0].state is StepState.RUNNING
+    (record,) = run_job(store, job, given, read=lambda path: item.file).steps
+    assert record.state is StepState.DONE
+    assert texts(original) == ["MERHABA"]
+    assert engines.ran == {StepKind.CLEAN: 1}
+    assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".")] == []
+
+
+def test_a_subtitle_written_before_the_step_was_recorded_is_left_as_it_is(setup, tmp_path: Path) -> None:
+    item, _, engines, results = setup
+    stage = beside_stages(engines, results, Bin(tmp_path / "bin"))[1]
+    plan = stage.plan(item, beside(Output.NEW_FILE))
+    assert stage.apply(plan, None).ok
+    # Run again, as a resume runs a step that was running when the app stopped.
+    assert stage.apply(plan, None).ok
+    assert texts(tmp_path / "Show Name - S01E01_cleaned.tr.srt") == ["MERHABA"]
+
+
+def test_a_file_in_the_way_fails_the_step_and_stays(setup, tmp_path: Path) -> None:
+    item, _, engines, results = setup
+    stage = beside_stages(engines, results, Bin(tmp_path / "bin"))[1]
+    plan = stage.plan(item, beside(Output.NEW_FILE))
+    in_the_way = tmp_path / "Show Name - S01E01_cleaned.tr.srt"
+    write_cues(in_the_way, [Cue(1.0, 2.0, "mine")])
+    result = stage.apply(plan, None)
+    assert not result.ok
+    assert result.message.startswith("beside-exists")
+    assert texts(in_the_way) == ["mine"]
+
+
+def test_a_failed_check_fails_the_step_and_keeps_the_original(setup, tmp_path: Path, monkeypatch) -> None:
+    item, _, engines, results = setup
+    recycle = Bin(tmp_path / "bin")
+    stage = beside_stages(engines, results, recycle)[1]
+    plan = stage.plan(item, beside(Output.REPLACE))
+    monkeypatch.setattr(
+        "showrunner.stages.subtitles.beside.shutil.copyfile",
+        lambda source, destination: write_cues(destination, [Cue(1.0, 2.0, "torn")]),
+    )
+    result = stage.apply(plan, None)
+    assert (result.ok, result.message.split(":")[0]) == (False, "beside-check")
+    assert texts(item.subtitles[0].path) == ["merhaba"]
+    assert not recycle.folder.exists()
+
+
+def test_mux_adds_the_paired_file_and_not_a_subtitle_written_beside(setup) -> None:
+    item, profile, _, results = setup
+    into = mux_stage(results, ENGINES).plan(item, profile.with_options("subtitles", ONLY_CLEAN))
+    assert into.plan.tracks[-1].content is not None
+    tracks_add = profile.with_options("subtitles", replace(ONLY_CLEAN, output=Output.REPLACE))
+    mux = mux_stage(results, ENGINES).plan(item, tracks_add)
+    # Tracks still adds the file, which the subtitle stage has replaced by the time Mux reads it.
+    assert mux.plan.tracks[-1].content is None
+    assert mux.plan.added == item.subtitles
+    # With no track choice, a subtitle written beside asks Mux for nothing.
+    assert mux_stage(results, ENGINES).plan(item, beside(Output.REPLACE)).state is PlanState.UNCHANGED
+
+
+def test_a_second_run_after_a_new_file_run_has_nothing_to_do(setup, tmp_path: Path) -> None:
+    item, _, engines, results = setup
+    profile = beside(Output.NEW_FILE)
+    given = beside_stages(engines, results, Bin(tmp_path / "bin"))
+    assert run(JobStore(tmp_path / "jobs.sqlite3"), item, profile, given) == (StepState.DONE, "")
+    written = SubtitleFile(tmp_path / "Show Name - S01E01_cleaned.tr.srt", Language("tur"))
+    again = replace(item, subtitles=(*item.subtitles, written))
+    (file,) = preview([again], profile, given).files
+    subtitles = file.plan_for("subtitles")
+    assert subtitles is not None
+    assert (subtitles.state, file.writes) == (PlanState.UNCHANGED, ())
+    assert [f.target for f in subtitles.plan.written_earlier] == [written.path]

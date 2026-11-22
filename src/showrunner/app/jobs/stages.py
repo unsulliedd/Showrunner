@@ -19,6 +19,7 @@ from showrunner.core.media import MediaItem
 from showrunner.stages.metadata import MetadataPlan, MetadataRefused, apply_metadata, plan_metadata
 from showrunner.stages.mux import Failure, MuxPlan, MuxRefused, MuxResult, apply_mux, plan_mux, resume_mux
 from showrunner.stages.subtitles import Step, StepKind, SubtitlePlan, plan_subtitles
+from showrunner.stages.subtitles.beside import BesideError, BesideFailure, finish_replace, write_beside
 from showrunner.stages.subtitles.clean import clean_runner
 from showrunner.stages.subtitles.work import Runner, StepWork
 from showrunner.stages.tracks import PlanRefused, plan_tracks
@@ -191,7 +192,7 @@ class MetadataStage:
             profile.for_stage("naming"),
             profile.for_stage("tracks"),
             source=self.source,
-            remux=bool(subtitle_plan(item, profile, self.available, self.cleanup).finished),
+            remux=bool(subtitle_plan(item, profile, self.available, self.cleanup).into_video),
         )
         if isinstance(result, MetadataRefused):
             return StagePlan(self.id, PlanState.REFUSED, result)
@@ -237,7 +238,8 @@ class MuxStage:
             profile.for_stage("metadata"),
             profile.for_stage("naming"),
             source=self.source,
-            finished=[(finished, self.results.final(subtitles, finished)) for finished in subtitles.finished],
+            # The subtitles written beside the video stay out of the new file.
+            finished=[(finished, self.results.final(subtitles, finished)) for finished in subtitles.into_video],
         )
         if result is None:
             return StagePlan(self.id, PlanState.UNCHANGED)
@@ -274,7 +276,8 @@ class MuxStage:
 @dataclass(frozen=True, slots=True)
 class SubtitlesStage:
     """The slow subtitle work of a file (reading the reference, translation, cleanup, sync, re-split), each result kept
-    for a resume; the finished subtitles then go into the new file through Mux. It writes nothing beside the video.
+    for a resume. The finished subtitles then go into the new file through Mux, or, where the place's Output says so,
+    are written beside the video by this stage, with no new file for them.
 
     `runners` carry out the steps, by kind, and say what can run (`available`): a finished subtitle that needs other
     work is left out of the plan, and the file's other changes go on without it."""
@@ -282,6 +285,8 @@ class SubtitlesStage:
     results: ResultStore = field(default_factory=_results)
     runners: Mapping[StepKind, Runner] = field(default_factory=dict, repr=False, compare=False)
     cleanup: CleanupSets = field(default_factory=CleanupSets)
+    # Not a setting of the batch, so not part of the stamp; tests put a stand-in for the shell here.
+    recycle: Callable[[Sequence[Path]], None] = field(default=recycle, repr=False, compare=False)
     # Part of the stamp of a preview, unlike the runners themselves: what can run decides the plan.
     available: tuple[StepKind, ...] = field(init=False)
 
@@ -294,14 +299,14 @@ class SubtitlesStage:
     def plan(self, item: MediaItem, profile: Profile) -> StagePlan:
         result = subtitle_plan(item, profile, self.available, self.cleanup)
         if result.finished:
-            return StagePlan(self.id, PlanState.CHANGES, result, writes=True, needs_remux=True)
+            return StagePlan(self.id, PlanState.CHANGES, result, writes=True, needs_remux=bool(result.into_video))
         return StagePlan(self.id, PlanState.REFUSED if result.cannot else PlanState.UNCHANGED, result)
 
     def apply(
         self, plan: StagePlan, cancel: threading.Event | None, progress: StepProgress | None = None
     ) -> StepResult:
         """The detail of a finished step is how many results were reused from an earlier run; no view shows it
-        yet."""
+        yet. The subtitles written beside the video are written last, once all the work of the file is done."""
         work = plan.plan
         if not isinstance(work, SubtitlePlan):
             raise TypeError(f"not a subtitle plan: {type(work).__name__}")
@@ -333,7 +338,13 @@ class SubtitlesStage:
             given = StepWork(step, work.video, None, None, track.language if track else None, track, reference)
             if failed := run(given, [work.video], reference_phase(step)):
                 return StepResult(False, failed)
-        for finished in work.finished:
+        settled: set[int] = set()
+        for number, finished in enumerate(work.finished):
+            # Its original is in the Recycle Bin, so the steps made of it cannot run again; the checked copy is the
+            # result.
+            if finished.replaces and finished.target is not None and finish_replace(finished.target):
+                settled.add(number)
+                continue
             source = finished.paired.path if finished.paired is not None else None
             for index, step in enumerate(finished.steps):
                 output = store.output(work, finished, index)
@@ -345,10 +356,26 @@ class SubtitlesStage:
         # Nothing approves in this version: a plan waits only where approval is registered as available.
         if work.waits:
             return StepResult(False, f"{NOT_AVAILABLE}: {APPROVAL}")
+        for number, finished in enumerate(work.finished):
+            if finished.target is None or number in settled:
+                continue
+            try:
+                write_beside(
+                    store.final(work, finished),
+                    finished.target,
+                    finished.language,
+                    replaces=finished.replaces,
+                    recycle=self.recycle,
+                )
+            except BesideError as error:
+                return StepResult(False, str(error))
+            except OSError as error:
+                return StepResult(False, f"{BesideFailure.WRITE.value}: {error}")
         return StepResult(True, detail=count["reused"])
 
     def resume(self, plan: StagePlan, before: FileStamp, cancel: threading.Event | None) -> Resumed:
-        # The kept results tell what is done, so running the step again repeats only what was not.
+        # The kept results tell what is done, so running the step again repeats only what was not; a subtitle already
+        # written beside the video reads as its result and is left as it is.
         return Resumed(Recovery.REDO)
 
 

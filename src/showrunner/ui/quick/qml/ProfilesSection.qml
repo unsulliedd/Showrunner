@@ -279,6 +279,26 @@ SettingsPage {
             text: (page.profile.problems || {}).suffix || ""
             tone: "drop"
         }
+
+        SettingLabel {
+            text: Strings.t("prefs.profiles.new_file_text")
+            note: Strings.t("prefs.profiles.new_file_text_hint")
+        }
+
+        InputField {
+            objectName: "newFileText"
+            Layout.fillWidth: true
+            mono: true
+            enabled: page.editable
+            label: Strings.t("prefs.profiles.new_file_text")
+            text: page.profile.new_file_text ?? ""
+            onEditingFinished: if (text !== page.profile.new_file_text) app.settings.set_new_file_text(text)
+        }
+
+        Hint {
+            text: (page.profile.problems || {}).new_file_text || ""
+            tone: "drop"
+        }
     }
 
     SaveAsPopup {
