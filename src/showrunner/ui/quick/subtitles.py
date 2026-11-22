@@ -390,6 +390,8 @@ class SubtitleSettings(QObject):
                         "cannot": tr("common.list_separator").join(reasons),
                     }
                 )
+            for subtitle in work.not_added if work is not None and not plan else ():
+                plan.append({"code": code(subtitle.language), "steps": "", "cannot": tr("subtitles.not_added")})
             rows.append(
                 {
                     "path": str(item.file.path),

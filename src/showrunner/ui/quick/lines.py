@@ -17,7 +17,8 @@ from showrunner.core.media import MediaItem, SubtitleFile
 from showrunner.stages.subtitles import StepKind, SubtitlePlan
 from showrunner.tools.cleanit import CueResult, RuleBook
 from showrunner.ui.i18n.catalog import tr, tr_plural
-from showrunner.ui.quick.subtitles import STAGE, set_label
+from showrunner.ui.quick.review import missing_phases
+from showrunner.ui.quick.subtitles import STAGE, set_label, unavailable
 from showrunner.ui.quick.tracks import code
 from showrunner.ui.quick.workspace import Workspace
 
@@ -95,23 +96,29 @@ class LinesPanel(QObject):
             self._path, self._index = str(item.file.path), 0
         return item, item.subtitles[min(self._index, len(item.subtitles) - 1)]
 
-    def _sets(self, item: MediaItem, subtitle: SubtitleFile) -> tuple[str, ...]:
-        """The rule sets the plan cleans this paired file with; none when the place asks for no cleaning of it."""
+    def _sets(self, item: MediaItem, subtitle: SubtitleFile) -> tuple[tuple[str, ...], str]:
+        """The rule sets the plan cleans this paired file with, and why it cleans it with none: the file is not added,
+        or other work it needs cannot run in this version."""
         file = next((f for f in self._workspace.current_files() if f.item.file.path == item.file.path), None)
         stage = file.plan_for(STAGE) if file is not None else None
         if stage is None or not isinstance(stage.plan, SubtitlePlan):
-            return ()
+            return (), tr("lines.not_cleaned")
         for finished in stage.plan.finished:
             if finished.paired is not None and finished.paired.path == subtitle.path:
-                return next((s.sets for s in finished.steps if s.kind is StepKind.CLEAN), ())
-        return ()
+                return next((s.sets for s in finished.steps if s.kind is StepKind.CLEAN), ()), tr("lines.not_cleaned")
+        if any(s.path == subtitle.path for s in stage.plan.not_added):
+            return (), tr("lines.not_added")
+        for finished in stage.plan.left_out:
+            if finished.paired is not None and finished.paired.path == subtitle.path:
+                return (), tr("lines.left_out", reason=unavailable(missing_phases(finished)[0]))
+        return (), tr("lines.not_cleaned")
 
     def _build(self) -> dict[str, Any]:
         found = self._current()
         if found is None:
             return {"empty": tr("lines.none"), "languages": [], "rows": []}
         item, subtitle = found
-        names = self._sets(item, subtitle)
+        names, why = self._sets(item, subtitle)
         book = self._rules.book()
         effect = self._effect(subtitle, names, book)
         languages = [
@@ -125,7 +132,7 @@ class LinesPanel(QObject):
             "languages": languages,
             "index": item.subtitles.index(subtitle),
             "sets": tr("common.list_separator").join(set_label(n) for n in names),
-            "summary": self._summary(effect, bool(names)),
+            "summary": self._summary(effect) if names else why,
             "rows": [_row(result) for result in effect.results[:_SHOWN]],
             "more": max(0, len(effect.results) - _SHOWN),
         }
@@ -140,9 +147,7 @@ class LinesPanel(QObject):
         return self._read[1]
 
     @staticmethod
-    def _summary(effect: Effect, cleaned: bool) -> str:
-        if not cleaned:
-            return tr("lines.not_cleaned")
+    def _summary(effect: Effect) -> str:
         return tr(
             "cleanup.count_short",
             dropped=tr_plural("cleanup.lines", effect.dropped),

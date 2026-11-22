@@ -273,15 +273,20 @@ Popup {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
-                    model: dialog.current.rules ?? []
+                    // A count, not the rules: a new view then updates the rows in place, so selecting a rule
+                    // keeps the list where it was scrolled to.
+                    model: (dialog.current.rules ?? []).length
                     spacing: Theme.space_xs
+                    // Another set starts at its first rule.
+                    property string setName: dialog.current.name ?? ""
+                    onSetNameChanged: positionViewAtBeginning()
                     ScrollBar.vertical: Scroller {}
 
                     delegate: Rectangle {
                         id: ruleRow
 
                         required property int index
-                        required property var modelData
+                        readonly property var modelData: (dialog.current.rules ?? [])[index] ?? ({})
 
                         objectName: "cleanupRule_" + index
                         width: ruleList.width - Theme.space_lg
@@ -316,6 +321,18 @@ Popup {
                                 label: Strings.t(ruleRow.modelData.paused ? "cleanup.rule.unpause" : "cleanup.rule.pause")
                                 enabled: !(dialog.view.locked ?? false)
                                 onClicked: dialog.editor.toggle_pause(ruleRow.index)
+                            }
+
+                            // Marks a rule that changed or dropped a line of the test.
+                            Rectangle {
+                                objectName: "cleanupUsed_" + ruleRow.index
+                                Layout.preferredWidth: Theme.dot
+                                Layout.preferredHeight: Theme.dot
+                                radius: Theme.dot / 2
+                                color: Theme.change
+                                opacity: ruleRow.modelData.used ? 1 : 0
+                                ToolTip.visible: ruleRow.modelData.used && ruleArea.containsMouse
+                                ToolTip.text: Strings.t("cleanup.rule.used")
                             }
 
                             ColumnLayout {
@@ -649,38 +666,61 @@ Popup {
                         model: dialog.test.rows ?? []
                         ScrollBar.vertical: Scroller {}
 
-                        delegate: RowLayout {
+                        delegate: Item {
                             id: testRow
 
                             required property var modelData
 
                             width: testList.width - Theme.space_lg
-                            spacing: Theme.space_md
+                            implicitHeight: testCue.implicitHeight + 2 * Theme.space_sm
+                            height: implicitHeight
 
-                            UiText {
-                                Layout.preferredWidth: Theme.cue_time_width
-                                Layout.alignment: Qt.AlignTop
-                                text: testRow.modelData.time
-                                color: Theme.faint
-                                mono: true
-                                font.pixelSize: Theme.text_xs
+                            Rectangle {
+                                anchors.bottom: parent.bottom
+                                width: parent.width
+                                height: Theme.stroke
+                                color: Theme.line
                             }
 
-                            UiText {
-                                Layout.fillWidth: true
-                                text: testRow.modelData.before
-                                color: testRow.modelData.state === "dropped" ? Theme.drop : testRow.modelData.mine ? Theme.ink : Theme.muted
-                                font.pixelSize: Theme.text_sm
-                                font.strikeout: testRow.modelData.state === "dropped"
-                                wrapMode: Text.WordWrap
-                            }
+                            RowLayout {
+                                id: testCue
 
-                            UiText {
-                                Layout.fillWidth: true
-                                text: testRow.modelData.state === "looped" ? Strings.t("lines.looped") : testRow.modelData.after
-                                color: Theme.change
-                                font.pixelSize: Theme.text_sm
-                                wrapMode: Text.WordWrap
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: Theme.space_md
+
+                                UiText {
+                                    Layout.preferredWidth: Theme.cue_time_width
+                                    Layout.alignment: Qt.AlignTop
+                                    text: testRow.modelData.time
+                                    color: Theme.faint
+                                    mono: true
+                                    font.pixelSize: Theme.text_xs
+                                }
+
+                                // Equal preferred widths keep both columns the same width on every row, whatever
+                                // each text's length, so the result lines up under its own column.
+                                UiText {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 1
+                                    Layout.alignment: Qt.AlignTop
+                                    text: testRow.modelData.before
+                                    color: testRow.modelData.state === "dropped" ? Theme.drop : testRow.modelData.mine ? Theme.ink : Theme.muted
+                                    font.pixelSize: Theme.text_sm
+                                    font.strikeout: testRow.modelData.state === "dropped"
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                UiText {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 1
+                                    Layout.alignment: Qt.AlignTop
+                                    text: testRow.modelData.state === "looped" ? Strings.t("lines.looped") : testRow.modelData.after
+                                    color: Theme.change
+                                    font.pixelSize: Theme.text_sm
+                                    wrapMode: Text.WordWrap
+                                }
                             }
                         }
                     }

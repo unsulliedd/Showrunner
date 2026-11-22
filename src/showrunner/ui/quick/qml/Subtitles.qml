@@ -369,7 +369,7 @@ Item {
 
                                         UiText {
                                             anchors.verticalCenter: parent.verticalCenter
-                                            text: modelData.cannot !== "" ? modelData.steps + " " + Strings.t("status.separator") + " " + modelData.cannot : modelData.steps
+                                            text: modelData.cannot === "" ? modelData.steps : modelData.steps === "" ? modelData.cannot : modelData.steps + " " + Strings.t("status.separator") + " " + modelData.cannot
                                             color: modelData.cannot !== "" ? Theme.change : Theme.ink
                                             font.pixelSize: Theme.text_sm
                                         }

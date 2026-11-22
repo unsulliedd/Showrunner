@@ -112,6 +112,16 @@ def test_a_subtitle_nothing_cleans_is_shown_as_it_is(
     assert controller.lines["summary"].startswith("No cleanup is planned")
 
 
+def test_a_subtitle_tracks_do_not_add_says_why_nothing_cleans_it(
+    controller: WindowController, library: Any, qtbot: QtBot, tmp_path: Path
+) -> None:
+    season_with_files(controller, library, qtbot, tmp_path)
+    controller.workspace.set_options("tracks", TracksOptions())
+    settle(controller, qtbot)
+    controller.focus_file(str(library.items[0].file.path))
+    assert controller.lines["summary"].startswith("This subtitle lies beside the video, but Tracks does not add it")
+
+
 @pytest.fixture
 def editor(tmp_path: Path) -> CleanupEditor:
     store = Store(lambda: tmp_path / "rules")

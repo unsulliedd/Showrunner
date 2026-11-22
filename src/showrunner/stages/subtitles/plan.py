@@ -114,6 +114,9 @@ class SubtitlePlan:
     # Asked for by the place, but needing work that is not available (`missing`), so left out of this run: the file's
     # other changes go on without it, as they do without a missing program.
     left_out: tuple[FinishedSubtitle, ...] = ()
+    # Text subtitle files beside the video that the track plan does not add: the place's subtitle work cannot reach
+    # them until Tracks adds them.
+    not_added: tuple[SubtitleFile, ...] = ()
 
     @property
     def waits(self) -> bool:
@@ -196,7 +199,9 @@ def plan_subtitles(
             ready.append(finished)
     if not any(finished.uses_reference for finished in ready):
         reference = None
-    return SubtitlePlan(video, tuple(ready), reference, tuple(cannot), tuple(left_out))
+    added = {kept.external.path for kept in track_plan.kept if kept.external is not None}
+    not_added = tuple(s for s in item.subtitles if s.path not in added and s.path.suffix.casefold() in FORMATS)
+    return SubtitlePlan(video, tuple(ready), reference, tuple(cannot), tuple(left_out), not_added)
 
 
 _NOTHING = SubtitlesOptions()

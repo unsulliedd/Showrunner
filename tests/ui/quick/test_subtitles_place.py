@@ -87,7 +87,10 @@ def test_a_show_s_settings_reach_its_season_marked_and_the_season_overrides_them
     (german,) = row(controller, "wanted")["items"]
     assert (german["off"], german["mark"]["over"]) == (True, "Overrides the show")
     assert controller.field_marks["subtitles.sync"] == {"from": "", "over": "Overrides the show"}
-    assert controller.subtitles["files"][0]["plan"] == []
+    # No work is planned: the Turkish file beside the video is not added, and the row says so.
+    assert [(p["code"], p["steps"], p["cannot"]) for p in controller.subtitles["files"][0]["plan"]] == [
+        ("TUR", "", "Beside the video, not added · Add it on Tracks")
+    ]
     assert controller.subtitles["follow"] == "Follow the show again"
 
     # The row menu: follow the show again, or "as it is" as the season's own value.

@@ -66,6 +66,15 @@ Item {
             Layout.fillWidth: true
         }
 
+        // Before the icons, so it takes room from the spacer when it shows and the icons stay put.
+        UiText {
+            objectName: "planning"
+            visible: app.planning && !app.jobs.running
+            text: Strings.t("top.planning")
+            color: Theme.faint
+            font.pixelSize: Theme.text_sm
+        }
+
         IconButton {
             iconName: "panel_bottom"
             label: Strings.t("top.drawer")
@@ -80,14 +89,6 @@ Item {
             label: Strings.t("top.settings")
             tip: Strings.t("tip.top_settings")
             onClicked: bar.settingsAsked()
-        }
-
-        UiText {
-            objectName: "planning"
-            visible: app.planning && !app.jobs.running
-            text: Strings.t("top.planning")
-            color: Theme.faint
-            font.pixelSize: Theme.text_sm
         }
 
         UiText {

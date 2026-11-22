@@ -89,52 +89,69 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: Scroller {}
 
-            delegate: RowLayout {
+            delegate: Item {
                 id: line
 
                 required property var modelData
 
                 width: list.width - Theme.space_lg
-                spacing: Theme.space_md
+                implicitHeight: cue.implicitHeight + 2 * Theme.space_sm
+                height: implicitHeight
 
-                UiText {
-                    Layout.preferredWidth: Theme.cue_time_width
-                    Layout.alignment: Qt.AlignTop
-                    text: line.modelData.time
-                    color: Theme.faint
-                    mono: true
-                    font.pixelSize: Theme.text_xs
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    width: parent.width
+                    height: Theme.stroke
+                    color: Theme.line
                 }
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 0
+                RowLayout {
+                    id: cue
+
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.space_md
 
                     UiText {
-                        Layout.fillWidth: true
-                        text: line.modelData.text
-                        color: line.modelData.state === "dropped" ? Theme.drop : line.modelData.state === "kept" ? Theme.ink : Theme.muted
-                        font.pixelSize: Theme.text_sm
-                        font.strikeout: line.modelData.state === "dropped"
-                        wrapMode: Text.WordWrap
-                    }
-
-                    UiText {
-                        Layout.fillWidth: true
-                        visible: line.modelData.after !== ""
-                        text: line.modelData.after
-                        color: Theme.change
-                        font.pixelSize: Theme.text_sm
-                        wrapMode: Text.WordWrap
-                    }
-
-                    UiText {
-                        Layout.fillWidth: true
-                        visible: line.modelData.rule !== ""
-                        text: line.modelData.state === "looped" ? Strings.t("lines.looped") : line.modelData.rule
+                        Layout.preferredWidth: Theme.cue_time_width
+                        Layout.alignment: Qt.AlignTop
+                        text: line.modelData.time
                         color: Theme.faint
+                        mono: true
                         font.pixelSize: Theme.text_xs
-                        elide: Text.ElideRight
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+
+                        UiText {
+                            Layout.fillWidth: true
+                            text: line.modelData.text
+                            color: line.modelData.state === "dropped" ? Theme.drop : line.modelData.state === "kept" ? Theme.ink : Theme.muted
+                            font.pixelSize: Theme.text_sm
+                            font.strikeout: line.modelData.state === "dropped"
+                            wrapMode: Text.WordWrap
+                        }
+
+                        UiText {
+                            Layout.fillWidth: true
+                            visible: line.modelData.after !== ""
+                            text: line.modelData.after
+                            color: Theme.change
+                            font.pixelSize: Theme.text_sm
+                            wrapMode: Text.WordWrap
+                        }
+
+                        UiText {
+                            Layout.fillWidth: true
+                            visible: line.modelData.rule !== ""
+                            text: line.modelData.state === "looped" ? Strings.t("lines.looped") : line.modelData.rule
+                            color: Theme.faint
+                            font.pixelSize: Theme.text_xs
+                            elide: Text.ElideRight
+                        }
                     }
                 }
             }

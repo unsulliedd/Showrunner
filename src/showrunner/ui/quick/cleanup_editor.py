@@ -361,6 +361,7 @@ class CleanupEditor(QObject):
         except RuleError as error:
             test["error"] = str(error)
             return test
+        test["used"] = sorted({name for r in results for name in r.rules})
         mine = [r for r in results if rule.name in r.rules]
         dropped = sum(r.dropped for r in mine)
         test["summary"] = tr(
@@ -496,6 +497,9 @@ class CleanupEditor(QObject):
                 "readonly": view["set"]["readonly"],
             }
             view["test"] = self._test(current, rule)
+            used = set(view["test"].get("used", ()))
+            for shown in view["set"]["rules"]:
+                shown["used"] = shown["name"] in used
         return view
 
     def _import_view(self) -> dict[str, Any]:

@@ -95,11 +95,14 @@ def test_a_paired_file_the_tracks_add_is_cleaned_synced_and_resplit(b: SimpleNam
 
 def test_a_paired_file_the_tracks_do_not_add_gets_no_work(b: SimpleNamespace) -> None:
     options = SubtitlesOptions(cleanup=CLEAN, sync=SyncEngine.FFSUBSYNC)
-    assert plan_subtitles(episode(b, b.subtitle(2)), options, TracksOptions()).finished == ()
+    plan = plan_subtitles(episode(b, b.subtitle(2)), options, TracksOptions())
+    assert plan.finished == ()
+    assert plan.not_added == (TURKISH,)  # named, so the views can say why nothing happens
     # Nor does one the rules drop after adding it.
     drop = TrackRule(match=TrackMatch(kind=KindTest.SUBTITLE, languages=["tr"]), verdict=Verdict.DROP)
     dropped = replace(ADD_TURKISH, rules=[drop])
     assert plan_subtitles(episode(b, b.subtitle(2)), options, dropped).finished == ()
+    assert plan_subtitles(episode(b, b.subtitle(2)), options, ADD_TURKISH).not_added == ()
 
 
 def test_resplit_runs_only_after_a_sync(b: SimpleNamespace) -> None:
