@@ -119,6 +119,15 @@ def write_beside(
         raise
 
 
+def reads_as_original(result: Path, original: Path, language: Language | None) -> bool:
+    """Whether the kept `result` has the cues of the paired file it was made of, so nothing was changed in it and a new
+    file beside it would hold what the original does. False where either cannot be read."""
+    try:
+        return _reads_as(original, read_cues(result, language), language)
+    except Exception:  # a result that cannot be read as a subtitle is no copy of the original
+        return False
+
+
 def _reads_as(path: Path, wanted: list[Cue], language: Language | None) -> bool:
     try:
         return read_cues(path, language) == wanted

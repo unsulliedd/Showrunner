@@ -28,6 +28,7 @@ from showrunner.stages.mux import Failure, MuxPlan, MuxResult, VerifyProblem
 from showrunner.stages.subtitles import SubtitlePlan
 from showrunner.stages.subtitles.beside import BesideFailure
 from showrunner.ui.i18n.catalog import tr, tr_plural
+from showrunner.ui.quick.review import kept_sync, left_as_it_was, sync_found
 
 _log = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ _log = logging.getLogger(__name__)
 # order: the original moves only after the new file passed its check.
 PHASES: dict[str, tuple[str, ...]] = {"mux": ("write", "check", "original", "rename"), "metadata": ("edit",)}
 # The phases that show how far they are, in percent, while they run.
-_PERCENT_PHASES = ("write", "ocr")
+_PERCENT_PHASES = ("write", "ocr", "sync")
 _BESIDE_FAILURES = {failure.value for failure in BesideFailure}
 # Where a remux stopped, by the phase that failed.
 _FAILED_PHASE = {
@@ -92,10 +93,22 @@ def beside_text(plan: SubtitlePlan) -> list[str]:
     """The subtitle files a finished step wrote beside the video, by name, from its stored plan: a resumed job does
     not hold the results of the steps an earlier run finished."""
     return [
-        tr("jobs.result.beside_replaced" if finished.replaces else "jobs.result.beside", name=finished.target.name)
+        tr("jobs.result.beside_unchanged", name=finished.target.name)
+        if left_as_it_was(plan, finished)
+        else tr("jobs.result.beside_replaced" if finished.replaces else "jobs.result.beside", name=finished.target.name)
         for finished in plan.finished
         if finished.target is not None
     ]
+
+
+def sync_text(plan: SubtitlePlan) -> list[str]:
+    """What the sync of each finished subtitle found, from the results the run kept."""
+    lines = []
+    for finished in plan.finished:
+        if (report := kept_sync(plan, finished)) is not None:
+            language = finished.language.name if finished.language is not None else tr("tracks.no_language")
+            lines.append(tr("jobs.result.sync", language=language, found=sync_found(report)))
+    return lines
 
 
 def reason_text(message: str) -> str:
@@ -356,8 +369,9 @@ class JobProgress:
                 lines += mux_text(plan, record.detail)
             elif isinstance(record.detail, ApplyResult) and record.detail.ok:
                 lines.append(edited_text(record.detail))
-            elif record.state is StepState.DONE and isinstance(work := step.plan.plan, SubtitlePlan) and work.written:
-                lines += beside_text(work)
+            elif record.state is StepState.DONE and isinstance(work := step.plan.plan, SubtitlePlan):
+                lines += beside_text(work) if work.written else [tr("jobs.result.done")]
+                lines += sync_text(work)
             elif record.state is StepState.DONE:
                 lines.append(tr("jobs.result.done"))
             else:

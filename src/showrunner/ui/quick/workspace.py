@@ -17,7 +17,7 @@ from PySide6.QtCore import QModelIndex, QObject, QTimer, Signal
 from showrunner.app.batches.batch import Batches, BatchKey, BatchKind
 from showrunner.app.batches.leave_out import LeftOut
 from showrunner.app.batches.workspace import load_batches, save_batches
-from showrunner.app.dependencies.service import mkvpropedit_from, programs_from, tesseract_from
+from showrunner.app.dependencies.service import ffmpeg_from, mkvpropedit_from, programs_from, tesseract_from
 from showrunner.app.jobs.blocked import blocked_stages
 from showrunner.app.jobs.counts import implied_flags, tab_counts
 from showrunner.app.jobs.groups import ChangeGroup, without
@@ -72,7 +72,12 @@ type MakePipeline = Callable[[Statuses], Sequence[Stage]]
 
 
 def default_pipeline(statuses: Statuses) -> tuple[Stage, ...]:
-    return pipeline(programs_from(statuses), mkvpropedit_from(statuses), tesseract=tesseract_from(statuses))
+    return pipeline(
+        programs_from(statuses),
+        mkvpropedit_from(statuses),
+        tesseract=tesseract_from(statuses),
+        ffmpeg=ffmpeg_from(statuses),
+    )
 
 
 def place_key(kind: Kind, first: MediaItem, show: BatchKey | None) -> BatchKey:

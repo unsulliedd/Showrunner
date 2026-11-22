@@ -20,7 +20,8 @@ from pathlib import Path
 
 from showrunner.app.jobs.hashing import stamp
 from showrunner.app.storage.files import write_json_atomic
-from showrunner.stages.subtitles import FinishedSubtitle, SubtitlePlan
+from showrunner.stages.subtitles import FinishedSubtitle, StepKind, SubtitlePlan
+from showrunner.stages.subtitles.sync import SyncReport, read_report
 
 KEEP_DAYS = 14
 _RECORD = ".json"
@@ -47,6 +48,13 @@ class ResultStore:
     def final(self, plan: SubtitlePlan, finished: FinishedSubtitle) -> Path:
         """The result that goes into the new file: the last step's."""
         return self.output(plan, finished, len(finished.steps) - 1)
+
+    def sync_report(self, plan: SubtitlePlan, finished: FinishedSubtitle) -> SyncReport | None:
+        """What the finished subtitle's sync step found, once it has run; None before, or for one with no sync."""
+        for index, step in enumerate(finished.steps):
+            if step.kind is StepKind.SYNC:
+                return read_report(self.output(plan, finished, index))
+        return None
 
     def reference(self, plan: SubtitlePlan, rules: str = "") -> Path:
         """Where the file's reference is kept once read, as text. `rules` is the fingerprint of the rules the reading

@@ -35,6 +35,9 @@ class StepKind(StrEnum):
 
     READ = "read"  # a text track taken out of the video
     OCR = "ocr"  # a picture track read as text, with the OCR fixes
+    # The sound read as speech, which a sync against the audio needs. Not a step of `FinishedSubtitle.steps`: only a
+    # kind of work a plan can miss (`missing`), where the program that reads the sound is not there.
+    AUDIO = "audio"
     TRANSLATE = "translate"
     CLEAN = "clean"
     SYNC = "sync"
@@ -158,6 +161,7 @@ def plan_subtitles(
     available: Collection[StepKind] = frozenset(StepKind),
     rule_sets: Mapping[str, RuleSet] | None = None,
     ocr_languages: Collection[str] | None = None,
+    syncs: Mapping[SyncEngine, bool] | None = None,
 ) -> SubtitlePlan:
     """The finished subtitles the place's options ask for in this file. Into the video, the paired files are the ones
     the track plan adds, so a run that leaves the track choices out leaves their subtitle work out too; beside the
@@ -169,7 +173,9 @@ def plan_subtitles(
     Automatic looks for first in the reference. `available` are the kinds of work that can run: a finished subtitle
     that needs another one is left out. `rule_sets` are the cleanup sets that exist, by name: a subtitle is cleaned with
     the chosen sets whose rules cover its language. `ocr_languages` are the Tesseract models installed, so a picture
-    reference in a language with none cannot be read; None leaves that unchecked."""
+    reference in a language with none cannot be read; None leaves that unchecked. `syncs` are the sync engines that can
+    run, each with whether it can work against the audio; a sync with another engine, or against the audio with one
+    that cannot, is left out. None leaves that unchecked."""
     rule_sets = rule_sets or {}
     video = item.file.path
     if options == _NOTHING:
@@ -252,7 +258,7 @@ def plan_subtitles(
             taken.add(key)
         if reasons:
             cannot.append(replace(finished, cannot=reasons))
-        elif missing := _missing(finished, reference, available, ocr_languages):
+        elif missing := _missing(finished, reference, available, ocr_languages, syncs):
             left_out.append(replace(finished, missing=missing))
         else:
             ready.append(finished)
@@ -314,10 +320,12 @@ def _missing(
     reference: ReferenceTrack | None,
     available: Collection[StepKind],
     ocr_languages: Collection[str] | None,
+    syncs: Mapping[SyncEngine, bool] | None,
 ) -> tuple[StepKind, ...]:
     """The kinds of work the finished subtitle needs that are not available: its steps, the reading of the reference
     it works against, and the wait for approval. Reading a picture reference is not available either where Tesseract
-    has no model for its language."""
+    has no model for its language, and syncing is not where the engine it asks for cannot run or cannot work against
+    the audio the reference is."""
     needed = {step.kind for step in finished.steps}
     lacking: set[StepKind] = set()
     if finished.uses_reference and reference is not None and (read := reference.step) is not None:
@@ -329,6 +337,14 @@ def _missing(
             and tesseract_code(reference.track.language) not in ocr_languages
         ):
             lacking.add(StepKind.OCR)
+    for step in finished.steps if syncs is not None else ():
+        if step.kind is not StepKind.SYNC:
+            continue
+        if step.engine not in syncs:  # type: ignore[operator]
+            lacking.add(StepKind.SYNC)
+        elif reference is not None and reference.track is None and not syncs[step.engine]:  # type: ignore[index]
+            needed.add(StepKind.AUDIO)
+            lacking.add(StepKind.AUDIO)
     if finished.waits:
         needed.add(StepKind.APPROVAL)
     return tuple(kind for kind in StepKind if kind in needed and (kind not in available or kind in lacking))

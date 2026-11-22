@@ -381,6 +381,7 @@ class WindowController(QObject):
     subtitles_as_it_is = _slot("subtitle_settings", "as_it_is", str, qt_name="subtitles_as_it_is")
     toggle_subtitle_item = _slot("subtitle_settings", "toggle_item", str, str, qt_name="toggle_subtitle_item")
     pick_reference = _slot("subtitle_settings", "pick_reference", str, qt_name="pick_reference")
+    set_sync_setting = _slot("subtitle_settings", "set_sync_setting", str, str, qt_name="set_sync_setting")
     pick_wanted_language = _slot("subtitle_settings", "pick_language", qt_name="pick_wanted_language")
     add_rule_set = _slot("subtitle_settings", "add_rule_set", str, qt_name="add_rule_set")
     edit_rule_sets = _slot("subtitle_settings", "edit_rule_sets", str, qt_name="edit_rule_sets")

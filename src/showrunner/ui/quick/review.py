@@ -19,7 +19,9 @@ from showrunner.app.jobs.blocked import StageBlock, blocked_stages
 from showrunner.app.jobs.counts import file_parts, ruled_flags
 from showrunner.app.jobs.groups import ChangeGroup
 from showrunner.app.jobs.preview import FileOutcome, FilePreview
+from showrunner.app.jobs.results import ResultStore
 from showrunner.app.profiles.profile import Profile
+from showrunner.app.storage.paths import results_dir
 from showrunner.core.language import Language
 from showrunner.core.media import Episode, MediaItem
 from showrunner.core.naming.names import codec_display
@@ -28,7 +30,9 @@ from showrunner.stages.metadata import MetadataPlan
 from showrunner.stages.metadata.plan import FLAG_FIELDS
 from showrunner.stages.mux.options import MuxOptions
 from showrunner.stages.subtitles import FinishedSubtitle, ReferenceTrack, StepKind, SubtitlePlan
+from showrunner.stages.subtitles.beside import reads_as_original
 from showrunner.stages.subtitles.plan import PGS
+from showrunner.stages.subtitles.sync import SyncReport
 from showrunner.stages.tracks import NO_LANGUAGE, TrackPlan, TracksOptions
 from showrunner.tools.mkvtoolnix.propedit import Property
 from showrunner.ui.i18n.catalog import tr, tr_plural
@@ -49,7 +53,7 @@ from showrunner.ui.quick.tracks import (
 # The flags that tell tracks of a language apart, in the order they are named.
 _WHAT = ("commentary", "hearing_impaired", "visual_impaired", "forced")
 # The phases whose work needs a program (and its data) that may be missing, so the words say which.
-NEEDS = ("reference", "read", "ocr")
+NEEDS = ("reference", "read", "ocr", "audio")
 # The kinds of change of each group, in the order its card lists them.
 LINES: dict[ChangeGroup, tuple[str, ...]] = {
     ChangeGroup.TRACKS: ("new_file", "order", "flags"),
@@ -176,9 +180,41 @@ def reference_text(reference: ReferenceTrack) -> str:
     return tr("subtitles.reference.ocr_of", track=text) if reference.track.codec == PGS else text
 
 
+# A stretch under this is the rounding of a frame rate, not a change worth saying.
+_STRETCH_SHOWN = 0.0004
+
+
+def sync_found(report: SyncReport) -> str:
+    """What a sync step found, in words: how far it moved the subtitle or that it was already in time, and any doubt."""
+    if report.in_sync:
+        found = tr("subtitles.sync.found.in_sync", shift=f"{report.shift:.2f}")
+    elif abs(report.scale - 1.0) > _STRETCH_SHOWN:
+        found = tr("subtitles.sync.found.stretched", offset=f"{report.offset:+.2f}", scale=f"{report.scale:.4f}")
+    else:
+        found = tr("subtitles.sync.found.moved", offset=f"{report.offset:+.2f}")
+    if report.needs_review:
+        found += f" {tr('status.separator')} " + tr("subtitles.sync.found.review", score=f"{report.score:.2f}")
+    return found
+
+
+def kept_sync(plan: SubtitlePlan, finished: FinishedSubtitle, store: ResultStore | None = None) -> SyncReport | None:
+    """What the sync of the finished subtitle found when it last ran, from the results the data folder keeps; None
+    before it has run. A file changed since shows the old report until the step runs again."""
+    return (store or ResultStore(results_dir())).sync_report(plan, finished)
+
+
+def left_as_it_was(plan: SubtitlePlan, finished: FinishedSubtitle, store: ResultStore | None = None) -> bool:
+    """Whether a new file beside the video was not written for the finished subtitle, since its kept result reads as the
+    paired file it was made of (already in sync, nothing to clean). Known once the steps have run."""
+    if finished.target is None or finished.replaces or finished.paired is None:
+        return False
+    result = (store or ResultStore(results_dir())).final(plan, finished)
+    return reads_as_original(result, finished.paired.path, finished.language)
+
+
 def missing_phases(finished: FinishedSubtitle) -> list[str]:
-    """The Jobs phases of the work a left-out subtitle misses, its own steps first: "sync" says more than the reading
-    of the reference it also needs. A reading that is not one of its steps is the reference's."""
+    """The phases of the work a left-out subtitle misses, its own steps first: "sync" says more than the reading of
+    the reference it also needs. A reading that is not one of its steps is the reference's."""
     own = {step.kind for step in finished.steps}
     phases = [kind.value for kind in finished.missing if kind in own]
     phases += ["reference" if kind is StepKind.READ else kind.value for kind in finished.missing if kind not in own]
@@ -495,11 +531,21 @@ def _subtitle_lines(file: FilePreview | None, out: bool) -> list[dict[str, objec
         language = finished.language.name if finished.language is not None else tr("tracks.no_language")
         if finished.target is None:
             sentence = tr("review.subtitle.into_video", language=language)
+        elif work is not None and left_as_it_was(work, finished):
+            sentence = tr("review.subtitle.unchanged", language=language)
         else:
             key = "review.subtitle.replaces" if finished.replaces else "review.subtitle.beside"
             sentence = tr(key, language=language, file=finished.target.name)
         label = tr("review.detail.subtitle_files") if number == 0 else ""
         rows.append({**_line("file", "", "", out), "label": label, "text": sentence})
+    for finished in work.finished if work is not None else ():
+        sync = next((step for step in finished.steps if step.kind is StepKind.SYNC), None)
+        if work is not None and sync is not None:
+            language = finished.language.name if finished.language is not None else tr("tracks.no_language")
+            sentence = tr("review.subtitle.sync", language=language, engine=tr(f"subtitles.sync.{sync.engine.value}"))
+            if (report := kept_sync(work, finished)) is not None:
+                sentence += f" {tr('status.separator')} {sync_found(report)}"
+            rows.append({**_line("file", "", "", out), "label": tr("review.detail.sync"), "text": sentence})
     for finished in work.written_earlier if work is not None else ():
         assert finished.target is not None
         label = tr("review.detail.subtitle_files") if not rows else ""

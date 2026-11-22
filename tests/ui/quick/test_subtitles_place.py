@@ -7,6 +7,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
+from PySide6.QtCore import QMetaObject
+from PySide6.QtQuick import QQuickItem
 from pytestqt.qtbot import QtBot
 
 from showrunner.app.library.library import Library
@@ -160,6 +162,9 @@ def test_the_place_draws_without_warnings(
     assert load() == []
     controller.set_subtitle_choice("sync", "alass")
     assert load() == []
+    controller.set_subtitle_choice("sync", "ffsubsync")
+    assert load() == []
+    assert shown(load, "syncSetting_ffsubsync.max_offset") is not None
     load.window.setProperty("place", "review")
     assert load() == []
     assert qt_warnings() == []
@@ -207,3 +212,102 @@ def test_a_bad_new_file_text_blocks_the_subtitle_plans_and_says_why(
     assert controller.workspace_tabs[2]["count"] == 0
     group = next(g for g in controller.review["groups"] if g["key"] == "subtitles")
     assert group["problems"][0].startswith("The text for new subtitle files")
+
+
+def shown(load: Any, name: str) -> QQuickItem | None:
+    """The item of that name among the visible children of the window: delegates of a Repeater are not found by
+    `findChild`, which walks the object tree."""
+    pending = [load.window.contentItem()]
+    while pending:
+        item = pending.pop()
+        if item.objectName() == name:
+            return item
+        pending.extend(item.childItems())
+    return None
+
+
+def fields(controller: WindowController) -> dict[str, dict[str, Any]]:
+    return {f["key"]: f for f in row(controller, "sync")["settings"]}
+
+
+def test_the_sync_row_shows_the_engines_settings_by_place(
+    engines: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    controller = engines
+    open_season(controller, library, qtbot)
+    season = controller.tree.index_of(str(library.items[2].file.path)).parent()
+    controller.select(season.parent())
+    assert "settings" in row(controller, "sync")
+    assert row(controller, "sync")["settings"] == []  # no engine chosen: nothing to set
+    controller.set_subtitle_choice("sync", "ffsubsync")
+    shown = fields(controller)
+    assert list(shown) == [
+        "ffsubsync.in_sync_below",
+        "ffsubsync.unsure_below",
+        "ffsubsync.max_offset",
+        "ffsubsync.framerate",
+        "ffsubsync.vad",
+    ]
+    # Nothing set: the engine's own value is the placeholder, the field is empty and unmarked.
+    low = shown["ffsubsync.unsure_below"]
+    assert (low["value"], low["placeholder"], low["own"], low["number"]) == ("", "0.1", False, True)
+    assert [c["key"] for c in shown["ffsubsync.vad"]["choices"]] == ["", "auditok"]
+    controller.set_sync_setting("ffsubsync.max_offset", "30")
+    controller.set_sync_setting("ffsubsync.in_sync_below", "soon")  # no number: not taken
+    controller.set_sync_setting("ffsubsync.in_sync_below", "-1")
+    controller.set_sync_setting("ffsubsync.vad", "auditok")
+    shown = fields(controller)
+    assert (shown["ffsubsync.max_offset"]["value"], shown["ffsubsync.max_offset"]["own"]) == ("30", True)
+    assert shown["ffsubsync.in_sync_below"]["value"] == ""
+    assert shown["ffsubsync.vad"]["current"] == "auditok"
+    # The season receives them, marked, with the show's value as the placeholder.
+    controller.select(season)
+    settle(controller, qtbot)
+    received = fields(controller)["ffsubsync.max_offset"]
+    assert (received["value"], received["placeholder"], received["own"]) == ("", "30", False)
+    assert received["mark"] == {"from": "From the show", "over": ""}
+    # Its own value overrides, and emptying the field gives the show's back.
+    controller.set_sync_setting("ffsubsync.max_offset", "90")
+    own = fields(controller)["ffsubsync.max_offset"]
+    assert (own["value"], own["own"], own["mark"]["over"]) == ("90", True, "Overrides the show")
+    controller.set_sync_setting("ffsubsync.max_offset", "")
+    assert fields(controller)["ffsubsync.max_offset"]["own"] is False
+    assert fields(controller)["ffsubsync.max_offset"]["placeholder"] == "30"
+    # Following the show again on the Sync row takes the season's own settings away with its engine.
+    controller.set_sync_setting("ffsubsync.max_offset", "90")
+    controller.follow_subtitles("sync")
+    assert fields(controller)["ffsubsync.max_offset"]["own"] is False
+    # Another engine has no settings in this version.
+    controller.set_subtitle_choice("sync", "alass")
+    assert row(controller, "sync")["settings"] == []
+
+
+def test_a_field_of_the_engines_settings_is_typed_into_and_read_again(
+    load: Any, controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    load()
+    open_season(controller, library, qtbot)
+    controller.set_subtitle_choice("sync", "ffsubsync")
+    settle(controller, qtbot)
+    load.window.setProperty("place", "subtitles")
+    load()
+    field = shown(load, "syncSetting_ffsubsync.max_offset")
+    assert field is not None
+
+    def type_in(text: str) -> None:
+        field.setProperty("text", text)
+        QMetaObject.invokeMethod(field, "editingFinished")
+        load()
+
+    # A decimal comma is read as a point, a word is refused and the field shows what is kept, and emptying it gives
+    # the engine's own value back.
+    type_in("1,5")
+    assert fields(controller)["ffsubsync.max_offset"]["value"] == "1.5"
+    assert field.property("text") == "1.5"
+    type_in("soon")
+    assert fields(controller)["ffsubsync.max_offset"]["value"] == "1.5"
+    assert field.property("text") == "1.5"
+    type_in("")
+    assert fields(controller)["ffsubsync.max_offset"]["own"] is False
+    assert field.property("text") == ""
+    assert field.property("placeholderText") == "60"

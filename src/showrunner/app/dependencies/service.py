@@ -95,6 +95,12 @@ def mkvpropedit_from(statuses: dict[str, DependencyStatus]) -> Path | None:
     return status.executable("mkvpropedit") if status is not None and status.state is State.FOUND else None
 
 
+def ffmpeg_from(statuses: dict[str, DependencyStatus]) -> Path | None:
+    """The program that reads a video's audio for syncing; None when it is missing or outdated."""
+    status = statuses.get("ffmpeg")
+    return status.executable("ffmpeg") if status is not None and status.state is State.FOUND else None
+
+
 def tesseract_from(statuses: dict[str, DependencyStatus]) -> Path | None:
     """The OCR program; None when it is missing or outdated."""
     status = statuses.get("tesseract")

@@ -80,7 +80,7 @@ class SubtitlesOptions:
     sync: SyncEngine = SyncEngine.AS_IT_IS
     # `<engine>.<setting>` -> the value as typed, for that engine's adapter; empty is the engine's default. Kept per
     # engine, so a place that switches engines receives the settings set above for the one it switches to. Planned
-    # into the sync step, but no adapter reads them yet and no view sets them.
+    # into the sync step, which hands them to the adapter and judges its outcome by the two thresholds among them.
     sync_settings: dict[str, str] = field(default_factory=dict)
     lines: Lines = Lines.AS_THEY_ARE
     # The model that translates and re-splits; empty for the one chosen in Settings. Planned into those steps, but

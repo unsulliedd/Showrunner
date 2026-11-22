@@ -376,3 +376,24 @@ def test_a_chosen_group_is_matched_with_the_flags_the_place_reads_from_names(b: 
     assert choose_reference(item, options, flags_from_names=False).fallback is False
     # Read with the flag from the name, the track is another group: the choice finds none and Automatic steps in.
     assert choose_reference(item, options, flags_from_names=True).fallback is True
+
+
+def test_a_sync_needs_an_engine_that_can_run_and_for_the_audio_one_that_can_listen(b: SimpleNamespace) -> None:
+    options = SubtitlesOptions(sync=SyncEngine.FFSUBSYNC)
+    text = episode(b, b.subtitle(2))
+    audio = episode(b)  # no subtitle track: the reference is the sound
+    # Not asked about: planned either way.
+    assert [f.missing for f in plan_subtitles(text, options, ADD_TURKISH).finished] == [()]
+    assert [f.missing for f in plan_subtitles(audio, options, ADD_TURKISH).finished] == [()]
+    # The engine runs against a subtitle but cannot listen: only the audio is left out, and it says what it lacks.
+    plan = plan_subtitles(text, options, ADD_TURKISH, syncs={SyncEngine.FFSUBSYNC: False})
+    assert plan.finished != ()
+    assert plan.left_out == ()
+    plan = plan_subtitles(audio, options, ADD_TURKISH, syncs={SyncEngine.FFSUBSYNC: False})
+    assert plan.finished == ()
+    assert [f.missing for f in plan.left_out] == [(StepKind.AUDIO,)]
+    assert plan_subtitles(audio, options, ADD_TURKISH, syncs={SyncEngine.FFSUBSYNC: True}).left_out == ()
+    # Another engine than the one the place chose, or none: left out, whatever the reference.
+    for syncs in ({SyncEngine.ALASS: True}, {}):
+        plan = plan_subtitles(text, options, ADD_TURKISH, syncs=syncs)
+        assert [f.missing for f in plan.left_out] == [(StepKind.SYNC,)]
