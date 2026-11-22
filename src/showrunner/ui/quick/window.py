@@ -33,12 +33,14 @@ from showrunner.app.profiles.store import ProfileStore
 from showrunner.app.storage.paths import jobs_path
 from showrunner.ui.library.model import LibraryModel
 from showrunner.ui.quick.choices import Choices
+from showrunner.ui.quick.cleanup_editor import CleanupEditor
 from showrunner.ui.quick.commands import CommandPalette
 from showrunner.ui.quick.folders import Folders
 from showrunner.ui.quick.found import FoundPrograms, check_shown
 from showrunner.ui.quick.jobs import Jobs
 from showrunner.ui.quick.languages import LanguagePicker
 from showrunner.ui.quick.library import LibraryTree
+from showrunner.ui.quick.lines import LinesPanel
 from showrunner.ui.quick.places import Places
 from showrunner.ui.quick.queue import Queue
 from showrunner.ui.quick.rule_editor import RuleEditor
@@ -90,6 +92,7 @@ class WindowController(QObject):
     planning_changed = Signal()
     names_changed = Signal()  # what the Names place or the Tokens panel shows changed
     subtitles_changed = Signal()  # what the Subtitles place shows changed
+    lines_changed = Signal()  # what the Lines panel shows changed
     # What one place shows changed; each is emitted only while its place shows, and on switching to it.
     overview_changed = Signal()
     matrix_changed = Signal()
@@ -130,6 +133,10 @@ class WindowController(QObject):
         self.choices = Choices(workspace, self._language_picker, parent=self)
         self.templates = Templates(workspace, parent=self)
         self.subtitle_settings = SubtitleSettings(workspace, self._language_picker, parent=self)
+        self.lines_panel = LinesPanel(workspace, parent=self)
+        self._cleanup_editor = CleanupEditor(self.lines_panel.loaded, lambda: workspace.locked, parent=self)
+        self._cleanup_editor.saved.connect(workspace.rules_changed)
+        self.subtitle_settings.editor_asked.connect(self._cleanup_editor.open)
         self._rule_editor = RuleEditor(
             lambda: workspace.own_tracks() if workspace.key is not None else None,
             workspace.set_tracks,
@@ -148,6 +155,7 @@ class WindowController(QObject):
             (self.places, ("discard_asked", "revert_asked")),
             (self.templates, ("names_changed",)),
             (self.subtitle_settings, ("subtitles_changed",)),
+            (self.lines_panel, ("lines_changed",)),
             (self.found, ("programs_changed",)),
         ):
             for name in names:
@@ -243,6 +251,11 @@ class WindowController(QObject):
     def rule_editor(self) -> RuleEditor:
         """The editor of a hand-written track rule, in the Rules panel."""
         return self._rule_editor
+
+    @Property(QObject, constant=True)
+    def cleanup_editor(self) -> CleanupEditor:
+        """The editor of the cleanup rule sets, in a dialog of its own."""
+        return self._cleanup_editor
 
     @Property(QObject, constant=True)
     def language_picker(self) -> LanguagePicker:
@@ -367,6 +380,10 @@ class WindowController(QObject):
     subtitles_as_it_is = _slot("subtitle_settings", "as_it_is", str, qt_name="subtitles_as_it_is")
     toggle_subtitle_item = _slot("subtitle_settings", "toggle_item", str, str, qt_name="toggle_subtitle_item")
     pick_wanted_language = _slot("subtitle_settings", "pick_language", qt_name="pick_wanted_language")
+    add_rule_set = _slot("subtitle_settings", "add_rule_set", str, qt_name="add_rule_set")
+    edit_rule_sets = _slot("subtitle_settings", "edit_rule_sets", str, qt_name="edit_rule_sets")
+    lines = _property("QVariantMap", "lines_panel", "view", lines_changed)
+    pick_lines_file = _slot("lines_panel", "pick", int, qt_name="pick_lines_file")
 
     # Names
 

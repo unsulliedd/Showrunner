@@ -12,26 +12,34 @@ from dataclasses import replace
 from enum import StrEnum
 from typing import Any
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, Slot
 
 from showrunner.app.batches.batch import BatchKey
+from showrunner.app.jobs.hashing import stamp
+from showrunner.app.library.loader import BackgroundJob
+from showrunner.app.rules import RULES, RuleStore
+from showrunner.app.rules.effect import file_effect
 from showrunner.core.language import Language
 from showrunner.stages.subtitles import (
     Approval,
     Lines,
     RuleSetUse,
+    Source,
+    StepKind,
     SubtitlePlan,
     SubtitlesOptions,
     SyncEngine,
     Wanted,
 )
-from showrunner.ui.i18n.catalog import tr
+from showrunner.tools.cleanit import RuleBook, RuleSet
+from showrunner.ui.i18n.catalog import tr, tr_plural
 from showrunner.ui.quick.languages import LanguagePicker
 from showrunner.ui.quick.review import missing_phases
 from showrunner.ui.quick.tracks import code, item_number
 from showrunner.ui.quick.workspace import Workspace
 
 STAGE = "subtitles"
+_EFFECTS_KEPT = 4000  # counted files kept; a season is a few hundred
 # The rows in the order of the work, each with the field it shows.
 ROWS = (
     ("wanted", "languages"),
@@ -58,13 +66,38 @@ _ROW_WORK: dict[str, tuple[str, ...]] = {
 }
 
 
+def set_label(name: str) -> str:
+    """The name a rule set is shown by: cleanit's own sets have a name of their own, a set of the user's is its name."""
+    key = f"cleanup.set.{name}"
+    shown = tr(key)
+    return shown if shown != key else name
+
+
+def set_languages(rule_set: RuleSet) -> str:
+    """The languages a rule set works on, or that it works on every one."""
+    return ", ".join(rule_set.languages) if rule_set.languages else tr("cleanup.any_language")
+
+
 class SubtitleSettings(QObject):
     subtitles_changed = Signal()
+    editor_asked = Signal(str)  # the rule editor is wanted, on the set of this name or on none
 
-    def __init__(self, workspace: Workspace, picker: LanguagePicker, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        workspace: Workspace,
+        picker: LanguagePicker,
+        parent: QObject | None = None,
+        *,
+        rules: RuleStore = RULES,
+    ) -> None:
         super().__init__(parent)
         self._workspace = workspace
         self._picker = picker
+        self._rules = rules
+        # What cleaning does to each paired file (lines dropped, lines changed), by the file's stamp and the rules that
+        # clean it; read in the background, so a season of files never holds the window.
+        self._effects: dict[tuple[Any, ...], tuple[int, int] | None] = {}
+        self._counting = False
         self._built: dict[str, Any] | None = None
         self._stale = False  # the settings or the plan changed while the place was hidden
         workspace.rebuilt.connect(self.refresh)
@@ -206,6 +239,17 @@ class SubtitleSettings(QObject):
         elif name in _NOT_HERE:
             shown["items"] = [self._item(key, name, item, state) for item, state in value.items()]
             shown["empty"] = tr("tracks.rule.as_it_is")
+            if name == "cleanup":
+                shown["add"] = [
+                    {
+                        "key": rule_set.name,
+                        "text": f"{set_label(rule_set.name)} · {set_languages(rule_set)}",
+                        "enabled": True,
+                    }
+                    for rule_set in self._rules.book().chosen()
+                    if rule_set.name not in value
+                ]
+                shown["count"] = self._cleanup_count()
         elif row == "reference":
             shown["text"] = tr(f"subtitles.reference.{value.kind.name.lower()}")
         else:
@@ -222,7 +266,7 @@ class SubtitleSettings(QObject):
         else:
             mark = {"from": "", "over": tr(f"place.over.{above.kind.value}") if above is not None else ""}
         language = Language.parse(item) if name == "languages" else None
-        return {
+        shown: dict[str, Any] = {
             "key": item,
             "label": code(language) if language is not None else item,
             "name": language.name if language is not None else item,
@@ -230,6 +274,96 @@ class SubtitleSettings(QObject):
             "own": origin == key,
             "mark": mark,
         }
+        if name == "cleanup":
+            rule_set = self._rules.book().sets.get(item)
+            shown["name"] = set_label(item)
+            shown["languages"] = set_languages(rule_set) if rule_set is not None else ""
+            # A set that was deleted, or whose file is broken, cleans nothing until it is back.
+            shown["missing"] = rule_set is None
+        return shown
+
+    def _cleanup_count(self) -> str:
+        """What the chosen sets do to the paired files the plan cleans: lines dropped and changed, counted from the
+        files as they are now. Empty until every file is counted, and for a plan without a cleaned file."""
+        wanted: dict[tuple[Any, ...], tuple[Any, ...]] = {}
+        translated = False
+        for file in self._workspace.current_files():
+            stage = file.plan_for(STAGE)
+            if stage is None or not isinstance(stage.plan, SubtitlePlan):
+                continue
+            for finished in stage.plan.finished:
+                clean = next((step for step in finished.steps if step.kind is StepKind.CLEAN), None)
+                if clean is None:
+                    continue
+                if finished.source is not Source.PAIRED or finished.paired is None:
+                    translated = translated or finished.source is Source.TRANSLATION
+                    continue
+                path = finished.paired.path
+                try:
+                    key = (path, stamp(path), clean.sets, clean.rules, finished.language)
+                except OSError:
+                    continue
+                wanted[key] = (path, finished.language, clean.sets)
+        missing = {key: given for key, given in wanted.items() if key not in self._effects}
+        if missing:
+            self._count(missing)
+            return ""
+        counted = [found for key in wanted if (found := self._effects[key]) is not None]
+        parts = []
+        if counted:
+            dropped, changed = (sum(c[n] for c in counted) for n in (0, 1))
+            parts.append(
+                tr(
+                    "cleanup.count",
+                    dropped=tr_plural("cleanup.lines", dropped),
+                    changed=tr_plural("cleanup.lines", changed),
+                    files=tr_plural("cleanup.files", len(counted)),
+                )
+            )
+        if translated:
+            parts.append(tr("cleanup.after_translation"))
+        return tr("common.list_separator").join(parts)
+
+    def _count(self, missing: dict[tuple[Any, ...], tuple[Any, ...]]) -> None:
+        if self._counting:
+            return
+        self._counting = True
+        book: RuleBook = self._rules.book()
+
+        def work() -> dict[tuple[Any, ...], tuple[int, int] | None]:
+            found: dict[tuple[Any, ...], tuple[int, int] | None] = {}
+            for key, (path, language, names) in missing.items():
+                effect = file_effect(path, language, names, book)
+                found[key] = (effect.dropped, effect.changed) if effect is not None else None
+            return found
+
+        job = BackgroundJob(work)
+        job.finished.connect(self._on_counted)
+        job.failed.connect(self._on_count_failed)
+        job.start()
+
+    def _on_counted(self, found: object) -> None:
+        self._counting = False
+        assert isinstance(found, dict)
+        if len(self._effects) > _EFFECTS_KEPT:
+            self._effects = {}
+        self._effects.update(found)
+        self.refresh()
+
+    def _on_count_failed(self, error: object) -> None:
+        self._counting = False
+
+    # The Cleanup row's menus
+
+    @Slot(str)
+    def add_rule_set(self, name: str) -> None:
+        """A rule set added to this place's own."""
+        if self._workspace.key is not None and not self._workspace.locked:
+            self._set(cleanup={**self._options().cleanup, name: RuleSetUse.USED})
+
+    @Slot(str)
+    def edit_rule_sets(self, name: str = "") -> None:
+        self.editor_asked.emit(name)
 
     def _files(self) -> list[dict[str, Any]]:
         """Each file of the batch with its subtitles now and the finished subtitles its plan makes, step by step."""

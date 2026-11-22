@@ -56,7 +56,7 @@ _PLACE_SIGNALS = {"overview": "overview_changed", "tracks": "matrix_changed", "r
 SIDE_PANELS: dict[str, tuple[str, ...]] = {
     "overview": ("inspector", "chapters", "attachments"),
     "tracks": ("rules", "inspector"),
-    "subtitles": ("inspector",),
+    "subtitles": ("lines", "inspector"),
     "names": ("tokens", "inspector"),
     "review": (),
 }
@@ -122,6 +122,7 @@ class Workspace(QObject):
         self.store = store
         self.batches: Batches = load_batches(store)
         self.statuses: Statuses | None = None
+        self.rules_revision = 0  # counts the edits of the cleanup rules, which every plan that cleans depends on
         self.make_pipeline = make_pipeline
         self._locked_paths = locked_paths  # the files a job writes or that are read again after it
         self.selected = ""  # the row id of the selected row
@@ -309,6 +310,11 @@ class Workspace(QObject):
         self.batches.set_options(key or self.key, stage_id, options)
         self.copy_changed()
 
+    def rules_changed(self) -> None:
+        """A cleanup rule set was written: the plans that clean are made again with it."""
+        self.rules_revision += 1
+        self.replan()
+
     def copy_changed(self) -> None:
         """Every edit of a working copy ends here: the views follow at once, a new plan starts, the file is saved."""
         self.replan()
@@ -464,7 +470,14 @@ class Workspace(QObject):
         profiles = profiles if profiles is not None else self.batches.file_profiles(self.items, self.key)
         options = repr([p.options for p in {id(p): p for p in profiles.values()}.values()])
         groups = tuple(sorted(g) for g in self._groups_out(self.items).values())
-        return (self.key, tuple(i.file.path for i in self.items), options, repr(self.statuses), groups)
+        return (
+            self.key,
+            tuple(i.file.path for i in self.items),
+            options,
+            repr(self.statuses),
+            groups,
+            self.rules_revision,
+        )
 
     def _on_planned(self, token: object, result: tuple[Preview, Preview]) -> None:
         if token != self._plan_token():

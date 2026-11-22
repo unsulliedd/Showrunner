@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 from showrunner.core.language import Language
 from showrunner.core.media import MediaItem, SubtitleFile
@@ -17,15 +18,36 @@ from showrunner.stages.subtitles import (
     Source,
     Step,
     StepKind,
+    SubtitlePlan,
     SubtitlesOptions,
     SyncEngine,
     Wanted,
-    plan_subtitles,
 )
+from showrunner.stages.subtitles import plan_subtitles as _plan
 from showrunner.stages.tracks import KindTest, PairedFile, TrackMatch, TrackRule, TracksOptions, Verdict
+from showrunner.tools.cleanit import RuleDef, RuleSet
 
 TURKISH = SubtitleFile(Path("Show Name - S01E01.tr.srt"), Language("tur"))
 CLEAN = {"Hearing impaired": RuleSetUse.USED, "Lyrics": RuleSetUse.USED}
+
+
+def _set(name: str, *languages: str) -> RuleSet:
+    return RuleSet(name, (RuleDef(name=f"{name} rule", patterns=("x",), languages=languages),))
+
+
+SETS = {name: _set(name) for name in ("Hearing impaired", "Lyrics", "Ads")}
+
+
+def plan_subtitles(*args: Any, **kwargs: Any) -> SubtitlePlan:
+    """The plan with the three sets above existing, which work on every language."""
+    return _plan(*args, **{"rule_sets": SETS} | kwargs)
+
+
+def cleaning(*names: str, sets: dict[str, RuleSet] = SETS) -> Step:
+    """The step that cleans with the sets, made from the sets as the plan reads them."""
+    return Step(StepKind.CLEAN, names, "+".join(f"{n}:{sets[n].fingerprint}" for n in names))
+
+
 ADD_TURKISH = TracksOptions(add_paired=[PairedFile.of(TURKISH)])
 
 
@@ -62,7 +84,7 @@ def test_a_paired_file_the_tracks_add_is_cleaned_synced_and_resplit(b: SimpleNam
     (finished,) = plan.finished
     assert (finished.source, finished.paired, finished.format, finished.waits) == (Source.PAIRED, TURKISH, "srt", False)
     assert finished.steps == (
-        Step(StepKind.CLEAN, ("Hearing impaired", "Lyrics")),  # sorted, paused sets left out
+        cleaning("Hearing impaired", "Lyrics"),  # sorted, paused sets left out
         Step(StepKind.SYNC, engine=SyncEngine.ALASS, settings=(("split_penalty", "7"),)),
         Step(StepKind.RESPLIT, model="Sample 9B Instruct"),
     )
@@ -102,8 +124,8 @@ def test_a_missing_wanted_language_is_translated_and_waits_when_asked(b: SimpleN
         "srt",
     )
     assert german.steps == (
-        Step(StepKind.TRANSLATE, ("Hearing impaired", "Lyrics")),
-        Step(StepKind.CLEAN, ("Hearing impaired", "Lyrics")),
+        replace(cleaning("Hearing impaired", "Lyrics"), kind=StepKind.TRANSLATE),
+        cleaning("Hearing impaired", "Lyrics"),
     )
     # The only subtitle is a picture one, read by OCR.
     assert plan.reference is not None
@@ -180,3 +202,47 @@ def test_a_wait_for_approval_is_work_that_must_be_available(b: SimpleNamespace) 
     assert [f.missing for f in plan.left_out] == [(StepKind.APPROVAL,)]
     plan = plan_subtitles(episode(b, b.subtitle(2)), options, ADD_TURKISH, available=(*without, StepKind.APPROVAL))
     assert plan.waits
+
+
+def test_a_set_cleans_only_the_languages_its_rules_are_for(b: SimpleNamespace) -> None:
+    sets = SETS | {"Turkish only": _set("Turkish only", "tr"), "English only": _set("English only", "en-US")}
+    options = SubtitlesOptions(cleanup=dict.fromkeys(("Lyrics", "Turkish only", "English only"), RuleSetUse.USED))
+    (finished,) = _plan(episode(b, b.subtitle(2)), options, ADD_TURKISH, rule_sets=sets).finished
+    # Turkish is cleaned by the set for every language and by the one for Turkish; a region does not matter.
+    assert finished.steps == (cleaning("Lyrics", "Turkish only", sets=sets),)
+    english = SubtitleFile(Path("Show Name - S01E01.en.srt"), Language("eng"))
+    both = TracksOptions(add_paired=[PairedFile.of(english)])
+    (finished,) = _plan(episode(b, paired=(english,)), options, both, rule_sets=sets).finished
+    assert finished.steps == (cleaning("English only", "Lyrics", sets=sets),)
+
+
+def test_a_set_that_does_not_exist_cleans_nothing(b: SimpleNamespace) -> None:
+    options = SubtitlesOptions(cleanup={"Deleted": RuleSetUse.USED})
+    assert plan_subtitles(episode(b, b.subtitle(2)), options, ADD_TURKISH).finished == ()
+    # A subtitle of no known language gets the sets whose rules have no language only.
+    nameless = SubtitleFile(Path("Show Name - S01E01.srt"), None)
+    sets = SETS | {"Turkish only": _set("Turkish only", "tr")}
+    options = SubtitlesOptions(cleanup={"Lyrics": RuleSetUse.USED, "Turkish only": RuleSetUse.USED})
+    plan = _plan(
+        episode(b, paired=(nameless,)), options, TracksOptions(add_paired=[PairedFile.of(nameless)]), rule_sets=sets
+    )
+    assert [f.steps for f in plan.finished] == [(cleaning("Lyrics", sets=sets),)]
+
+
+def test_a_rule_that_changes_changes_the_step(b: SimpleNamespace) -> None:
+    options = SubtitlesOptions(cleanup=CLEAN)
+    edited = SETS | {"Lyrics": RuleSet("Lyrics", (RuleDef(name="Lyrics rule", patterns=("y",)),))}
+    before = _plan(episode(b, b.subtitle(2)), options, ADD_TURKISH, rule_sets=SETS).finished[0].steps
+    after = _plan(episode(b, b.subtitle(2)), options, ADD_TURKISH, rule_sets=edited).finished[0].steps
+    assert before != after
+    paused = SETS | {"Lyrics": RuleSet("Lyrics", (RuleDef(name="Lyrics rule", patterns=("x",), paused=True),))}
+    # A set whose rules are all paused has nothing to clean with.
+    assert (
+        _plan(
+            episode(b, b.subtitle(2)),
+            SubtitlesOptions(cleanup={"Lyrics": RuleSetUse.USED}),
+            ADD_TURKISH,
+            rule_sets=paused,
+        ).finished
+        == ()
+    )

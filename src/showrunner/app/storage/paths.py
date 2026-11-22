@@ -33,6 +33,11 @@ def results_dir() -> Path:
     return data_dir() / "subtitles"
 
 
+def rules_dir() -> Path:
+    """The user's cleanup rule sets, one cleanit YAML file each."""
+    return data_dir() / "rules"
+
+
 def theme_path() -> Path:
     return data_dir() / "theme.json"
 

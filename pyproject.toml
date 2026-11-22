@@ -17,10 +17,12 @@ dependencies = [
     "charset-normalizer>=3.5",
     "cleanit>=0.5.1",
     "ffsubsync>=0.5.1",
+    "jsonschema>=4.26",
     "langdetect>=1.0.9",
     "pgsrip>=0.3.0",
     "platformdirs>=4.14",
     "pysubs2>=1.9.1",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

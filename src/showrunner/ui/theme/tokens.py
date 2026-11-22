@@ -342,6 +342,12 @@ SIZES: dict[str, int] = {
     "names_width": 420,  # the list of each file's name for a track, under a chip's ▾
     "names_height": 320,
     "language_dialog_width": 780,  # the language picker
+    "rules_dialog_width": 1200,  # the cleanup rule editor
+    "rules_dialog_height": 760,
+    "rules_set_width": 220,  # its list of rule sets
+    "rules_list_width": 300,  # its list of the rules of a set
+    "rule_test_height": 220,  # its live test
+    "cue_time_width": 96,  # the time of a line in the Lines panel and in the rule test
     "language_list_height": 304,  # its list of languages
     "language_side_height": 120,  # each of its short lists, regions and scripts
     "tracks_min_height": 160,  # the least Overview's tracks box keeps when its separator is dragged up

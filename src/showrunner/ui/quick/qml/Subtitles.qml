@@ -111,6 +111,23 @@ Item {
                                         font.strikeout: item.modelData.off
                                     }
 
+                                    UiText {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        visible: row.modelData.key === "cleanup" && !item.modelData.missing
+                                        text: item.modelData.languages ?? ""
+                                        color: Theme.faint
+                                        font.pixelSize: Theme.text_xs
+                                    }
+
+                                    UiText {
+                                        objectName: "cleanupMissing"
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        visible: item.modelData.missing === true
+                                        text: Strings.t("cleanup.missing")
+                                        color: Theme.change
+                                        font.pixelSize: Theme.text_xs
+                                    }
+
                                     IconButton {
                                         anchors.verticalCenter: parent.verticalCenter
                                         implicitWidth: Theme.row_sm
@@ -137,6 +154,44 @@ Item {
                                 text: Strings.t("subtitles.wanted.add")
                                 enabled: !app.locked
                                 onClicked: app.pick_wanted_language()
+                            }
+
+                            ActionButton {
+                                id: addSet
+
+                                objectName: "cleanupAdd"
+                                visible: row.modelData.key === "cleanup"
+                                kind: "ghost"
+                                size: Theme.row_sm
+                                iconName: "plus"
+                                text: Strings.t("cleanup.add")
+                                enabled: !app.locked && (row.modelData.add ?? []).length > 0
+                                onClicked: addMenu.popup(addSet, 0, addSet.height)
+                            }
+
+                            ActionMenu {
+                                id: addMenu
+
+                                actions: row.modelData.add ?? []
+                                onPicked: key => Qt.callLater(() => app.add_rule_set(key))
+                            }
+
+                            ActionButton {
+                                objectName: "cleanupEdit"
+                                visible: row.modelData.key === "cleanup"
+                                kind: "ghost"
+                                size: Theme.row_sm
+                                iconName: "edit"
+                                text: Strings.t("cleanup.edit")
+                                onClicked: app.edit_rule_sets("")
+                            }
+
+                            UiText {
+                                objectName: "cleanupCount"
+                                visible: row.modelData.key === "cleanup" && (row.modelData.count ?? "") !== ""
+                                text: row.modelData.count ?? ""
+                                color: Theme.muted
+                                font.pixelSize: Theme.text_xs
                             }
 
                             UiText {
@@ -244,7 +299,7 @@ Item {
                 Repeater {
                     model: place.files.length
 
-                    delegate: RowLayout {
+                    delegate: Item {
                         id: file
 
                         required property int index
@@ -252,54 +307,72 @@ Item {
 
                         width: parent.width
                         height: Math.max(Theme.list_row, plans.implicitHeight + Theme.space_md)
-                        spacing: Theme.space_md
 
-                        UiText {
-                            Layout.preferredWidth: Theme.matrix_label
-                            text: file.modelData.number !== "" ? file.modelData.number + "  " + file.modelData.file : file.modelData.file
-                            elide: Text.ElideMiddle
-                            font.pixelSize: Theme.text_sm
+                        // The selected file is the one the Lines panel and the Inspector show.
+                        Rectangle {
+                            anchors.fill: parent
+                            z: -1
+                            radius: Theme.radius_md
+                            color: file.modelData.path === app.focus_path ? Theme.select : "transparent"
+
+                            MouseArea {
+                                objectName: "subtitleFile_" + file.index
+                                anchors.fill: parent
+                                onClicked: app.focus_file(file.modelData.path)
+                            }
                         }
 
-                        UiText {
-                            Layout.preferredWidth: Theme.matrix_label
-                            text: file.modelData.now.join("  ")
-                            color: Theme.muted
-                            mono: true
-                            font.pixelSize: Theme.text_xs
-                            elide: Text.ElideRight
-                        }
-
-                        Column {
-                            id: plans
-
-                            Layout.fillWidth: true
+                        RowLayout {
+                            anchors.fill: parent
+                            spacing: Theme.space_md
 
                             UiText {
-                                visible: file.modelData.plan.length === 0
-                                text: Strings.t("tracks.rule.as_it_is")
-                                color: Theme.faint
+                                Layout.preferredWidth: Theme.matrix_label
+                                text: file.modelData.number !== "" ? file.modelData.number + "  " + file.modelData.file : file.modelData.file
+                                elide: Text.ElideMiddle
                                 font.pixelSize: Theme.text_sm
                             }
 
-                            Repeater {
-                                model: file.modelData.plan
+                            UiText {
+                                Layout.preferredWidth: Theme.matrix_label
+                                text: file.modelData.now.join("  ")
+                                color: Theme.muted
+                                mono: true
+                                font.pixelSize: Theme.text_xs
+                                elide: Text.ElideRight
+                            }
 
-                                delegate: Row {
-                                    required property var modelData
+                            Column {
+                                id: plans
 
-                                    spacing: Theme.space_sm
+                                Layout.fillWidth: true
 
-                                    CodeBadge {
-                                        code: modelData.code
-                                        look: modelData.cannot !== "" ? "dropped" : "kept"
-                                    }
+                                UiText {
+                                    visible: file.modelData.plan.length === 0
+                                    text: Strings.t("tracks.rule.as_it_is")
+                                    color: Theme.faint
+                                    font.pixelSize: Theme.text_sm
+                                }
 
-                                    UiText {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: modelData.cannot !== "" ? modelData.steps + " " + Strings.t("status.separator") + " " + modelData.cannot : modelData.steps
-                                        color: modelData.cannot !== "" ? Theme.change : Theme.ink
-                                        font.pixelSize: Theme.text_sm
+                                Repeater {
+                                    model: file.modelData.plan
+
+                                    delegate: Row {
+                                        required property var modelData
+
+                                        spacing: Theme.space_sm
+
+                                        CodeBadge {
+                                            code: modelData.code
+                                            look: modelData.cannot !== "" ? "dropped" : "kept"
+                                        }
+
+                                        UiText {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: modelData.cannot !== "" ? modelData.steps + " " + Strings.t("status.separator") + " " + modelData.cannot : modelData.steps
+                                            color: modelData.cannot !== "" ? Theme.change : Theme.ink
+                                            font.pixelSize: Theme.text_sm
+                                        }
                                     }
                                 }
                             }

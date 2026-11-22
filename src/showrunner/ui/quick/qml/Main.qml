@@ -258,6 +258,8 @@ ApplicationWindow {
 
     LanguageDialog {}
 
+    CleanupDialog {}
+
     SettingsDialog {
         id: settings
     }

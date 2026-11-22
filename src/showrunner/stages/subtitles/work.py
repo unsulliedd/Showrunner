@@ -20,10 +20,10 @@ class StepWork:
     # video: the reference, an embedded track, or a translation, which starts from the reference.
     source: Path | None
     reference: Path | None  # the reference as read, for the steps that work against it; None for the audio
-    # Not read yet: no engine runs in this version. The language of the finished subtitle, and the track to read
-    # for a step that reads one.
-    language: Language | None
-    track: Track | None
+    language: (
+        Language | None
+    )  # of the finished subtitle: the rules to clean it with, the legacy code page it is read in
+    track: Track | None  # for a step that reads one; no engine reads it yet
     output: Path  # where the step writes its result, in the format of its extension
 
 

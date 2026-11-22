@@ -15,7 +15,7 @@ import pytest
 from showrunner.app.jobs.preview import preview
 from showrunner.app.jobs.results import KEEP_DAYS, ResultStore
 from showrunner.app.jobs.run import create_job, run_job
-from showrunner.app.jobs.stages import MuxStage, PlanState, Stage, StagePlan, SubtitlesStage, TracksStage
+from showrunner.app.jobs.stages import CleanupSets, MuxStage, PlanState, Stage, StagePlan, SubtitlesStage, TracksStage
 from showrunner.app.jobs.store import JobStore, StepState
 from showrunner.app.profiles import registered  # noqa: F401
 from showrunner.app.profiles.profile import Profile
@@ -26,6 +26,7 @@ from showrunner.core.track import AudioProperties, SubtitleProperties, Track, Tr
 from showrunner.stages.subtitles import Approval, RuleSetUse, StepKind, SubtitlePlan, SubtitlesOptions, SyncEngine
 from showrunner.stages.subtitles.work import StepWork
 from showrunner.stages.tracks import PairedFile, TracksOptions
+from showrunner.tools.cleanit import RuleDef, RuleSet
 from showrunner.tools.probe import Programs
 
 TRACKS = (
@@ -33,6 +34,7 @@ TRACKS = (
     Track(1, TrackKind.AUDIO, "A_AC3", Language("eng"), audio=AudioProperties(6)),
     Track(2, TrackKind.SUBTITLE, "S_TEXT/UTF8", Language("eng"), subtitle=SubtitleProperties()),
 )
+CLEANUP = CleanupSets({"Hearing impaired": RuleSet("Hearing impaired", (RuleDef(name="rule", patterns=("x",)),))})
 WORK = SubtitlesOptions(cleanup={"Hearing impaired": RuleSetUse.USED}, sync=SyncEngine.FFSUBSYNC)
 # Every kind of work but the wait for approval, which nothing can give yet.
 ENGINES = tuple(kind for kind in StepKind if kind is not StepKind.APPROVAL)
@@ -97,7 +99,7 @@ class Remuxes:
 
 
 def stages(engines: Engines, results: ResultStore, kinds: tuple[StepKind, ...] = ENGINES) -> tuple[Stage, ...]:
-    return (TracksStage(), SubtitlesStage(results, runners=dict.fromkeys(kinds, engines)), Remuxes())  # type: ignore[return-value]
+    return (TracksStage(), SubtitlesStage(results, runners=dict.fromkeys(kinds, engines), cleanup=CLEANUP), Remuxes())  # type: ignore[return-value]
 
 
 def run(store: JobStore, item: MediaItem, profile: Profile, given: tuple[Stage, ...]) -> tuple[StepState, str]:
@@ -111,19 +113,19 @@ def run(store: JobStore, item: MediaItem, profile: Profile, given: tuple[Stage, 
 
 
 def final(item: MediaItem, profile: Profile, results: ResultStore) -> Path:
-    work = SubtitlesStage(results, dict.fromkeys(ENGINES, Engines())).plan(item, profile).plan
+    work = SubtitlesStage(results, dict.fromkeys(ENGINES, Engines()), CLEANUP).plan(item, profile).plan
     assert isinstance(work, SubtitlePlan)
     return results.final(work, work.finished[0])
 
 
 def mux_stage(results: ResultStore, available: tuple[StepKind, ...]) -> MuxStage:
-    return MuxStage(Path("mkvmerge"), Programs(), results=results, available=available)
+    return MuxStage(Path("mkvmerge"), Programs(), results=results, available=available, cleanup=CLEANUP)
 
 
 def test_work_no_engine_can_do_is_left_out_and_the_track_change_still_remuxes(setup) -> None:
     item, profile, engines, results = setup
     some = (StepKind.READ, StepKind.CLEAN)
-    subtitles = SubtitlesStage(results, dict.fromkeys(some, engines)).plan(item, profile)
+    subtitles = SubtitlesStage(results, dict.fromkeys(some, engines), CLEANUP).plan(item, profile)
     assert subtitles.state is PlanState.UNCHANGED
     assert not subtitles.writes
     work = subtitles.plan
@@ -136,7 +138,7 @@ def test_work_no_engine_can_do_is_left_out_and_the_track_change_still_remuxes(se
     assert mux.plan.tracks[-1].content is None
     assert mux.plan.added == item.subtitles
     # Apply writes the remux alone: no subtitle step comes before it to fail the file.
-    given = (TracksStage(), SubtitlesStage(results, dict.fromkeys(some, engines)), mux_stage(results, some))
+    given = (TracksStage(), SubtitlesStage(results, dict.fromkeys(some, engines), CLEANUP), mux_stage(results, some))
     (file,) = preview([item], profile, given).files
     assert [plan.stage for plan in file.writes] == ["mux"]
 
@@ -144,11 +146,11 @@ def test_work_no_engine_can_do_is_left_out_and_the_track_change_still_remuxes(se
 def test_a_wait_for_approval_nothing_can_give_leaves_the_subtitle_out(setup) -> None:
     item, profile, engines, results = setup
     waits = profile.with_options("subtitles", replace(WORK, approval=Approval.EVERY))
-    work = SubtitlesStage(results, dict.fromkeys(ENGINES, engines)).plan(item, waits).plan
+    work = SubtitlesStage(results, dict.fromkeys(ENGINES, engines), CLEANUP).plan(item, waits).plan
     assert isinstance(work, SubtitlePlan)
     assert [f.missing for f in work.left_out] == [(StepKind.APPROVAL,)]
     # With approval available the subtitle is planned and waits.
-    work = SubtitlesStage(results, dict.fromkeys(StepKind, engines)).plan(item, waits).plan
+    work = SubtitlesStage(results, dict.fromkeys(StepKind, engines), CLEANUP).plan(item, waits).plan
     assert isinstance(work, SubtitlePlan)
     assert work.waits
 
@@ -224,6 +226,6 @@ def test_folders_unused_for_long_are_pruned(tmp_path: Path) -> None:
 
 def test_the_mux_reads_the_final_result(setup) -> None:
     item, profile, _engines, results = setup
-    mux = MuxStage(Path("mkvmerge"), Programs(), results=results, available=ENGINES).plan(item, profile)
+    mux = mux_stage(results, ENGINES).plan(item, profile)
     assert mux.plan.tracks[-1].content == final(item, profile, results)
     assert mux.plan.added == item.subtitles  # moved away with the original once the new file is in place

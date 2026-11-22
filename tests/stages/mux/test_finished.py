@@ -16,9 +16,11 @@ from showrunner.stages.mux import MuxOptions, MuxPlan, plan_mux, verify
 from showrunner.stages.mux import apply as module
 from showrunner.stages.subtitles import RuleSetUse, SubtitlesOptions, SyncEngine, Wanted, plan_subtitles
 from showrunner.stages.tracks import PairedFile, TracksOptions
+from showrunner.tools.cleanit import RuleDef, RuleSet
 
 TURKISH = SubtitleFile(Path("Show Name - S01E01.tr.srt"), Language("tur"))
 RESULTS = Path("results")
+SETS = {"Lyrics": RuleSet("Lyrics", (RuleDef(name="rule", patterns=("x",)),))}
 
 
 def item(b: SimpleNamespace) -> MediaItem:
@@ -26,7 +28,7 @@ def item(b: SimpleNamespace) -> MediaItem:
 
 
 def planned(item: MediaItem, subtitles: SubtitlesOptions, tracks: TracksOptions) -> MuxPlan | None:
-    work = plan_subtitles(item, subtitles, tracks)
+    work = plan_subtitles(item, subtitles, tracks, rule_sets=SETS)
     finished = [(f, RESULTS / f"{f.source.value}.{f.format}") for f in work.finished]
     result = plan_mux(item, MuxOptions(), tracks, MetadataOptions(), NamingOptions(), finished=finished)
     assert result is None or isinstance(result, MuxPlan)

@@ -8,7 +8,7 @@ subtitle of the file has is translated from the reference; an embedded text trac
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
@@ -19,6 +19,7 @@ from showrunner.core.media import MediaItem, SubtitleFile
 from showrunner.core.track import Track, TrackKind
 from showrunner.stages.subtitles.options import Approval, Lines, ReferenceKind, SubtitlesOptions, SyncEngine
 from showrunner.stages.tracks import KindTest, PlanRefused, TrackMatch, TracksOptions, matches, plan_tracks, stand_in
+from showrunner.tools.cleanit import RuleSet
 
 PGS = "S_HDMV/PGS"  # the picture format OCR reads
 # The language Automatic prefers for the reference: translation models translate best from English.
@@ -56,8 +57,11 @@ class Cannot(StrEnum):
 @dataclass(frozen=True, slots=True)
 class Step:
     kind: StepKind
-    # CLEAN: the rule sets, sorted. TRANSLATE: the sets the reference is cleaned with before it is translated.
+    # CLEAN: the rule sets that cover the subtitle's language, sorted. TRANSLATE: the sets that cover the reference's
+    # language, which clean it before it is translated.
     sets: tuple[str, ...] = ()
+    # The fingerprint of those sets' rules, so a result made with other rules is not reused after a rule changed.
+    rules: str = ""
     engine: SyncEngine = SyncEngine.AS_IT_IS  # SYNC
     settings: tuple[tuple[str, str], ...] = ()  # SYNC: the engine's own settings set on the place
     model: str = ""  # TRANSLATE, RESPLIT: empty for the model chosen in Settings
@@ -123,21 +127,21 @@ def plan_subtitles(
     *,
     prefer: str = DEFAULT_REFERENCE_LANGUAGE,
     available: Collection[StepKind] = frozenset(StepKind),
+    rule_sets: Mapping[str, RuleSet] | None = None,
 ) -> SubtitlePlan:
     """The finished subtitles the place's options ask for in this file. The paired files are the ones the track plan
     adds, so a run that leaves the track choices out leaves their subtitle work out too. `prefer` is the language
     Automatic looks for first in the reference. `available` are the kinds of work that can run: a finished subtitle
-    that needs another one is left out."""
+    that needs another one is left out. `rule_sets` are the cleanup sets that exist, by name: a subtitle is cleaned with
+    the chosen sets whose rules cover its language."""
+    rule_sets = rule_sets or {}
     video = item.file.path
     if options == _NOTHING:
         return SubtitlePlan(video)
     track_plan = plan_tracks(item, tracks)
     if isinstance(track_plan, PlanRefused):
         return SubtitlePlan(video)
-    sets = options.rule_sets()
-    # shortcut: every used set cleans every language; narrow it to the languages a set covers once rule sets carry
-    # them.
-    clean = (Step(StepKind.CLEAN, sets),) if sets else ()
+    chosen = options.rule_sets()
     sync = (
         (Step(StepKind.SYNC, engine=options.sync, settings=options.engine_settings()),)
         if options.sync is not SyncEngine.AS_IT_IS
@@ -151,9 +155,13 @@ def plan_subtitles(
         if (paired := kept.external) is not None:
             format_ = FORMATS.get(paired.path.suffix.casefold())
             # A picture file beside the video has no text to clean, sync or re-split.
-            if format_ is not None and (steps := clean + sync + resplit):
+            if format_ is not None and (steps := _clean(chosen, rule_sets, paired.language) + sync + resplit):
                 found.append(FinishedSubtitle(Source.PAIRED, paired.language, steps, format_, paired, waits=every))
-        elif _text(kept.track) and clean and _wanted(kept.track, options):
+        elif (
+            _text(kept.track)
+            and (clean := _clean(chosen, rule_sets, kept.track.language))
+            and _wanted(kept.track, options)
+        ):
             # An embedded track is timed to its own video, so it is cleaned and never synced.
             steps = (Step(StepKind.READ), *clean)
             found.append(
@@ -167,14 +175,17 @@ def plan_subtitles(
                 )
             )
     # A translation takes the reference's timing, so it is not synced either.
-    for tag in options.wanted():
-        if not _present(item, tag) and (language := Language.parse(tag)) is not None:
-            steps = (Step(StepKind.TRANSLATE, sets, model=options.model), *clean)
+    absent = [tag for tag in options.wanted() if not _present(item, tag)]
+    reference = _reference(item, options, prefer) if absent or sync else None
+    for tag in absent:
+        if (language := Language.parse(tag)) is not None:
+            # The reference is cleaned for its own language before it is translated, the translation for its own.
+            source = reference.track.language if reference is not None and reference.track is not None else None
+            names, rules = _covering(chosen, rule_sets, source)
+            steps = (Step(StepKind.TRANSLATE, names, rules, model=options.model), *_clean(chosen, rule_sets, language))
             waits = every or options.approval is Approval.TRANSLATIONS
             found.append(FinishedSubtitle(Source.TRANSLATION, language, steps, "srt", waits=waits))
 
-    needs = any(finished.uses_reference for finished in found)
-    reference = _reference(item, options, prefer) if needs else None
     ready, cannot, left_out = [], [], []
     for finished in found:
         if reasons := _reasons(finished, reference):
@@ -189,6 +200,20 @@ def plan_subtitles(
 
 
 _NOTHING = SubtitlesOptions()
+
+
+def _covering(
+    chosen: tuple[str, ...], rule_sets: Mapping[str, RuleSet], language: Language | None
+) -> tuple[tuple[str, ...], str]:
+    """The chosen sets that exist and work on `language`, and the fingerprint of their rules. A set that was deleted
+    or whose file is broken is left out, and so is a set whose rules are all for other languages."""
+    names = tuple(name for name in chosen if (found := rule_sets.get(name)) is not None and found.covers(language))
+    return names, "+".join(f"{name}:{rule_sets[name].fingerprint}" for name in names)
+
+
+def _clean(chosen: tuple[str, ...], rule_sets: Mapping[str, RuleSet], language: Language | None) -> tuple[Step, ...]:
+    names, rules = _covering(chosen, rule_sets, language)
+    return (Step(StepKind.CLEAN, names, rules),) if names else ()
 
 
 def _reasons(finished: FinishedSubtitle, reference: ReferenceTrack | None) -> tuple[Cannot, ...]:

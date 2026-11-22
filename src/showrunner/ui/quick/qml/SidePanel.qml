@@ -55,9 +55,14 @@ Panel {
                 visible: side.tab === "tokens"
             }
 
+            LinesPanel {
+                anchors.fill: parent
+                visible: side.tab === "lines"
+            }
+
             Placeholder {
                 anchors.fill: parent
-                visible: side.tab !== "inspector" && side.tab !== "rules" && side.tab !== "tokens"
+                visible: side.tab !== "inspector" && side.tab !== "rules" && side.tab !== "tokens" && side.tab !== "lines"
                 title: side.tab !== "" ? Strings.t("panel.placeholder." + side.tab + ".title") : ""
                 lead: side.tab !== "" ? Strings.t("panel.placeholder." + side.tab + ".lead") : ""
             }

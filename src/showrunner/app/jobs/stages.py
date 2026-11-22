@@ -13,13 +13,16 @@ from typing import ClassVar, Protocol
 from showrunner.app.jobs.hashing import FileStamp, stamp
 from showrunner.app.jobs.results import ResultStore
 from showrunner.app.profiles.profile import Profile
+from showrunner.app.rules import RULES
 from showrunner.app.storage.paths import results_dir
 from showrunner.core.media import MediaItem
 from showrunner.stages.metadata import MetadataPlan, MetadataRefused, apply_metadata, plan_metadata
 from showrunner.stages.mux import Failure, MuxPlan, MuxRefused, MuxResult, apply_mux, plan_mux, resume_mux
 from showrunner.stages.subtitles import Step, StepKind, SubtitlePlan, plan_subtitles
+from showrunner.stages.subtitles.clean import clean_runner
 from showrunner.stages.subtitles.work import Runner, StepWork
 from showrunner.stages.tracks import PlanRefused, plan_tracks
+from showrunner.tools.cleanit import RuleSet
 from showrunner.tools.probe import Programs
 from showrunner.tools.recycle import recycle
 
@@ -104,7 +107,20 @@ NOT_AVAILABLE = "not-available"
 APPROVAL = StepKind.APPROVAL.value
 # The engines this version has, by the kind of work they do; an engine registers here. The pipeline's stages plan only
 # the work these can do, so a missing engine leaves its subtitles out and nothing else.
-RUNNERS: dict[StepKind, Runner] = {}
+RUNNERS: dict[StepKind, Runner] = {StepKind.CLEAN: clean_runner(RULES.book)}
+
+
+@dataclass(frozen=True, slots=True)
+class CleanupSets:
+    """The cleanup rule sets that exist, for the plans to choose from. A stage holds them like its other settings: they
+    are part of the stamp of a preview through `stamp`, which names each set by its rules' fingerprint, so a rule
+    that changes makes the preview out of date."""
+
+    sets: Mapping[str, RuleSet] = field(default_factory=dict, repr=False)
+    stamp: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "stamp", "|".join(f"{name}:{found.fingerprint}" for name, found in self.sets.items()))
 
 
 def available(runners: Mapping[StepKind, Runner]) -> tuple[StepKind, ...]:
@@ -121,8 +137,10 @@ def _results() -> ResultStore:
     return ResultStore(results_dir())
 
 
-def subtitle_plan(item: MediaItem, profile: Profile, can_do: Sequence[StepKind]) -> SubtitlePlan:
-    return plan_subtitles(item, profile.for_stage("subtitles"), profile.for_stage("tracks"), available=can_do)
+def subtitle_plan(item: MediaItem, profile: Profile, can_do: Sequence[StepKind], cleanup: CleanupSets) -> SubtitlePlan:
+    return plan_subtitles(
+        item, profile.for_stage("subtitles"), profile.for_stage("tracks"), available=can_do, rule_sets=cleanup.sets
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +179,7 @@ class MetadataStage:
     programs: Programs  # for the read after the edit
     source: str = ""  # the `{source}` token for the batch
     available: tuple[StepKind, ...] = ()  # the subtitle work that can run, which may ask for a new file
+    cleanup: CleanupSets = field(default_factory=CleanupSets)
 
     id: ClassVar[str] = "metadata"
     remuxes: ClassVar[bool] = False
@@ -172,7 +191,7 @@ class MetadataStage:
             profile.for_stage("naming"),
             profile.for_stage("tracks"),
             source=self.source,
-            remux=bool(subtitle_plan(item, profile, self.available).finished),
+            remux=bool(subtitle_plan(item, profile, self.available, self.cleanup).finished),
         )
         if isinstance(result, MetadataRefused):
             return StagePlan(self.id, PlanState.REFUSED, result)
@@ -202,6 +221,7 @@ class MuxStage:
     source: str = ""  # the `{source}` token, for the names Metadata gives
     results: ResultStore = field(default_factory=_results)  # where the finished subtitles it adds are kept
     available: tuple[StepKind, ...] = ()  # the subtitle work that can run, whose results it adds
+    cleanup: CleanupSets = field(default_factory=CleanupSets)
     # Not a setting of the batch, so not part of the stamp; tests put a stand-in for the shell here.
     recycle: Callable[[Sequence[Path]], None] = field(default=recycle, repr=False, compare=False)
 
@@ -209,7 +229,7 @@ class MuxStage:
     remuxes: ClassVar[bool] = True
 
     def plan(self, item: MediaItem, profile: Profile) -> StagePlan:
-        subtitles = subtitle_plan(item, profile, self.available)
+        subtitles = subtitle_plan(item, profile, self.available, self.cleanup)
         result = plan_mux(
             item,
             profile.for_stage(self.id),
@@ -261,6 +281,7 @@ class SubtitlesStage:
 
     results: ResultStore = field(default_factory=_results)
     runners: Mapping[StepKind, Runner] = field(default_factory=dict, repr=False, compare=False)
+    cleanup: CleanupSets = field(default_factory=CleanupSets)
     # Part of the stamp of a preview, unlike the runners themselves: what can run decides the plan.
     available: tuple[StepKind, ...] = field(init=False)
 
@@ -271,7 +292,7 @@ class SubtitlesStage:
     remuxes: ClassVar[bool] = False
 
     def plan(self, item: MediaItem, profile: Profile) -> StagePlan:
-        result = subtitle_plan(item, profile, self.available)
+        result = subtitle_plan(item, profile, self.available, self.cleanup)
         if result.finished:
             return StagePlan(self.id, PlanState.CHANGES, result, writes=True, needs_remux=True)
         return StagePlan(self.id, PlanState.REFUSED if result.cannot else PlanState.UNCHANGED, result)
@@ -351,17 +372,20 @@ def pipeline(
     source: str = "",
     results: ResultStore | None = None,
     runners: Mapping[StepKind, Runner] | None = None,
+    cleanup: CleanupSets | None = None,
 ) -> tuple[Stage, ...]:
     """The stages in the order they run. A stage whose program is missing is left out, so its features are off
     and nothing else; a new stage is one more entry here. On a file Mux remuxes it writes the header as well and
     Metadata writes nothing, so Mux is that file's only writing step. Subtitles needs no program of its own: the work
     of an engine that is missing (`runners`, `RUNNERS` by default) is left out, and without mkvmerge its work needs a
-    new file that cannot be written."""
+    new file that cannot be written. `cleanup` are the rule sets plans may choose from, the user's rule store's by
+    default."""
     results = results or _results()
-    subtitles = SubtitlesStage(results, RUNNERS if runners is None else runners)
+    cleanup = cleanup or CleanupSets(RULES.book().sets)
+    subtitles = SubtitlesStage(results, RUNNERS if runners is None else runners, cleanup)
     stages: list[Stage] = [TracksStage(), subtitles]
     if programs.mkvmerge is not None:
-        stages.append(MuxStage(programs.mkvmerge, programs, source, results, subtitles.available))
+        stages.append(MuxStage(programs.mkvmerge, programs, source, results, subtitles.available, cleanup))
     if mkvpropedit is not None:
-        stages.append(MetadataStage(mkvpropedit, programs, source, subtitles.available))
+        stages.append(MetadataStage(mkvpropedit, programs, source, subtitles.available, cleanup))
     return tuple(stages)

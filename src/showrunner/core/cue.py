@@ -34,8 +34,7 @@ class Cue:
 def read_cues(path: Path, language: Language | None = None) -> list[Cue]:
     """The dialogue lines of a subtitle file in the order the file holds them; comment lines are not cues. The text
     encoding is detected, `language` deciding a legacy code page. Raises OSError when the file cannot be read and
-    ValueError when it is not a subtitle of its extension's format. Not called by the app yet; the subtitle engines
-    read their input with it."""
+    ValueError when it is not a subtitle of its extension's format."""
     format_ = _format(path)
     subtitle = _load(path, format_, language)
     styled = format_ in _STYLED
@@ -49,7 +48,7 @@ def read_cues(path: Path, language: Language | None = None) -> list[Cue]:
 def write_cues(path: Path, cues: Iterable[Cue], *, like: Path | None = None, language: Language | None = None) -> None:
     """Write the cues as UTF-8 in the format of the path's extension. `like` is the file they were read from: an
     Advanced SubStation result keeps its styles and script info, which cues do not carry. Raises OSError and
-    ValueError as `read_cues` does. Not called by the app yet; the subtitle engines write their results with it."""
+    ValueError as `read_cues` does."""
     format_ = _format(path)
     subtitle = _load(like, _format(like), language) if like is not None else pysubs2.SSAFile()
     subtitle.events = [
