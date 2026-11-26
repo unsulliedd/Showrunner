@@ -808,14 +808,15 @@ def test_the_job_list_shrinks_and_clears_without_warnings(
     window = engine.rootObjects()[0]
     qtbot.waitUntil(window.isExposed)
     root = window.contentItem()
-    with qtbot.waitSignal(controller.jobs.ended, timeout=10_000):
+    # An upper bound, not an expected time: ten files whose checks all fail take long on a busy runner.
+    with qtbot.waitSignal(controller.jobs.ended, timeout=60_000):
         controller.apply()
     qtbot.waitUntil(lambda: _item(root, "jobRows").property("count") == 10)
     qtbot.waitUntil(lambda: not controller.locked)  # the files are read again first
     for path in made.season[3:]:
         controller.set_file_in_run(str(path), False)
     qtbot.waitUntil(lambda: not controller.planning and controller.can_apply)
-    with qtbot.waitSignal(controller.jobs.ended, timeout=10_000):
+    with qtbot.waitSignal(controller.jobs.ended, timeout=60_000):
         controller.apply()
     qtbot.waitUntil(lambda: _item(root, "jobRows").property("count") == 3)
     controller.jobs.clear()
