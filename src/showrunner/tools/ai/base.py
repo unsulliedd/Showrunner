@@ -31,6 +31,8 @@ class ChatRequest:
     messages: tuple[Message, ...]
     # Seconds the whole answer may take, a cold start of the model included.
     timeout: float = 300.0
+    # How freely the model picks its words; None leaves the server's own default.
+    temperature: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -72,6 +72,8 @@ class OllamaBackend:
             # A thinking model would otherwise write thousands of words of reasoning before each short answer.
             "think": False,
         }
+        if request.temperature is not None:
+            body["options"] = {"temperature": request.temperature}
         started = time.monotonic()
         connection = self._connect(request.timeout)
         parts: list[str] = []

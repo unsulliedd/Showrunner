@@ -114,19 +114,19 @@ def test_work_no_engine_can_do_is_left_out_and_said_so(
     add_language(controller, "de")
     controller.set_subtitle_choice("sync", "alass")
     settle(controller, qtbot)
-    # This version has no engine, so nothing is planned for subtitles and the track choices plan as before.
+    # No AI server answers here, so nothing is planned for subtitles and the track choices plan as before.
     assert controller.workspace_tabs[2]["count"] == 0
     assert controller.workspace_tabs[1]["count"] == tracks_before
-    assert row(controller, "wanted")["note"] == "Translate is not available in this version yet"
+    assert row(controller, "wanted")["note"] == ""
+    assert row(controller, "model")["note"] == "Ollama is not running"
     assert row(controller, "sync")["note"] == ""  # no paired file is added, so nothing asks for a sync
     plan = controller.subtitles["files"][0]["plan"]
-    assert [(p["code"], p["cannot"]) for p in plan] == [("DEU", "Translate is not available in this version yet")]
+    assert [(p["code"], p["cannot"]) for p in plan] == [("DEU", "Ollama is not running")]
     shown = controller.review
     group = next(g for g in shown["groups"] if g["key"] == "subtitles")
     assert group["lines"] == []
     assert group["problems"] == [
-        "Translate is not available in this version yet, so 10 subtitles are left out. The rest of each file goes on"
-        " without them."
+        "Ollama is not running, so 10 subtitles are left out. The rest of each file goes on without them."
     ]
     # Left out is not a look: the files go on with their other changes.
     assert [r["state"] for r in shown["rows"]] == states_before

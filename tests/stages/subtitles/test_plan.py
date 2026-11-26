@@ -51,6 +51,9 @@ def cleaning(*names: str, sets: dict[str, RuleSet] = SETS) -> Step:
     return Step(StepKind.CLEAN, names, "+".join(f"{n}:{sets[n].fingerprint}" for n in names))
 
 
+# What a translate step is planned with where Settings keeps the window defaults.
+WINDOWING = (("context", "5"), ("window", "40"))
+
 ADD_TURKISH = TracksOptions(add_paired=[PairedFile.of(TURKISH)])
 
 
@@ -130,7 +133,7 @@ def test_a_missing_wanted_language_is_translated_and_waits_when_asked(b: SimpleN
         "srt",
     )
     assert german.steps == (
-        replace(cleaning("Hearing impaired", "Lyrics"), kind=StepKind.TRANSLATE),
+        replace(cleaning("Hearing impaired", "Lyrics"), kind=StepKind.TRANSLATE, settings=WINDOWING),
         cleaning("Hearing impaired", "Lyrics"),
     )
     # The only subtitle is a picture one, read by OCR.

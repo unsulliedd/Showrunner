@@ -29,6 +29,7 @@ from showrunner.app.profiles.profile import Profile
 from showrunner.app.profiles.store import ProfileStore
 from showrunner.app.settings.app_settings import load_settings
 from showrunner.core.media import MediaItem
+from showrunner.stages.subtitles import AiModels
 from showrunner.stages.tracks import TrackRule, TracksOptions
 from showrunner.tools.dependencies.detect import DependencyStatus, State
 from showrunner.ui.i18n.catalog import tr, tr_plural
@@ -80,8 +81,13 @@ def default_pipeline(statuses: Statuses) -> tuple[Stage, ...]:
         mkvpropedit_from(statuses),
         tesseract=tesseract_from(statuses),
         ffmpeg=ffmpeg_from(statuses),
-        ai=ai_models(AI.status(), load_settings().value.ai_model),
+        ai=_ai_models(),
     )
+
+
+def _ai_models() -> AiModels | None:
+    settings = load_settings().value
+    return ai_models(AI.status(), settings.ai_model, settings.translate_window, settings.translate_context)
 
 
 def place_key(kind: Kind, first: MediaItem, show: BatchKey | None) -> BatchKey:

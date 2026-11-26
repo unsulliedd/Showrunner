@@ -27,8 +27,17 @@ from showrunner.stages.metadata.apply import ApplyResult
 from showrunner.stages.mux import Failure, MuxPlan, MuxResult, VerifyProblem
 from showrunner.stages.subtitles import SubtitlePlan
 from showrunner.stages.subtitles.beside import BesideFailure
+from showrunner.stages.subtitles.translate import NOT_TRANSLATED
+from showrunner.tools.ai import ErrorKind
 from showrunner.ui.i18n.catalog import tr, tr_plural
-from showrunner.ui.quick.review import kept_sync, left_as_it_was, sync_found
+from showrunner.ui.quick.review import (
+    backend_name,
+    kept_sync,
+    kept_translation,
+    left_as_it_was,
+    sync_found,
+    translation_found,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -36,7 +45,9 @@ _log = logging.getLogger(__name__)
 # order: the original moves only after the new file passed its check.
 PHASES: dict[str, tuple[str, ...]] = {"mux": ("write", "check", "original", "rename"), "metadata": ("edit",)}
 # The phases that show how far they are, in percent, while they run.
-_PERCENT_PHASES = ("write", "ocr", "sync")
+_PERCENT_PHASES = ("write", "ocr", "sync", "translate")
+# A step's message when the AI server or its model went away while it ran, by the kind of failure.
+_AI_FAILURES = {ErrorKind.UNREACHABLE.value: "ai_unreachable", ErrorKind.MODEL_MISSING.value: "ai_model_missing"}
 _BESIDE_FAILURES = {failure.value for failure in BesideFailure}
 # Where a remux stopped, by the phase that failed.
 _FAILED_PHASE = {
@@ -111,6 +122,24 @@ def sync_text(plan: SubtitlePlan) -> list[str]:
     return lines
 
 
+def translate_text(plan: SubtitlePlan) -> list[str]:
+    """What the translation of each finished subtitle did, from the reports the run kept."""
+    lines = []
+    for finished in plan.finished:
+        if (report := kept_translation(plan, finished)) is not None and (found := translation_found(report)):
+            language = finished.language.name if finished.language is not None else tr("tracks.no_language")
+            lines.append(tr("jobs.result.translate", language=language, found=found))
+    return lines
+
+
+def window_text(plan: SubtitlePlan) -> str:
+    """ "window 3 of 14": the window the translation that is running asks the model for; empty when none runs."""
+    for finished in plan.finished:
+        if (report := kept_translation(plan, finished)) is not None and not report.finished:
+            return tr("jobs.translate.window", number=report.done + 1, total=report.windows)
+    return ""
+
+
 def reason_text(message: str) -> str:
     """A failed step's stored message in words: a remux stores its failure as "kind: detail", a metadata step whose
     edits the file does not show as "missed: <missed>/<planned>"; any other message is already the error's own
@@ -120,6 +149,10 @@ def reason_text(message: str) -> str:
         return tr("jobs.failure.not_available", step=tr(f"jobs.phase.{detail}"))
     if kind in _BESIDE_FAILURES:
         return tr(f"jobs.failure.{kind}", detail=detail)
+    if kind == NOT_TRANSLATED:
+        return tr("jobs.failure.not_translated", windows=detail)
+    if kind in _AI_FAILURES:
+        return tr(f"jobs.failure.{_AI_FAILURES[kind]}", backend=backend_name(), detail=detail)
     if kind in {f.value for f in Failure}:
         return tr(f"jobs.failure.{kind}", detail=detail)
     if kind == MISSED:
@@ -327,6 +360,8 @@ class JobProgress:
             kind, _, phase = (record.message if record is not None else "").partition(": ")
             if kind == NOT_AVAILABLE:
                 failed = phase
+            elif kind == NOT_TRANSLATED or kind in _AI_FAILURES:
+                failed = "translate"
             elif kind in _BESIDE_FAILURES:
                 failed = "beside"
             at = names.index(failed) if failed in names else 0
@@ -345,6 +380,9 @@ class JobProgress:
                 "label": tr(f"jobs.phase.{name}"),
                 "state": mark,
                 "percent": percent if mark == "active" and name in _PERCENT_PHASES else -1,
+                "note": window_text(work)
+                if isinstance(work, SubtitlePlan) and mark == "active" and name == "translate"
+                else "",
             }
             for name, mark in zip(names, marks, strict=True)
         ]
@@ -371,7 +409,7 @@ class JobProgress:
                 lines.append(edited_text(record.detail))
             elif record.state is StepState.DONE and isinstance(work := step.plan.plan, SubtitlePlan):
                 lines += beside_text(work) if work.written else [tr("jobs.result.done")]
-                lines += sync_text(work)
+                lines += sync_text(work) + translate_text(work)
             elif record.state is StepState.DONE:
                 lines.append(tr("jobs.result.done"))
             else:

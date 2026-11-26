@@ -84,7 +84,7 @@ class SubtitlesOptions:
     sync_settings: dict[str, str] = field(default_factory=dict)
     lines: Lines = Lines.AS_THEY_ARE
     # The model that translates and re-splits; empty for the one chosen in Settings. Planned into those steps; no
-    # engine runs them yet.
+    # engine re-splits yet.
     model: str = ""
     approval: Approval = Approval.NONE
     output: Output = Output.VIDEO

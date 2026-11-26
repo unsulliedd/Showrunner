@@ -12,6 +12,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import ClassVar, Protocol
 
+from showrunner.app.ai import AI
 from showrunner.app.jobs.hashing import FileStamp, stamp
 from showrunner.app.jobs.results import ResultStore
 from showrunner.app.profiles.profile import Profile
@@ -31,6 +32,7 @@ from showrunner.stages.subtitles.beside import (
 from showrunner.stages.subtitles.clean import clean_runner
 from showrunner.stages.subtitles.read import ocr_runner, read_runner
 from showrunner.stages.subtitles.sync import sync_runner
+from showrunner.stages.subtitles.translate import read_report, translate_runner
 from showrunner.stages.subtitles.work import Runner, StepWork
 from showrunner.stages.tracks import PlanRefused, plan_tracks
 from showrunner.tools.cleanit import OCR_EXTRA, OCR_SET, RuleBook, RuleSet
@@ -123,7 +125,11 @@ APPROVAL = StepKind.APPROVAL.value
 # The engines that need no program, by the kind of work they do; an engine registers here. The pipeline adds the ones
 # that need a program it found (`reading_runners`), and its stages plan only the work these can do, so a missing engine
 # leaves its subtitles out and nothing else.
-RUNNERS: dict[StepKind, Runner] = {StepKind.CLEAN: clean_runner(RULES.book)}
+# Translation needs no program but a server that answers, which the plans check as the `AI` kind of work.
+RUNNERS: dict[StepKind, Runner] = {
+    StepKind.CLEAN: clean_runner(RULES.book),
+    StepKind.TRANSLATE: translate_runner(lambda: AI.backend, RULES.book),
+}
 # The Jobs phases of a file's subtitle step in the order they run; a file shows the ones its plan holds. "beside"
 # writes the subtitles that go beside the video, once their work is done.
 SUBTITLE_PHASES = ("reference", "ocr", "read", "translate", "clean", "sync", "resplit", "approval", "beside")
@@ -443,12 +449,15 @@ class SubtitlesStage:
                     return f"{NOT_AVAILABLE}: {phase}"
                 given.output.parent.mkdir(parents=True, exist_ok=True)
                 runner(replace(given, progress=lambda fraction: report(phase, fraction)), cancel)
-                store.keep(given.output, inputs)
+                # A translation where windows fell back is not kept, so the next run asks for those windows again.
+                if not _fell_back(given):
+                    store.keep(given.output, inputs)
             report(phase, 1.0)
             done_in[phase] += 1
             return ""
 
         reference: Path | None = None
+        language = work.reference.track.language if work.reference and work.reference.track else None
         if work.reference is not None and (step := work.reference.step) is not None:
             reference = store.reference(work, self._ocr_rules() if step.kind is StepKind.OCR else "")
             track = work.reference.track
@@ -466,7 +475,9 @@ class SubtitlesStage:
             for index, step in enumerate(finished.steps):
                 output = store.output(work, finished, index)
                 inputs = [work.video, *([source] if source else []), *([reference] if reference else [])]
-                given = StepWork(step, work.video, source, reference, finished.language, finished.track, output)
+                given = StepWork(
+                    step, work.video, source, reference, finished.language, finished.track, output, language
+                )
                 if failed := run(given, inputs, step.kind.value):
                     return StepResult(False, failed)
                 source = output
@@ -508,6 +519,12 @@ class SubtitlesStage:
         # The kept results tell what is done, so running the step again repeats only what was not; a subtitle already
         # written beside the video reads as its result and is left as it is.
         return Resumed(Recovery.REDO)
+
+
+def _fell_back(work: StepWork) -> bool:
+    return (
+        work.step.kind is StepKind.TRANSLATE and (found := read_report(work.output)) is not None and found.needs_review
+    )
 
 
 def _mux_step(plan: MuxPlan, result: MuxResult) -> StepResult:

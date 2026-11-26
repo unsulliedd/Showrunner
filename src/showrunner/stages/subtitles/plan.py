@@ -20,6 +20,7 @@ from showrunner.core.media import MediaItem, SubtitleFile
 from showrunner.core.track import Track, TrackKind
 from showrunner.stages.subtitles.beside import is_result, language_name, new_file_name
 from showrunner.stages.subtitles.options import Approval, Lines, Output, ReferenceKind, SubtitlesOptions, SyncEngine
+from showrunner.stages.subtitles.prompt import DEFAULT_CONTEXT, DEFAULT_WINDOW
 from showrunner.stages.tracks import KindTest, PlanRefused, TrackMatch, TracksOptions, matches, plan_tracks, stand_in
 from showrunner.tools.cleanit import RuleSet
 from showrunner.tools.ocr import tesseract_code
@@ -75,7 +76,8 @@ class Step:
     # The fingerprint of those sets' rules, so a result made with other rules is not reused after a rule changed.
     rules: str = ""
     engine: SyncEngine = SyncEngine.AS_IT_IS  # SYNC
-    settings: tuple[tuple[str, str], ...] = ()  # SYNC: the engine's own settings set on the place
+    # SYNC: the engine's own settings set on the place. TRANSLATE: the window size and context, from Settings.
+    settings: tuple[tuple[str, str], ...] = ()
     # TRANSLATE, RESPLIT: the model, the one chosen in Settings where the place chose none, so a result made by another
     # model is not reused. Empty where no model is known: none is chosen, or no server answers.
     model: str = ""
@@ -87,6 +89,8 @@ class AiModels:
 
     default: str = ""  # chosen in Settings, for a place that chooses none
     installed: tuple[str, ...] = ()
+    window: int = DEFAULT_WINDOW  # the cues a translation asks the model for at a time
+    context: int = DEFAULT_CONTEXT  # the cues before and after a window sent along to read it in its scene
 
 
 _AI_KINDS = (StepKind.TRANSLATE, StepKind.RESPLIT)
@@ -208,6 +212,8 @@ def plan_subtitles(
         else ()
     )
     model = options.model or (ai.default if ai is not None else "")
+    windows = ai or AiModels()
+    windowing = (("context", str(windows.context)), ("window", str(windows.window)))
     resplit = (Step(StepKind.RESPLIT, model=model),) if sync and options.lines is Lines.RESPLIT else ()
     every = options.approval is Approval.EVERY
     beside = options.output is not Output.VIDEO
@@ -253,7 +259,8 @@ def plan_subtitles(
             # The reference is cleaned for its own language before it is translated, the translation for its own.
             source = reference.track.language if reference is not None and reference.track is not None else None
             names, rules = _covering(chosen, rule_sets, source)
-            steps = (Step(StepKind.TRANSLATE, names, rules, model=model), *_clean(chosen, rule_sets, language))
+            translate = Step(StepKind.TRANSLATE, names, rules, settings=windowing, model=model)
+            steps = (translate, *_clean(chosen, rule_sets, language))
             waits = every or options.approval is Approval.TRANSLATIONS
             found.append(FinishedSubtitle(Source.TRANSLATION, language, steps, "srt", waits=waits))
 

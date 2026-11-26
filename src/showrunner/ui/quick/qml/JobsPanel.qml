@@ -196,8 +196,10 @@ Item {
                                     }
 
                                     UiText {
-                                        visible: modelData.percent >= 0
-                                        text: Strings.f("jobs.percent", { percent: modelData.percent })
+                                        visible: modelData.percent >= 0 || !!modelData.note
+                                        // A translation says which window it asks for; the other phases their percent.
+                                        text: modelData.note ? modelData.note
+                                            : Strings.f("jobs.percent", { percent: modelData.percent })
                                         color: Theme.control
                                         font.pixelSize: Theme.text_sm
                                         font.weight: Font.DemiBold

@@ -257,8 +257,8 @@ def test_a_names_problem_stays_on_the_names_card(season: list[MediaItem]) -> Non
     profile = profile.with_options("naming", naming).with_options("subtitles", subtitles)
     groups = {g["key"]: g for g in built(season, profile)["groups"]}
     assert groups["names"]["problems"] != []
-    # No engine translates in this version, so the subtitles card says that, and only that.
+    # No mkvextract here to read the reference with, so the subtitles card says that, and only that.
     assert groups["subtitles"]["problems"] == [
-        "Translate is not available in this version yet, so 10 subtitles are left out. The rest of each file goes on"
-        " without them."
+        "Reading a subtitle track needs MKVToolNix's mkvextract, so 10 subtitles are left out. The rest of each file"
+        " goes on without them."
     ]

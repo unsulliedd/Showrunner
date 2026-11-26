@@ -50,11 +50,13 @@ from showrunner.ui.quick.review import (
     ai_model,
     backend_name,
     kept_sync,
+    kept_translation,
     left_as_it_was,
     missing_phases,
     reference_text,
     sync_found,
     track_text,
+    translation_found,
 )
 from showrunner.ui.quick.tracks import code, item_number
 from showrunner.ui.quick.workspace import Workspace
@@ -598,7 +600,12 @@ class SubtitleSettings(QObject):
             ]
             plan = []
             for finished in (*work.finished, *work.cannot, *work.left_out) if work is not None else ():
-                steps = [tr(f"subtitles.step.{step.kind.value}") for step in finished.steps]
+                steps = [
+                    tr("subtitles.step.translate_with", model=step.model)
+                    if step.kind is StepKind.TRANSLATE and step.model
+                    else tr(f"subtitles.step.{step.kind.value}")
+                    for step in finished.steps
+                ]
                 if finished.waits:
                     steps.append(tr("subtitles.step.approve"))
                 reasons = [tr(f"subtitles.cannot.{reason.value}") for reason in finished.cannot]
@@ -608,14 +615,18 @@ class SubtitleSettings(QObject):
                     work is not None and finished in work.finished and left_as_it_was(work, finished)
                 ):
                     joined = tr("subtitles.list.to_file", steps=joined, file=finished.target.name)
-                report = kept_sync(work, finished) if work is not None and finished in work.finished else None
+                done = work is not None and finished in work.finished
+                report = kept_sync(work, finished) if done else None
+                translated = kept_translation(work, finished) if done else None
+                found = [sync_found(report)] if report is not None else []
+                found += [text] if translated is not None and (text := translation_found(translated)) else []
                 plan.append(
                     {
                         "code": code(finished.language),
                         "steps": joined,
                         "cannot": tr("common.list_separator").join(reasons),
-                        "found": sync_found(report) if report is not None else "",
-                        "review": report is not None and report.needs_review,
+                        "found": f" {tr('status.separator')} ".join(found),
+                        "review": any(r is not None and r.needs_review for r in (report, translated)),
                     }
                 )
             for finished in work.written_earlier if work is not None else ():

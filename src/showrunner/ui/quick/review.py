@@ -34,6 +34,7 @@ from showrunner.stages.subtitles import FinishedSubtitle, ReferenceTrack, StepKi
 from showrunner.stages.subtitles.beside import reads_as_original
 from showrunner.stages.subtitles.plan import PGS
 from showrunner.stages.subtitles.sync import SyncReport
+from showrunner.stages.subtitles.translate import TranslateReport
 from showrunner.stages.tracks import NO_LANGUAGE, TrackPlan, TracksOptions
 from showrunner.tools.mkvtoolnix.propedit import Property
 from showrunner.ui.i18n.catalog import tr, tr_plural
@@ -203,6 +204,37 @@ def kept_sync(plan: SubtitlePlan, finished: FinishedSubtitle, store: ResultStore
     """What the sync of the finished subtitle found when it last ran, from the results the data folder keeps; None
     before it has run. A file changed since shows the old report until the step runs again."""
     return (store or ResultStore(results_dir())).sync_report(plan, finished)
+
+
+def kept_translation(
+    plan: SubtitlePlan, finished: FinishedSubtitle, store: ResultStore | None = None
+) -> TranslateReport | None:
+    """What the translation of the finished subtitle did when it last ran, or has done so far while it runs; None
+    before it has run."""
+    return (store or ResultStore(results_dir())).translate_report(plan, finished)
+
+
+def translation_found(report: TranslateReport) -> str:
+    """What a translation did, in words: the model, and the windows that kept the reference's text, which make it need
+    review. Empty while it runs."""
+    if not report.finished:
+        return ""
+    found = tr("subtitles.translate.found.done", model=report.model)
+    return f"{found} {tr('status.separator')} {review_text}" if (review_text := fell_back_text(report)) else found
+
+
+def fell_back_text(report: TranslateReport) -> str:
+    """ "needs review: windows 3, 9 of 14 kept the reference's text"; empty where no window fell back."""
+    if not report.fell_back:
+        return ""
+    windows = tr("common.list_separator").join(str(number) for number in report.fell_back)
+    fell_back = tr_plural("subtitles.translate.found.fell_back", len(report.fell_back), windows=windows)
+    return tr("subtitles.translate.found.review", fell_back=fell_back, total=report.windows)
+
+
+def translate_model(finished: FinishedSubtitle) -> str:
+    """The model the finished subtitle is translated with; empty for one that is not translated."""
+    return next((step.model for step in finished.steps if step.kind is StepKind.TRANSLATE), "")
 
 
 def left_as_it_was(plan: SubtitlePlan, finished: FinishedSubtitle, store: ResultStore | None = None) -> bool:
@@ -556,6 +588,12 @@ def _subtitle_lines(file: FilePreview | None, out: bool) -> list[dict[str, objec
         label = tr("review.detail.subtitle_files") if number == 0 else ""
         rows.append({**_line("file", "", "", out), "label": label, "text": sentence})
     for finished in work.finished if work is not None else ():
+        if work is not None and (model := translate_model(finished)):
+            language = finished.language.name if finished.language is not None else tr("tracks.no_language")
+            sentence = tr("review.subtitle.translate", language=language, model=model)
+            if (translated := kept_translation(work, finished)) is not None and (found := fell_back_text(translated)):
+                sentence += f" {tr('status.separator')} {found}"
+            rows.append({**_line("file", "", "", out), "label": tr("review.detail.translate"), "text": sentence})
         sync = next((step for step in finished.steps if step.kind is StepKind.SYNC), None)
         if work is not None and sync is not None:
             language = finished.language.name if finished.language is not None else tr("tracks.no_language")

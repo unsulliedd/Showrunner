@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass, field
 
 from showrunner.stages.subtitles import AiModels
+from showrunner.stages.subtitles.prompt import DEFAULT_CONTEXT, DEFAULT_WINDOW
 from showrunner.tools.ai import AiError, Backend
 
 FRESH_SECONDS = 10.0
@@ -54,9 +55,11 @@ class AiWatch:
         return status
 
 
-def ai_models(status: AiStatus | None, default: str) -> AiModels | None:
-    """What the plans may use: the model chosen in Settings and the installed ones, or None while no server answers,
-    which makes AI work unavailable."""
+def ai_models(
+    status: AiStatus | None, default: str, window: int = DEFAULT_WINDOW, context: int = DEFAULT_CONTEXT
+) -> AiModels | None:
+    """What the plans may use: the model chosen in Settings, the installed ones and the window a translation asks
+    for at a time, or None while no server answers, which makes AI work unavailable."""
     if status is None or not status.running:
         return None
-    return AiModels(default, status.models)
+    return AiModels(default, status.models, window, context)

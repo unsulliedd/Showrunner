@@ -190,12 +190,12 @@ def test_the_plans_follow_the_server_and_the_settings_model(
     options = workspace.batches.profile(workspace.key).for_stage("subtitles")
     workspace.set_options("subtitles", replace(options, languages={"de": Wanted.WANTED}))
     settle(controller, qtbot)
-    # No translate engine in this version, so Translate is always among what is missing.
-    assert missing() == {((StepKind.AI, StepKind.TRANSLATE), "")}
+    assert missing() == {((StepKind.AI,), "")}
     # The server starts: the window's background check sees it and plans again.
     monkeypatch.setattr(AI, "backend", Server(RUNNING))
     controller.found.check_ai(now=True)
-    qtbot.waitUntil(lambda: missing() == {((StepKind.MODEL, StepKind.TRANSLATE), "")})
+    qtbot.waitUntil(lambda: missing() == {((StepKind.MODEL,), "")})
     controller.settings.set_ai_model("sample:9b")
     settle(controller, qtbot)
-    assert missing() == {((StepKind.TRANSLATE,), "sample:9b")}
+    # Nothing is missing once the model is chosen: the translation is planned.
+    assert missing() == set()

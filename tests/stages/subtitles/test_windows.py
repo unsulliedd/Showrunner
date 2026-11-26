@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import threading
 from collections.abc import Sequence
 from pathlib import Path
@@ -152,3 +153,46 @@ def test_cancel_during_a_window_reaches_the_backend(tmp_path: Path) -> None:
     with pytest.raises(ProcessCancelledError):
         run(Cancelled(), tmp_path, cancel=given)
     assert list(tmp_path.iterdir()) == []
+
+
+def again(window: Window, request: ChatRequest, answer: str) -> ChatRequest:
+    """The first request with a note after it, so a fake that fails on the first line answers the second time."""
+    note = Message(Role.USER, f"> {len(window.own(CUES))} lines, please")
+    return dataclasses.replace(request, messages=(*request.messages, note), temperature=0.2)
+
+
+class Picky(Backend):
+    """Answers one line too few for a window asked the first time, and as asked once a note follows."""
+
+    def chat(self, request: ChatRequest, cancel: threading.Event | None = None) -> ChatAnswer:
+        answer = super().chat(request, cancel)
+        return answer if len(request.messages) > 1 else ChatAnswer(answer.text.rsplit("\n", 1)[0], 0.1)
+
+
+def test_an_unreadable_answer_is_asked_once_more_and_kept_under_the_first_request(tmp_path: Path) -> None:
+    result = run(Picky(), tmp_path, again=again)
+    assert [cue.text for cue in result.cues] == [f"LINE {n}" for n in range(10)]
+    assert (result.failed, result.retried) == ((), 3)
+    # The kept answers are found by the first requests, so a rerun asks nothing.
+    rerun = Backend()
+    assert run(rerun, tmp_path, again=again).reused == 3
+    assert rerun.asked == []
+
+
+def test_a_window_still_unreadable_after_the_retry_falls_back_and_a_timeout_is_not_retried(tmp_path: Path) -> None:
+    backend = Backend({"line 4": "one line for four", "line 8": AiError(ErrorKind.TIMEOUT)})
+    result = run(backend, tmp_path, again=again)
+    assert [(f.window.index, f.kind) for f in result.failed] == [(1, ErrorKind.BAD_ANSWER), (2, ErrorKind.TIMEOUT)]
+    assert result.retried == 1
+    assert backend.asked == ["line 0", "line 4", "line 4", "line 8"]
+
+
+def test_the_temperature_is_part_of_the_kept_answer_s_name(tmp_path: Path) -> None:
+    run(Backend(), tmp_path)
+
+    def warmer(cues: Sequence[Cue], window: Window) -> ChatRequest:
+        return dataclasses.replace(ask(cues, window), temperature=0.7)
+
+    rerun = Backend()
+    run_windows(CUES, size=4, overlap=1, ask=warmer, read=read, backend=rerun, kept=tmp_path)
+    assert len(rerun.asked) == 3

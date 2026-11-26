@@ -3,10 +3,10 @@
 A window answers for its own cues; the cues before it (`overlap`) go along as context only, so the model reads each
 line in its scene while every cue is answered once. Each finished window's answer is kept under a name made of the
 whole request (the model, the prompt, its cues and their context), so a rerun with the same input reuses it and a
-changed cue, prompt or model asks again. A window whose answer times out or cannot be read keeps its cues as they are
-and is named in the result; it is not kept, so the next run asks for it again. A server that stops or a model that is
-gone ends the work instead: every later window would fail the same way, and the windows kept so far stay for the
-resume.
+changed cue, prompt or model asks again. A window whose answer cannot be read is asked once more (`again`); one whose
+answer times out, or still cannot be read, keeps its cues as they are and is named in the result; it is not kept, so
+the next run asks for it again. A server that stops or a model that is gone ends the work instead: every later window
+would fail the same way, and the windows kept so far stay for the resume.
 """
 
 from __future__ import annotations
@@ -52,12 +52,16 @@ class WindowRun:
     cues: tuple[Cue, ...]  # every window's answer in order, a failed window's own cues as they were
     failed: tuple[WindowFailure, ...]
     reused: int  # windows answered by an earlier run
+    retried: int = 0  # windows asked a second time, answered or not
 
 
 # The request for one window, made from all the cues and the window. Its whole content names the kept answer.
 type Ask = Callable[[Sequence[Cue], Window], ChatRequest]
 # The cues a window's answer stands for; raises `ValueError` (or `AiError`) for an answer that cannot be read.
 type Read = Callable[[Sequence[Cue], Window, str], Sequence[Cue]]
+# The request a window whose answer could not be read is asked again with, made from the first request and that answer
+# (empty where the server's answer had no text). Its answer is kept under the first request's name.
+type Again = Callable[[Window, ChatRequest, str], ChatRequest]
 
 
 def split(count: int, size: int, overlap: int) -> list[Window]:
@@ -79,6 +83,7 @@ def run_windows(
     read: Read,
     backend: Backend,
     kept: Path,
+    again: Again | None = None,
     cancel: threading.Event | None = None,
     progress: Callable[[float], None] | None = None,
 ) -> WindowRun:
@@ -88,7 +93,7 @@ def run_windows(
     windows = split(len(cues), size, overlap)
     answered: list[Cue] = []
     failed: list[WindowFailure] = []
-    reused = 0
+    reused = retried = 0
     for window in windows:
         if cancel is not None and cancel.is_set():
             raise ProcessCancelledError("cancelled", ())
@@ -98,21 +103,41 @@ def run_windows(
         if result is not None:
             reused += 1
         else:
-            try:
-                text = backend.chat(request, cancel).text
-                result = read(cues, window, text)
-            except AiError as error:
-                if error.kind not in _WINDOW_ERRORS:
-                    raise
-                failed.append(WindowFailure(window, error.kind, error.detail))
-            except ValueError as error:
-                failed.append(WindowFailure(window, ErrorKind.BAD_ANSWER, str(error)))
+            asked, text, failure = _ask(request, backend, cues, window, read, cancel)
+            if failure is not None and failure.kind is ErrorKind.BAD_ANSWER and again is not None:
+                retried += 1
+                asked, text, failure = _ask(again(window, request, text), backend, cues, window, read, cancel)
+            if failure is not None:
+                failed.append(failure)
             else:
+                result = asked
                 _keep(path, text)
         answered.extend(result if result is not None else window.own(cues))
         if progress is not None:
             progress((window.index + 1) / len(windows))
-    return WindowRun(tuple(answered), tuple(failed), reused)
+    return WindowRun(tuple(answered), tuple(failed), reused, retried)
+
+
+def _ask(
+    request: ChatRequest,
+    backend: Backend,
+    cues: Sequence[Cue],
+    window: Window,
+    read: Read,
+    cancel: threading.Event | None,
+) -> tuple[Sequence[Cue] | None, str, WindowFailure | None]:
+    """One request for a window: the cues its answer stands for and that answer, or why it cost the window, with the
+    answer's text where one came."""
+    text = ""
+    try:
+        text = backend.chat(request, cancel).text
+        return read(cues, window, text), text, None
+    except AiError as error:
+        if error.kind not in _WINDOW_ERRORS:
+            raise
+        return None, text, WindowFailure(window, error.kind, error.detail)
+    except ValueError as error:
+        return None, text, WindowFailure(window, ErrorKind.BAD_ANSWER, str(error))
 
 
 def _reuse(path: Path, cues: Sequence[Cue], window: Window, read: Read) -> Sequence[Cue] | None:
@@ -133,5 +158,5 @@ def _keep(path: Path, text: str) -> None:
 
 def _digest(request: ChatRequest) -> str:
     # The timeout does not change the answer, so it is left out of the name.
-    made_of = (request.model, request.system, request.messages)
+    made_of = (request.model, request.system, request.messages, request.temperature)
     return hashlib.blake2b(repr(made_of).encode("utf-8"), digest_size=16).hexdigest()

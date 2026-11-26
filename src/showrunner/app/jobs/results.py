@@ -22,6 +22,8 @@ from showrunner.app.jobs.hashing import stamp
 from showrunner.app.storage.files import write_json_atomic
 from showrunner.stages.subtitles import FinishedSubtitle, StepKind, SubtitlePlan
 from showrunner.stages.subtitles.sync import SyncReport, read_report
+from showrunner.stages.subtitles.translate import TranslateReport
+from showrunner.stages.subtitles.translate import read_report as read_translation
 
 KEEP_DAYS = 14
 _RECORD = ".json"
@@ -54,6 +56,14 @@ class ResultStore:
         for index, step in enumerate(finished.steps):
             if step.kind is StepKind.SYNC:
                 return read_report(self.output(plan, finished, index))
+        return None
+
+    def translate_report(self, plan: SubtitlePlan, finished: FinishedSubtitle) -> TranslateReport | None:
+        """What the finished subtitle's translation did, or has done so far while it runs; None before it ran, or for
+        one with no translation."""
+        for index, step in enumerate(finished.steps):
+            if step.kind is StepKind.TRANSLATE:
+                return read_translation(self.output(plan, finished, index))
         return None
 
     def reference(self, plan: SubtitlePlan, rules: str = "") -> Path:

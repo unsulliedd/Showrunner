@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import socket
 import threading
@@ -106,6 +107,13 @@ def test_a_chat_sends_the_prompt_and_messages_and_joins_the_streamed_words(serve
     # Thinking is off: a thinking model would write its reasoning before every answer.
     assert sent["think"] is False
     assert sent["stream"] is True
+    # No temperature asked for: the server keeps its own.
+    assert "options" not in sent
+
+
+def test_a_temperature_asked_for_is_sent_as_an_option(server: Server) -> None:
+    OllamaBackend(server.url).chat(dataclasses.replace(REQUEST, temperature=0.0))
+    assert server.sent[0]["options"] == {"temperature": 0.0}
 
 
 def free_port() -> int:

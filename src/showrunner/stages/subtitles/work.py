@@ -25,6 +25,8 @@ class StepWork:
     )  # of the finished subtitle: the rules to clean it with, the legacy code page it is read in
     track: Track | None  # for a step that reads one out of the video
     output: Path  # where the step writes its result, in the format of its extension
+    # The language of the reference, for a translation: the language it is translated from and cleaned for.
+    reference_language: Language | None = None
     # Takes the fraction of the step done, from 0 to 1, for a step that takes long enough to show it.
     progress: Callable[[float], None] | None = field(default=None, compare=False)
 

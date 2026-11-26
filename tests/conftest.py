@@ -1,6 +1,8 @@
 import os
+import re
 import shutil
 import subprocess
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -19,6 +21,7 @@ from showrunner.core.media import Attachment, Chapter, ChapterName, Episode, Med
 from showrunner.core.options.registry import OptionsRegistry
 from showrunner.core.track import AudioProperties, SubtitleProperties, Track, TrackFlags, TrackKind, VideoProperties
 from showrunner.stages.scan import Alternatives, ProbeFailure
+from showrunner.tools.ai import AiError, ChatAnswer, ChatRequest, ErrorKind
 
 
 @pytest.hookimpl(optionalhook=True)
@@ -180,3 +183,41 @@ def real_episode(tmp_path: Path) -> RealEpisode:
     subtitle = folder / "Show Name - S01E01.tr.srt"
     subtitle.write_bytes(f"1\r\n00:00:00,000 --> 00:00:01,000\r\n{TURKISH_LINE}\r\n".encode("cp1254"))
     return RealEpisode(video, subtitle, mkvmerge)
+
+
+_OWN = re.compile(r"Translate these cues:\n(.*?)(?:\n\n|$)", re.S)
+
+
+class Translator:
+    """Answers each numbered cue with "tr " before it; a window whose first cue is in `bad` gets one cue too few, and
+    one whose first cue is in `down` a timeout."""
+
+    name = "fake"
+
+    def __init__(self, bad: set[str] | None = None, down: set[str] | None = None) -> None:
+        self.bad, self.down = bad or set(), down or set()
+        self.asked: list[ChatRequest] = []
+
+    def models(self) -> list[str]:
+        return ["sample:9b"]
+
+    def version(self) -> str:
+        return "0"
+
+    def chat(self, request: ChatRequest, cancel: threading.Event | None = None) -> ChatAnswer:
+        self.asked.append(request)
+        own = _OWN.search(request.messages[0].content)
+        assert own is not None
+        blocks = re.split(r"^\[\d+\]\n", own.group(1), flags=re.M)[1:]
+        first = blocks[0].strip()
+        if first in self.down:
+            raise AiError(ErrorKind.TIMEOUT, "300 s")
+        if first in self.bad:
+            blocks = blocks[:-1]
+        return ChatAnswer("\n".join(f"[{n}]\ntr {b.strip()}" for n, b in enumerate(blocks, start=1)), 0.1)
+
+
+@pytest.fixture
+def translator() -> type[Translator]:
+    """A stand-in AI backend that translates numbered cues, for the tests of the translate step."""
+    return Translator

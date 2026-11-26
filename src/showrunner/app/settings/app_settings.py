@@ -61,6 +61,10 @@ class AppSettings:
     # The AI model that translates and re-splits where a place chooses none; empty until one is chosen. Kept with the
     # machine, since it names a model installed here.
     ai_model: str = ""
+    # The cues a translation asks the model for at a time, and the cues before and after them sent as context. Larger
+    # windows save little time and cost more when one falls back.
+    translate_window: int = 40
+    translate_context: int = 5
 
 
 def with_recent(recent: dict[str, str], folders: Iterable[str], when: datetime) -> dict[str, str]:
