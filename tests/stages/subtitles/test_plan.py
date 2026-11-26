@@ -9,8 +9,10 @@ from showrunner.core.language import Language
 from showrunner.core.media import MediaItem, SubtitleFile
 from showrunner.core.track import SubtitleProperties, Track, TrackKind
 from showrunner.stages.subtitles import (
+    AiModels,
     Approval,
     Cannot,
+    FinishedSubtitle,
     Lines,
     Output,
     Reference,
@@ -185,7 +187,8 @@ def test_a_subtitle_needing_work_that_cannot_run_is_left_out(b: SimpleNamespace)
     assert plan.finished == ()
     assert [(f.source, f.missing) for f in plan.left_out] == [
         (Source.PAIRED, (StepKind.SYNC,)),
-        (Source.TRANSLATION, (StepKind.TRANSLATE,)),
+        # No AI server is among the kinds that can run either.
+        (Source.TRANSLATION, (StepKind.AI, StepKind.TRANSLATE)),
     ]
     # Nothing ready works against the reference, so none is read.
     assert plan.reference is None
@@ -397,3 +400,36 @@ def test_a_sync_needs_an_engine_that_can_run_and_for_the_audio_one_that_can_list
     for syncs in ({SyncEngine.ALASS: True}, {}):
         plan = plan_subtitles(text, options, ADD_TURKISH, syncs=syncs)
         assert [f.missing for f in plan.left_out] == [(StepKind.SYNC,)]
+
+
+GERMAN = SubtitlesOptions(languages={"de": Wanted.WANTED})
+INSTALLED = AiModels("sample:9b", ("other:3b", "sample:9b"))
+
+
+def _translate_of(finished: FinishedSubtitle) -> Step:
+    return next(s for s in finished.steps if s.kind is StepKind.TRANSLATE)
+
+
+def test_a_place_that_chooses_no_model_translates_with_the_settings_one(b: SimpleNamespace) -> None:
+    plan = plan_subtitles(episode(b, b.subtitle(2)), GERMAN, TracksOptions(), ai=INSTALLED)
+    # Named in the step, so a translation made by another model is not reused after Settings changed.
+    assert _translate_of(plan.finished[0]).model == "sample:9b"
+    own = replace(GERMAN, model="other:3b", lines=Lines.RESPLIT, sync=SyncEngine.FFSUBSYNC)
+    plan = plan_subtitles(episode(b, b.subtitle(2)), own, ADD_TURKISH, ai=INSTALLED)
+    assert {s.model for f in plan.finished for s in f.steps if s.kind in (StepKind.TRANSLATE, StepKind.RESPLIT)} == {
+        "other:3b"
+    }
+
+
+def test_ai_work_without_a_server_or_its_model_is_left_out_and_says_which(b: SimpleNamespace) -> None:
+    item = episode(b, b.subtitle(2))
+    every = frozenset(StepKind) - {StepKind.AI}
+    (no_server,) = plan_subtitles(item, GERMAN, TracksOptions(), available=every).left_out
+    assert no_server.missing == (StepKind.AI,)
+    gone = replace(GERMAN, model="gone:7b")
+    (no_model,) = plan_subtitles(item, gone, TracksOptions(), ai=INSTALLED).left_out
+    assert no_model.missing == (StepKind.MODEL,)
+    (none_chosen,) = plan_subtitles(item, GERMAN, TracksOptions(), ai=AiModels("", INSTALLED.installed)).left_out
+    assert (none_chosen.missing, _translate_of(none_chosen).model) == ((StepKind.MODEL,), "")
+    # Unchecked, as a plan made without the server's models is.
+    assert plan_subtitles(item, gone, TracksOptions()).finished != ()

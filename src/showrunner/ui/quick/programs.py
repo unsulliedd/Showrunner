@@ -24,7 +24,13 @@ from showrunner.tools.dependencies.specs import SPEC_BY_ID, SPECS, Archive, Depe
 from showrunner.tools.process import ProcessError
 from showrunner.ui.i18n.catalog import tr
 
-_TONE = {State.FOUND: "add", State.OUTDATED: "change", State.BROKEN: "drop", State.MISSING: "drop"}
+_TONE = {
+    State.FOUND: "add",
+    State.OUTDATED: "change",
+    State.BROKEN: "drop",
+    State.MISSING: "drop",
+    State.STOPPED: "change",
+}
 
 
 def _megabytes(size: int) -> str:
@@ -48,6 +54,9 @@ def row(spec: DependencySpec, status: DependencyStatus | None, has_user_path: bo
             location = tr(f"dependencies.location.{status.location.value}")
             version = tr("dependencies.version_location", version=version, location=location)
         details += [version, str(status.path)]
+    elif status is not None and status.version:
+        # A server answers, from a program installed where the search does not look.
+        details.append(tr("dependencies.version", version=status.version))
     if status is not None and status.state is State.BROKEN and status.detail:
         details.append(status.detail.splitlines()[0])
     # Whether a newer version exists is known only after asking its source, so a program found and working offers a

@@ -225,23 +225,23 @@ Item {
                                     }
 
                                     ActionButton {
-                                        id: pickReference
+                                        id: pickValue
 
-                                        objectName: "referencePick"
+                                        objectName: row.modelData.key + "Pick"
                                         visible: row.modelData.pick !== undefined
                                         kind: "ghost"
                                         size: Theme.row_sm
                                         iconName: "down"
                                         text: Strings.t("subtitles.reference.pick")
                                         enabled: !app.locked
-                                        onClicked: referenceMenu.popup(pickReference, 0, pickReference.height)
+                                        onClicked: valueMenu.popup(pickValue, 0, pickValue.height)
                                     }
 
                                     ActionMenu {
-                                        id: referenceMenu
+                                        id: valueMenu
 
                                         actions: row.modelData.pick ?? []
-                                        onPicked: key => Qt.callLater(() => app.pick_reference(key))
+                                        onPicked: key => Qt.callLater(() => row.modelData.key === "model" ? app.pick_model(key) : app.pick_reference(key))
                                     }
                                 }
 

@@ -1,7 +1,9 @@
-"""The programs the window works with, as found on this machine, and the list of languages MKVToolNix knows.
+"""The programs the window works with, as found on this machine, the AI server's state, and the list of languages
+MKVToolNix knows.
 
-Both are read on pool threads. Which stages plan depends on the programs found, so the open place plans again when
-they are known; unfinished jobs are offered once, at the first check, since resuming one runs them.
+All are read on pool threads. Which stages plan depends on the programs found and on the AI server, so the open place
+plans again when they are known or change; unfinished jobs are offered once, at the first check, since resuming one
+runs them.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
+from showrunner.app.ai import AI, AiStatus
 from showrunner.app.dependencies.service import check, programs_from
 from showrunner.app.languages import read_languages, use_languages
 from showrunner.app.library.loader import BackgroundJob
@@ -36,6 +39,7 @@ def check_shown() -> Statuses:
 class FoundPrograms(QObject):
     programs_changed = Signal()
     languages_read = Signal()  # MKVToolNix's list of languages arrived, or its absence is known
+    ai_changed = Signal()  # the AI server started or stopped answering, or its models changed
 
     def __init__(
         self,
@@ -51,8 +55,38 @@ class FoundPrograms(QObject):
         self._offered = False  # unfinished jobs are offered once, when the programs are first known
         self.known_codes: frozenset[str] | None = None  # the codes MKVToolNix accepts; None without it
         self._languages_from: Path | None = None  # the mkvmerge whose list of languages was asked for
+        self._asking_ai = False
+        self._ai_before: AiStatus | None = None  # the answer the plans had when the server was last asked
+        # Each new plan asks the AI server again once its last answer is old, so the plans follow it within moments.
+        workspace.rebuilt.connect(self.check_ai)
+
+    def check_ai(self, now: bool = False) -> None:
+        """Ask the AI server in the background when its last answer is old, or `now`. Plans read the last answer
+        meanwhile; a different answer plans the place again."""
+        if self._asking_ai or not (now or AI.stale()):
+            return
+        self._asking_ai = True
+        self._ai_before = AI.status()
+        # Bound slots, as for the programs.
+        job = BackgroundJob(AI.check)
+        job.finished.connect(self._on_ai)
+        job.failed.connect(self._on_ai_failed)
+        job.start()
+
+    def _on_ai(self, status: AiStatus) -> None:
+        self._asking_ai = False
+        if status != self._ai_before:
+            if not status.running:
+                _log.info("The AI server does not answer: %s", status.detail)
+            self.ai_changed.emit()
+            self._workspace.replan()
+
+    def _on_ai_failed(self, error: Exception) -> None:
+        self._asking_ai = False
+        _log.error("Asking the AI server failed: %s", error)
 
     def refresh(self) -> None:
+        self.check_ai(now=True)
         # Bound slots: a check that ends after the window is gone reaches nothing, as Qt drops a deleted receiver.
         job = BackgroundJob(self._check)
         job.finished.connect(self._on_statuses)

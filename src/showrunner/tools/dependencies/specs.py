@@ -137,9 +137,9 @@ SPECS: tuple[DependencySpec, ...] = (
     DependencySpec(
         id="ollama",
         executables=("ollama",),
-        version_args=("--version",),
-        # Without a running server it prints "client version is ..." instead of "ollama version is ...".
-        version_pattern=rf"version is v?{_VERSION}",
+        # Never run: on Windows the command starts the desktop app. Its state and version come from its server.
+        version_args=None,
+        version_pattern=None,
         min_version="0.5.0",
         official_url="https://ollama.com/download/windows",
         source=GitHubRelease("ollama/ollama", (Variant("default", (r"ollama-windows-amd64\.zip",), Archive.ZIP),)),

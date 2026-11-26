@@ -32,12 +32,6 @@ from showrunner.tools.process import ProcessTimeoutError, RunResult
         ("ffmpeg", "ffmpeg version n9.0-12-gabc Copyright", "9.0"),
         ("ffmpeg", "ffmpeg version N-121000-gabcdef Copyright", None),
         ("tesseract", "tesseract v5.4.0.20240606\n leptonica-1.84.1", "5.4.0.20240606"),
-        ("ollama", "ollama version is 0.40.16", "0.40.16"),
-        (
-            "ollama",
-            "Warning: could not connect to a running Ollama instance\nWarning: client version is 0.40.16",
-            "0.40.16",
-        ),
         ("llama_cpp", "version: 12366 (1a2b3c4)\nbuilt with MSVC", "12366"),
         ("alass", "alass-cli 2.0.0", "2.0.0"),
         ("lapse", "lapse 2.5.0", "2.5.0"),

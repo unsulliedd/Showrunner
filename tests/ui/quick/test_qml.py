@@ -1192,7 +1192,7 @@ def test_settings_and_the_palette_answer_the_keyboard(
     assert dialog.property("section") == "shortcuts"
     _key(window, Qt.Key.Key_Home)
     assert dialog.property("section") == "general"
-    for section in ("profiles", "programs", "appearance", "shortcuts", "about", "general"):
+    for section in ("profiles", "programs", "ai", "appearance", "shortcuts", "about", "general"):
         load.run(f'settings.section = "{section}"')
         assert load() == [], section
     _key(window, Qt.Key.Key_Escape)
@@ -1248,7 +1248,7 @@ def test_a_narrow_compact_window_and_the_palette_by_pointer(
     load.run('settings.show("general")')
     qtbot.waitUntil(lambda: dialog.property("opened"))
     assert dialog.property("rail") is True
-    for section in ("general", "profiles", "programs", "appearance", "shortcuts", "about"):
+    for section in ("general", "profiles", "programs", "ai", "appearance", "shortcuts", "about"):
         load.run(f'settings.section = "{section}"')
         assert load() == [], section
     load.run("settings.close()")

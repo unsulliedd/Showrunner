@@ -58,6 +58,9 @@ class AppSettings:
     density: Density = Density.COMFORTABLE
     # External programs the user located by hand: program id to the program file or its folder.
     tool_paths: dict[str, str] = field(default_factory=dict)
+    # The AI model that translates and re-splits where a place chooses none; empty until one is chosen. Kept with the
+    # machine, since it names a model installed here.
+    ai_model: str = ""
 
 
 def with_recent(recent: dict[str, str], folders: Iterable[str], when: datetime) -> dict[str, str]:

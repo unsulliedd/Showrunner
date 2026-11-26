@@ -22,6 +22,8 @@ class State(StrEnum):
     # Present, but it did not run or did not print a version.
     BROKEN = "broken"
     MISSING = "missing"
+    # A program that serves its features from a server (Ollama), installed or not, whose server does not answer.
+    STOPPED = "stopped"
 
 
 class Location(StrEnum):

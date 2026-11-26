@@ -14,6 +14,7 @@ from showrunner.stages.subtitles.options import (
 )
 from showrunner.stages.subtitles.plan import (
     DEFAULT_REFERENCE_LANGUAGE,
+    AiModels,
     Cannot,
     FinishedSubtitle,
     ReferenceTrack,
@@ -29,6 +30,7 @@ from showrunner.stages.subtitles.plan import (
 __all__ = [
     "DEFAULT_REFERENCE_LANGUAGE",
     "PER_ITEM_FIELDS",
+    "AiModels",
     "Approval",
     "Cannot",
     "FinishedSubtitle",

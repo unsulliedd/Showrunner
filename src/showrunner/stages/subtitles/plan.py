@@ -38,6 +38,9 @@ class StepKind(StrEnum):
     # The sound read as speech, which a sync against the audio needs. Not a step of `FinishedSubtitle.steps`: only a
     # kind of work a plan can miss (`missing`), where the program that reads the sound is not there.
     AUDIO = "audio"
+    # Not steps either: an AI server that answers, and the model a translation or re-split asks for installed on it.
+    AI = "ai"
+    MODEL = "model"
     TRANSLATE = "translate"
     CLEAN = "clean"
     SYNC = "sync"
@@ -73,7 +76,20 @@ class Step:
     rules: str = ""
     engine: SyncEngine = SyncEngine.AS_IT_IS  # SYNC
     settings: tuple[tuple[str, str], ...] = ()  # SYNC: the engine's own settings set on the place
-    model: str = ""  # TRANSLATE, RESPLIT: empty for the model chosen in Settings
+    # TRANSLATE, RESPLIT: the model, the one chosen in Settings where the place chose none, so a result made by another
+    # model is not reused. Empty where no model is known: none is chosen, or no server answers.
+    model: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class AiModels:
+    """The AI models the plans may use."""
+
+    default: str = ""  # chosen in Settings, for a place that chooses none
+    installed: tuple[str, ...] = ()
+
+
+_AI_KINDS = (StepKind.TRANSLATE, StepKind.RESPLIT)
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,20 +178,22 @@ def plan_subtitles(
     rule_sets: Mapping[str, RuleSet] | None = None,
     ocr_languages: Collection[str] | None = None,
     syncs: Mapping[SyncEngine, bool] | None = None,
+    ai: AiModels | None = None,
 ) -> SubtitlePlan:
     """The finished subtitles the place's options ask for in this file. Into the video, the paired files are the ones
     the track plan adds, so a run that leaves the track choices out leaves their subtitle work out too; beside the
     video, every text file paired with the video is worked on, but for the ones an earlier run named with the new-file
-    text. A new file the scan already paired with the video was written by an earlier run, so its original plans no
-    work (`written_earlier`); any other target that names a file the scan paired with the video, other than the one it
-    replaces, or another subtitle's target, cannot be written. The plan reads nothing from disk, so Apply checks
-    again before it writes. `prefer` is the language
-    Automatic looks for first in the reference. `available` are the kinds of work that can run: a finished subtitle
-    that needs another one is left out. `rule_sets` are the cleanup sets that exist, by name: a subtitle is cleaned with
-    the chosen sets whose rules cover its language. `ocr_languages` are the Tesseract models installed, so a picture
-    reference in a language with none cannot be read; None leaves that unchecked. `syncs` are the sync engines that can
-    run, each with whether it can work against the audio; a sync with another engine, or against the audio with one
-    that cannot, is left out. None leaves that unchecked."""
+    text. A new file the scan already paired with the video was written by an earlier run, so its original plans no work
+    (`written_earlier`); any other target that names a file the scan paired with the video, other than the one it
+    replaces, or another subtitle's target, cannot be written. The plan reads nothing from disk, so Apply checks again
+    before it writes. `prefer` is the language Automatic looks for first in the reference. `available` are the kinds of
+    work that can run: a finished subtitle that needs another one is left out. `rule_sets` are the cleanup sets that
+    exist, by name: a subtitle is cleaned with the chosen sets whose rules cover its language. `ocr_languages` are the
+    Tesseract models installed, so a picture reference in a language with none cannot be read; None leaves that
+    unchecked. `syncs` are the sync engines that can run, each with whether it can work against the audio; a sync with
+    another engine, or against the audio with one that cannot, is left out. None leaves that unchecked. `ai` gives a
+    place that chooses no model the Settings one, and the work of a model that is not installed is left out; None leaves
+    both as the place has them."""
     rule_sets = rule_sets or {}
     video = item.file.path
     if options == _NOTHING:
@@ -189,7 +207,8 @@ def plan_subtitles(
         if options.sync is not SyncEngine.AS_IT_IS
         else ()
     )
-    resplit = (Step(StepKind.RESPLIT, model=options.model),) if sync and options.lines is Lines.RESPLIT else ()
+    model = options.model or (ai.default if ai is not None else "")
+    resplit = (Step(StepKind.RESPLIT, model=model),) if sync and options.lines is Lines.RESPLIT else ()
     every = options.approval is Approval.EVERY
     beside = options.output is not Output.VIDEO
 
@@ -234,7 +253,7 @@ def plan_subtitles(
             # The reference is cleaned for its own language before it is translated, the translation for its own.
             source = reference.track.language if reference is not None and reference.track is not None else None
             names, rules = _covering(chosen, rule_sets, source)
-            steps = (Step(StepKind.TRANSLATE, names, rules, model=options.model), *_clean(chosen, rule_sets, language))
+            steps = (Step(StepKind.TRANSLATE, names, rules, model=model), *_clean(chosen, rule_sets, language))
             waits = every or options.approval is Approval.TRANSLATIONS
             found.append(FinishedSubtitle(Source.TRANSLATION, language, steps, "srt", waits=waits))
 
@@ -258,7 +277,7 @@ def plan_subtitles(
             taken.add(key)
         if reasons:
             cannot.append(replace(finished, cannot=reasons))
-        elif missing := _missing(finished, reference, available, ocr_languages, syncs):
+        elif missing := _missing(finished, reference, available, ocr_languages, syncs, ai):
             left_out.append(replace(finished, missing=missing))
         else:
             ready.append(finished)
@@ -321,11 +340,12 @@ def _missing(
     available: Collection[StepKind],
     ocr_languages: Collection[str] | None,
     syncs: Mapping[SyncEngine, bool] | None,
+    ai: AiModels | None,
 ) -> tuple[StepKind, ...]:
     """The kinds of work the finished subtitle needs that are not available: its steps, the reading of the reference
     it works against, and the wait for approval. Reading a picture reference is not available either where Tesseract
     has no model for its language, and syncing is not where the engine it asks for cannot run or cannot work against
-    the audio the reference is."""
+    the audio the reference is. AI work needs a server that answers and its model installed there."""
     needed = {step.kind for step in finished.steps}
     lacking: set[StepKind] = set()
     if finished.uses_reference and reference is not None and (read := reference.step) is not None:
@@ -345,6 +365,12 @@ def _missing(
         elif reference is not None and reference.track is None and not syncs[step.engine]:  # type: ignore[index]
             needed.add(StepKind.AUDIO)
             lacking.add(StepKind.AUDIO)
+    for step in finished.steps:
+        if step.kind in _AI_KINDS:
+            needed.add(StepKind.AI)
+            if ai is not None and step.model not in ai.installed:
+                needed.add(StepKind.MODEL)
+                lacking.add(StepKind.MODEL)
     if finished.waits:
         needed.add(StepKind.APPROVAL)
     return tuple(kind for kind in StepKind if kind in needed and (kind not in available or kind in lacking))

@@ -20,7 +20,7 @@ from showrunner.app.storage.paths import results_dir
 from showrunner.core.media import MediaItem
 from showrunner.stages.metadata import MetadataPlan, MetadataRefused, apply_metadata, plan_metadata
 from showrunner.stages.mux import Failure, MuxPlan, MuxRefused, MuxResult, apply_mux, plan_mux, resume_mux
-from showrunner.stages.subtitles import Step, StepKind, SubtitlePlan, SyncEngine, plan_subtitles
+from showrunner.stages.subtitles import AiModels, Step, StepKind, SubtitlePlan, SyncEngine, plan_subtitles
 from showrunner.stages.subtitles.beside import (
     BesideError,
     BesideFailure,
@@ -219,6 +219,7 @@ def subtitle_plan(
     cleanup: CleanupSets,
     models: tuple[str, ...] | None = None,
     syncs: SyncSupport | None = None,
+    ai: AiModels | None = None,
 ) -> SubtitlePlan:
     return plan_subtitles(
         item,
@@ -228,6 +229,7 @@ def subtitle_plan(
         rule_sets=cleanup.sets,
         ocr_languages=models,
         syncs=None if syncs is None else dict(syncs),
+        ai=ai,
     )
 
 
@@ -270,6 +272,7 @@ class MetadataStage:
     cleanup: CleanupSets = field(default_factory=CleanupSets)
     models: tuple[str, ...] | None = None  # the Tesseract models installed, sorted; None leaves them unchecked
     syncs: SyncSupport | None = None  # the sync engines that can run; None leaves them unchecked
+    ai: AiModels | None = None  # the AI models, while a server answers
 
     id: ClassVar[str] = "metadata"
     remuxes: ClassVar[bool] = False
@@ -281,7 +284,9 @@ class MetadataStage:
             profile.for_stage("naming"),
             profile.for_stage("tracks"),
             source=self.source,
-            remux=bool(subtitle_plan(item, profile, self.available, self.cleanup, self.models, self.syncs).into_video),
+            remux=bool(
+                subtitle_plan(item, profile, self.available, self.cleanup, self.models, self.syncs, self.ai).into_video
+            ),
         )
         if isinstance(result, MetadataRefused):
             return StagePlan(self.id, PlanState.REFUSED, result)
@@ -314,6 +319,7 @@ class MuxStage:
     cleanup: CleanupSets = field(default_factory=CleanupSets)
     models: tuple[str, ...] | None = None  # the Tesseract models installed, sorted; None leaves them unchecked
     syncs: SyncSupport | None = None  # the sync engines that can run; None leaves them unchecked
+    ai: AiModels | None = None  # the AI models, while a server answers
     # Not a setting of the batch, so not part of the stamp; tests put a stand-in for the shell here.
     recycle: Callable[[Sequence[Path]], None] = field(default=recycle, repr=False, compare=False)
 
@@ -321,7 +327,7 @@ class MuxStage:
     remuxes: ClassVar[bool] = True
 
     def plan(self, item: MediaItem, profile: Profile) -> StagePlan:
-        subtitles = subtitle_plan(item, profile, self.available, self.cleanup, self.models, self.syncs)
+        subtitles = subtitle_plan(item, profile, self.available, self.cleanup, self.models, self.syncs, self.ai)
         result = plan_mux(
             item,
             profile.for_stage(self.id),
@@ -378,19 +384,22 @@ class SubtitlesStage:
     cleanup: CleanupSets = field(default_factory=CleanupSets)
     models: tuple[str, ...] | None = None  # the Tesseract models installed, sorted; None leaves them unchecked
     syncs: SyncSupport | None = None  # the sync engines that can run; None leaves them unchecked
+    # The AI models while a server answers; None while none does, which makes AI work unavailable.
+    ai: AiModels | None = None
     # Not a setting of the batch, so not part of the stamp; tests put a stand-in for the shell here.
     recycle: Callable[[Sequence[Path]], None] = field(default=recycle, repr=False, compare=False)
     # Part of the stamp of a preview, unlike the runners themselves: what can run decides the plan.
     available: tuple[StepKind, ...] = field(init=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "available", available(self.runners))
+        server = {StepKind.AI: None} if self.ai is not None else {}
+        object.__setattr__(self, "available", available({**self.runners, **server}))
 
     id: ClassVar[str] = "subtitles"
     remuxes: ClassVar[bool] = False
 
     def plan(self, item: MediaItem, profile: Profile) -> StagePlan:
-        result = subtitle_plan(item, profile, self.available, self.cleanup, self.models, self.syncs)
+        result = subtitle_plan(item, profile, self.available, self.cleanup, self.models, self.syncs, self.ai)
         if result.finished:
             return StagePlan(self.id, PlanState.CHANGES, result, writes=True, needs_remux=bool(result.into_video))
         return StagePlan(self.id, PlanState.REFUSED if result.cannot else PlanState.UNCHANGED, result)
@@ -524,6 +533,7 @@ def pipeline(
     cleanup: CleanupSets | None = None,
     tesseract: Path | None = None,
     ffmpeg: Path | None = None,
+    ai: AiModels | None = None,
 ) -> tuple[Stage, ...]:
     """The stages in the order they run. A stage whose program is missing is left out, so its features are off
     and nothing else; a new stage is one more entry here. On a file Mux remuxes it writes the header as well and
@@ -531,17 +541,18 @@ def pipeline(
     of an engine that is missing (`runners`, by default `RUNNERS` and the readers of the programs found) is left out,
     and without mkvmerge its work needs a new file that cannot be written. `cleanup` are the rule sets plans may
     choose from, the user's rule store's by default. `tesseract` is the OCR program, and with it the models it has
-    decide which picture tracks can be read. `ffmpeg` is what syncing against the audio needs."""
+    decide which picture tracks can be read. `ffmpeg` is what syncing against the audio needs. `ai` are the AI models
+    while a server answers; without them AI work is left out."""
     results = results or _results()
     cleanup = cleanup or CleanupSets(RULES.book().sets)
     models = ocr_languages(tesseract) if runners is None else None
     sync, syncs = sync_runners(ffmpeg) if runners is None else ({}, None)
     engines = {**RUNNERS, **reading_runners(programs.mkvextract, tesseract), **sync} if runners is None else runners
-    subtitles = SubtitlesStage(results, engines, cleanup, models, syncs)
+    subtitles = SubtitlesStage(results, engines, cleanup, models, syncs, ai)
     stages: list[Stage] = [TracksStage(), subtitles]
     if programs.mkvmerge is not None:
-        mux = MuxStage(programs.mkvmerge, programs, source, results, subtitles.available, cleanup, models, syncs)
+        mux = MuxStage(programs.mkvmerge, programs, source, results, subtitles.available, cleanup, models, syncs, ai)
         stages.append(mux)
     if mkvpropedit is not None:
-        stages.append(MetadataStage(mkvpropedit, programs, source, subtitles.available, cleanup, models, syncs))
+        stages.append(MetadataStage(mkvpropedit, programs, source, subtitles.available, cleanup, models, syncs, ai))
     return tuple(stages)

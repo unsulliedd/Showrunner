@@ -16,6 +16,7 @@ Popup {
         "general": "GeneralSection.qml",
         "profiles": "ProfilesSection.qml",
         "programs": "ProgramsSection.qml",
+        "ai": "AiSection.qml",
         "appearance": "AppearanceSection.qml",
         "shortcuts": "ShortcutsSection.qml",
         "about": "AboutSection.qml"

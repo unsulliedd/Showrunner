@@ -6,11 +6,13 @@ import threading
 from dataclasses import replace
 from pathlib import Path
 
+from showrunner.app.ai import AI
 from showrunner.app.settings.app_settings import load_settings, save_settings
 from showrunner.app.storage.paths import tools_dir
 from showrunner.core.media import MediaFile
+from showrunner.tools.ai import AiError, Backend
 from showrunner.tools.dependencies import install as installer
-from showrunner.tools.dependencies.detect import DependencyStatus, State, detect
+from showrunner.tools.dependencies.detect import DependencyStatus, State, detect, version_key
 from showrunner.tools.dependencies.http import Http, UrllibHttp
 from showrunner.tools.dependencies.install import DownloadPlan, Progress
 from showrunner.tools.dependencies.specs import SPEC_BY_ID, SPECS, DependencySpec
@@ -35,7 +37,21 @@ def set_user_path(spec_id: str, path: Path | None) -> None:
 
 
 def check(spec: DependencySpec, cancel: threading.Event | None = None) -> DependencyStatus:
-    return detect(spec, tools_dir(), user_path(spec.id), cancel)
+    """The program as found on this machine; the AI backend's as its server says. Call it off the window's thread."""
+    found = detect(spec, tools_dir(), user_path(spec.id), cancel)
+    return served(spec, found, AI.backend) if spec.id == AI.backend.name else found
+
+
+def served(spec: DependencySpec, found: DependencyStatus, server: Backend) -> DependencyStatus:
+    """A program whose features come from its server: found with the server's version while it answers, else stopped
+    (or missing, where no program file is found either). The file found is kept, for Locate and Download."""
+    try:
+        version = server.version()
+    except AiError as error:
+        state = State.MISSING if found.state is State.MISSING else State.STOPPED
+        return replace(found, state=state, detail=str(error))
+    old = spec.min_version is not None and version_key(version) < version_key(spec.min_version)
+    return replace(found, state=State.OUTDATED if old else State.FOUND, version=version)
 
 
 def check_all(cancel: threading.Event | None = None) -> dict[str, DependencyStatus]:

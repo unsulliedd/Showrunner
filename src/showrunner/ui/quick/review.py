@@ -14,6 +14,7 @@ from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from showrunner.app.ai import AI
 from showrunner.app.batches.batch import Media
 from showrunner.app.jobs.blocked import StageBlock, blocked_stages
 from showrunner.app.jobs.counts import file_parts, ruled_flags
@@ -52,8 +53,9 @@ from showrunner.ui.quick.tracks import (
 
 # The flags that tell tracks of a language apart, in the order they are named.
 _WHAT = ("commentary", "hearing_impaired", "visual_impaired", "forced")
-# The phases whose work needs a program (and its data) that may be missing, so the words say which.
-NEEDS = ("reference", "read", "ocr", "audio")
+# The phases whose work needs a program (and its data), or an AI server and its model, that may be missing, so the
+# words say which.
+NEEDS = ("reference", "read", "ocr", "audio", "ai", "model", "no_model")
 # The kinds of change of each group, in the order its card lists them.
 LINES: dict[ChangeGroup, tuple[str, ...]] = {
     ChangeGroup.TRACKS: ("new_file", "order", "flags"),
@@ -218,15 +220,25 @@ def missing_phases(finished: FinishedSubtitle) -> list[str]:
     own = {step.kind for step in finished.steps}
     phases = [kind.value for kind in finished.missing if kind in own]
     phases += ["reference" if kind is StepKind.READ else kind.value for kind in finished.missing if kind not in own]
-    return phases
+    # A model of no name is none chosen in Settings.
+    return ["no_model" if phase == "model" and not ai_model(finished) else phase for phase in phases]
 
 
-def left_out(files: Sequence[FilePreview]) -> dict[str, int]:
+def ai_model(finished: FinishedSubtitle) -> str:
+    """The model the finished subtitle's AI work asks for; empty for one with no AI work, or none chosen."""
+    return next((step.model for step in finished.steps if step.kind in (StepKind.TRANSLATE, StepKind.RESPLIT)), "")
+
+
+def backend_name() -> str:
+    return tr(f"dependency.{AI.backend.name}")
+
+
+def left_out(files: Sequence[FilePreview]) -> dict[tuple[str, str], int]:
     """How many finished subtitles the files' plans leave out for work this version cannot do, by the main phase each
-    misses."""
+    misses and, for a model that is not installed, by the model."""
     return dict(
         Counter(
-            missing_phases(finished)[0]
+            _left_out_by(finished)
             for file in files
             if (stage := file.plan_for("subtitles")) is not None and isinstance(stage.plan, SubtitlePlan)
             for finished in stage.plan.left_out
@@ -234,11 +246,16 @@ def left_out(files: Sequence[FilePreview]) -> dict[str, int]:
     )
 
 
-def unavailable_text(phase: str, count: int) -> str:
-    """ "Sync is not available in this version yet, so 9 subtitles are left out." A phase that needs a program says
-    which."""
+def _left_out_by(finished: FinishedSubtitle) -> tuple[str, str]:
+    phase = missing_phases(finished)[0]
+    return phase, ai_model(finished) if phase == "model" else ""
+
+
+def unavailable_text(phase: str, count: int, model: str = "") -> str:
+    """ "Sync is not available in this version yet, so 9 subtitles are left out." A phase that needs a program, the AI
+    server or a model says which."""
     if phase in NEEDS:
-        return tr_plural(f"review.subtitles.needs.{phase}", count)
+        return tr_plural(f"review.subtitles.needs.{phase}", count, backend=backend_name(), model=model)
     return tr_plural("review.subtitles.unavailable", count, step=tr(f"jobs.phase.{phase}"))
 
 
@@ -343,7 +360,7 @@ def _problems(given: ReviewInput, group: ChangeGroup) -> list[str]:
     in files whose own options differ from the open place's follows, naming those files."""
     found = [tr(f"review.program.{group.value}")] if given.mkvtoolnix_missing else []
     if group is ChangeGroup.SUBTITLES:
-        found += [unavailable_text(phase, count) for phase, count in left_out(given.full).items()]
+        found += [unavailable_text(phase, count, model) for (phase, model), count in left_out(given.full).items()]
     shown = _blocked(given.blocks, given.mux, group)
     found += shown
     by_options: dict[int, tuple[Profile, list[MediaItem]]] = {}

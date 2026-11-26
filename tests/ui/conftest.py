@@ -7,7 +7,9 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QThreadPool
 
+from showrunner.app.ai import AI
 from showrunner.app.storage.paths import HOME_ENV_VAR
+from showrunner.tools.ai import AiError, ChatAnswer, ChatRequest, ErrorKind
 from showrunner.ui.quick.collector import collect_on_gui_thread
 
 POOL_WAIT_MS = 10_000
@@ -22,6 +24,27 @@ def data_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # The window saves settings and the theme as the user changes them; tests must never touch the real data folder.
     monkeypatch.setenv(HOME_ENV_VAR, str(tmp_path))
     return tmp_path
+
+
+class NoServer:
+    """Stands in for the AI server: none answers, so no test reaches a server running on the machine."""
+
+    name = "ollama"
+
+    def models(self) -> list[str]:
+        raise AiError(ErrorKind.UNREACHABLE, "no server in tests")
+
+    def version(self) -> str:
+        raise AiError(ErrorKind.UNREACHABLE, "no server in tests")
+
+    def chat(self, request: ChatRequest, cancel: object = None) -> ChatAnswer:
+        raise AiError(ErrorKind.UNREACHABLE, "no server in tests")
+
+
+@pytest.fixture(autouse=True)
+def no_ai_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(AI, "backend", NoServer())
+    monkeypatch.setattr(AI, "_status", None)
 
 
 @pytest.fixture(autouse=True)

@@ -14,6 +14,7 @@ from typing import Any
 
 from PySide6.QtCore import QModelIndex, QObject, QTimer, Signal
 
+from showrunner.app.ai import AI, ai_models
 from showrunner.app.batches.batch import Batches, BatchKey, BatchKind
 from showrunner.app.batches.leave_out import LeftOut
 from showrunner.app.batches.workspace import load_batches, save_batches
@@ -26,6 +27,7 @@ from showrunner.app.jobs.stages import Stage, pipeline
 from showrunner.app.library.library import Library, Mark
 from showrunner.app.profiles.profile import Profile
 from showrunner.app.profiles.store import ProfileStore
+from showrunner.app.settings.app_settings import load_settings
 from showrunner.core.media import MediaItem
 from showrunner.stages.tracks import TrackRule, TracksOptions
 from showrunner.tools.dependencies.detect import DependencyStatus, State
@@ -72,11 +74,13 @@ type MakePipeline = Callable[[Statuses], Sequence[Stage]]
 
 
 def default_pipeline(statuses: Statuses) -> tuple[Stage, ...]:
+    """The stages for the programs found and the AI server as last checked (`FoundPrograms.check_ai` asks again)."""
     return pipeline(
         programs_from(statuses),
         mkvpropedit_from(statuses),
         tesseract=tesseract_from(statuses),
         ffmpeg=ffmpeg_from(statuses),
+        ai=ai_models(AI.status(), load_settings().value.ai_model),
     )
 
 

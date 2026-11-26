@@ -15,12 +15,14 @@ from typing import Any
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from showrunner.app.ai import AI
 from showrunner.app.batches.batch import BatchKey
 from showrunner.app.batches.choices import TrackGroups, TrackSignature
 from showrunner.app.jobs.hashing import stamp
 from showrunner.app.library.loader import BackgroundJob
 from showrunner.app.rules import RULES, RuleStore
 from showrunner.app.rules.effect import file_effect
+from showrunner.app.settings.app_settings import load_settings
 from showrunner.core.language import Language
 from showrunner.core.media import MediaItem
 from showrunner.core.track import Track
@@ -45,6 +47,8 @@ from showrunner.ui.i18n.catalog import tr, tr_plural
 from showrunner.ui.quick.languages import LanguagePicker
 from showrunner.ui.quick.review import (
     NEEDS,
+    ai_model,
+    backend_name,
     kept_sync,
     left_as_it_was,
     missing_phases,
@@ -83,6 +87,7 @@ _ROW_WORK: dict[str, tuple[str, ...]] = {
     "cleanup": ("clean", "read"),
     "sync": ("sync", "audio"),
     "lines": ("resplit",),
+    "model": ("ai", "model", "no_model"),
     "approval": ("approval",),
 }
 
@@ -255,6 +260,11 @@ class SubtitleSettings(QObject):
         elif key.isdigit() and int(key) < len(groups):
             self._set(reference=Reference(ReferenceKind.TRACK, groups[int(key)][0].match()))
 
+    def pick_model(self, name: str) -> None:
+        """A choice of the Translate with row's menu: an installed model, or empty for the one chosen in Settings."""
+        if self._workspace.key is not None:
+            self._set(model=name)
+
     def pick_language(self) -> None:
         """Open the language picker for a wanted language to add."""
         if self._workspace.key is not None and not self._workspace.locked:
@@ -270,17 +280,17 @@ class SubtitleSettings(QObject):
         key = self._workspace.key
         assert key is not None
         options = self._options()
-        missing = {
-            phase
-            for file in self._workspace.current_files()
-            if (stage := file.plan_for(STAGE)) is not None and isinstance(stage.plan, SubtitlePlan)
-            for finished in stage.plan.left_out
-            for phase in missing_phases(finished)
-        }
+        # Each phase some file misses, with the model the first such subtitle asks for.
+        missing: dict[str, str] = {}
+        for file in self._workspace.current_files():
+            if (stage := file.plan_for(STAGE)) is not None and isinstance(stage.plan, SubtitlePlan):
+                for finished in stage.plan.left_out:
+                    for phase in missing_phases(finished):
+                        missing.setdefault(phase, ai_model(finished))
         rows = [self._row(key, row, name, options) for row, name in ROWS]
         for shown in rows:
             lacking = [phase for phase in _ROW_WORK.get(shown["key"], ()) if phase in missing]
-            shown["note"] = unavailable(lacking[0]) if lacking else ""
+            shown["note"] = unavailable(lacking[0], missing[lacking[0]]) if lacking else ""
         return {
             "title": tr(f"subtitles.box.{key.kind.value}"),
             "rows": rows,
@@ -325,8 +335,26 @@ class SubtitleSettings(QObject):
         elif row == "reference":
             shown.update(self._reference(value, options))
         else:
-            shown["text"] = value or tr("subtitles.model.settings")
+            shown.update(self._model(value))
         return shown
+
+    @staticmethod
+    def _model(value: str) -> dict[str, Any]:
+        """The Translate with row: the model in words, the Settings one where the place chooses none, and the menu of
+        the installed models. A model is said to be missing only while the server answers and lacks it."""
+        status = AI.status()
+        installed = status.models if status is not None and status.running else ()
+        default = load_settings().value.ai_model
+        if value:
+            missing = status is not None and status.running and value not in installed
+            text = tr("subtitles.model.not_installed", model=value) if missing else value
+        elif default:
+            text = tr("subtitles.model.settings", model=default, backend=backend_name())
+        else:
+            text = tr("subtitles.model.unset")
+        pick = [{"key": "", "text": tr("subtitles.model.follow_settings"), "enabled": True}]
+        pick += [{"key": name, "text": name, "enabled": True} for name in installed]
+        return {"text": text, "pick": pick}
 
     def _sync_settings(self, key: BatchKey, options: SubtitlesOptions) -> list[dict[str, Any]]:
         """The fields under the Sync row: the two thresholds, then the chosen engine's own settings, each with its own
@@ -574,7 +602,7 @@ class SubtitleSettings(QObject):
                 if finished.waits:
                     steps.append(tr("subtitles.step.approve"))
                 reasons = [tr(f"subtitles.cannot.{reason.value}") for reason in finished.cannot]
-                reasons += [unavailable(phase) for phase in missing_phases(finished)[:1]]
+                reasons += [unavailable(phase, ai_model(finished)) for phase in missing_phases(finished)[:1]]
                 joined = tr("subtitles.list.steps_separator").join(steps)
                 if finished.target is not None and not (
                     work is not None and finished in work.finished and left_as_it_was(work, finished)
@@ -633,8 +661,9 @@ def _files_text(files: list[MediaItem]) -> str:
     return _file_label(files[0]) if len(files) == 1 else tr_plural("cleanup.files", len(files))
 
 
-def unavailable(phase: str) -> str:
-    """ "Sync is not available in this version yet." A phase that needs a program says which."""
+def unavailable(phase: str, model: str = "") -> str:
+    """ "Sync is not available in this version yet." A phase that needs a program, the AI server or a model says
+    which."""
     if phase in NEEDS:
-        return tr(f"subtitles.needs.{phase}")
+        return tr(f"subtitles.needs.{phase}", backend=backend_name(), model=model)
     return tr("subtitles.unavailable", step=tr(f"jobs.phase.{phase}"))

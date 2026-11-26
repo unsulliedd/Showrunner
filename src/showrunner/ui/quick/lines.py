@@ -25,7 +25,7 @@ from showrunner.stages.subtitles import FinishedSubtitle, StepKind, SubtitlePlan
 from showrunner.stages.subtitles.read import track_cues
 from showrunner.tools.cleanit import CueResult, RuleBook
 from showrunner.ui.i18n.catalog import tr, tr_plural
-from showrunner.ui.quick.review import missing_phases, track_text
+from showrunner.ui.quick.review import ai_model, missing_phases, track_text
 from showrunner.ui.quick.subtitles import STAGE, set_label, unavailable
 from showrunner.ui.quick.tracks import code
 from showrunner.ui.quick.workspace import Workspace
@@ -189,7 +189,7 @@ class LinesPanel(QObject):
             return (), tr("lines.not_added")
         for finished in stage.plan.left_out:
             if shown.is_finished(finished):
-                return (), tr("lines.left_out", reason=unavailable(missing_phases(finished)[0]))
+                return (), tr("lines.left_out", reason=unavailable(missing_phases(finished)[0], ai_model(finished)))
         return (), tr("lines.not_cleaned")
 
     def _build(self) -> dict[str, Any]:

@@ -1,4 +1,5 @@
-"""The Settings dialog's Python side: General, Profiles, Shortcuts and About, with Programs and Appearance beside it.
+"""The Settings dialog's Python side: General, Profiles, AI models, Shortcuts and About, with Programs and Appearance
+beside it.
 
 Everything here applies at once and is saved at once; the dialog has no Save button. Profiles are edited as files:
 a change reaches the batches that follow the profile through `Batches`, so their plans and the pill follow.
@@ -16,13 +17,15 @@ from PySide6.QtGui import QDesktopServices, QKeySequence
 from PySide6.QtWidgets import QFileDialog
 
 from showrunner import __version__
+from showrunner.app.ai import AI
 from showrunner.app.profiles.errors import ProfileError, ProfileExistsError
 from showrunner.app.settings.app_settings import Startup, load_settings, save_settings
 from showrunner.stages.mux.options import MuxOptions, Original, check_names
 from showrunner.stages.subtitles.options import SubtitlesOptions, bad_new_file_text
-from showrunner.ui.i18n.catalog import tr
+from showrunner.ui.i18n.catalog import tr, tr_plural
 from showrunner.ui.quick.look import Look
 from showrunner.ui.quick.programs import Programs
+from showrunner.ui.quick.review import backend_name
 
 if TYPE_CHECKING:
     from showrunner.ui.quick.window import WindowController
@@ -34,6 +37,7 @@ SECTIONS: tuple[tuple[str, str], ...] = (
     ("general", "sliders"),
     ("profiles", "list"),
     ("programs", "terminal"),
+    ("ai", "subs"),
     ("appearance", "image"),
     ("shortcuts", "brace"),
     ("about", "sparkle"),
@@ -99,6 +103,7 @@ class Settings(QObject):
         window.batch_changed.connect(self.changed)
         window.jobs.started.connect(self.changed)
         window.jobs.ended.connect(self.changed)
+        window.found.ai_changed.connect(self.changed)
 
     # The dialog
 
@@ -136,6 +141,8 @@ class Settings(QObject):
         """The dialog shows `section`; Programs checks its programs the first time it is shown."""
         if section == "programs":
             self.programs_view.show(self.programs_view.focus)
+        elif section == "ai":
+            self.check_ai()
 
     def get_program(self, spec_id: str) -> None:
         """A "Get it" somewhere in the window: open Programs on that program's row."""
@@ -160,6 +167,46 @@ class Settings(QObject):
     @Property(str, constant=True)
     def language(self) -> str:
         return tr(f"prefs.language.{load_settings().value.ui_language}")
+
+    # AI models
+
+    @Property("QVariantMap", notify=changed)
+    def ai(self) -> dict[str, Any]:
+        """The backend and whether it answers, the model chosen, and the installed ones to choose from."""
+        status = AI.status()
+        backend = backend_name()
+        running = status is not None and status.running
+        installed = list(status.models) if status is not None else []
+        chosen = load_settings().value.ai_model
+        if status is None:
+            state = tr("prefs.ai.state.checking", backend=backend)
+        elif running:
+            state = tr_plural("prefs.ai.state.running", len(installed), backend=backend)
+        else:
+            state = tr("prefs.ai.state.stopped", backend=backend)
+        if not chosen:
+            model = tr("prefs.ai.model.none")
+        elif running and chosen not in installed:
+            model = tr("prefs.ai.model.not_installed", model=chosen)
+        else:
+            model = chosen
+        return {
+            "backend": backend,
+            "state": state,
+            "model": model,
+            "models": [{"key": name, "text": name, "enabled": True} for name in installed],
+            "empty": tr("prefs.ai.model.empty", backend=backend) if running and not installed else "",
+        }
+
+    @Slot(str)
+    def set_ai_model(self, name: str) -> None:
+        """The model for every place that chooses none; the plans follow it."""
+        self._remember(ai_model=name)
+        self._window.workspace.replan()
+
+    @Slot()
+    def check_ai(self) -> None:
+        self._window.found.check_ai(now=True)
 
     # Profiles
 
