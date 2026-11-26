@@ -67,12 +67,22 @@ class Output(StrEnum):
     NEW_FILE = "new-file"  # beside the paired file, named with `new_file_text`; the paired file stays
 
 
+class Translate(StrEnum):
+    """Which wanted languages are translated from the reference."""
+
+    WHEN_MISSING = ""  # the ones no subtitle of the file has
+    # Every one, whatever subtitles the file has, which stay as they are: the translation is written beside the video
+    # named with `ai_file_text`, or goes into it as an extra track named `ai_track_name`.
+    ALWAYS = "always"
+
+
 @REGISTRY.register("subtitles")
 @dataclass(frozen=True, slots=True)
 class SubtitlesOptions:
     # IETF tag -> wanted or not. A wanted language no subtitle of a file has is translated from the reference; an
     # embedded text track in a wanted language is cleaned.
     languages: dict[str, Wanted] = field(default_factory=dict)
+    translate: Translate = Translate.WHEN_MISSING
     reference: Reference = field(default_factory=Reference)
     # Rule set name -> used or paused. The used sets clean every finished subtitle.
     cleanup: dict[str, RuleSetUse] = field(default_factory=dict)
@@ -91,6 +101,11 @@ class SubtitlesOptions:
     # Put before the language code of a paired file's name for `Output.NEW_FILE`, so a scan still reads the language:
     # `Show.S01E01.tr.srt` becomes `Show.S01E01_cleaned.tr.srt`. Set in Settings, like the remux suffix.
     new_file_text: str = "_cleaned"
+    # For `Translate.ALWAYS`: put before the language code of a translation written beside the video
+    # (`Show.S01E01_ai.tr.srt`), so it never takes an existing file's name, and the name of the track it becomes in the
+    # video, so players tell it from the subtitle already there. Set in Settings.
+    ai_file_text: str = "_ai"
+    ai_track_name: str = "AI translation"
 
     def wanted(self) -> tuple[str, ...]:
         return tuple(tag for tag, value in self.languages.items() if value is Wanted.WANTED)
@@ -127,3 +142,16 @@ def text_problem(options: SubtitlesOptions) -> bool:
     """Whether the options choose new files with a text that cannot name them. Not checked otherwise, since nothing
     reads the text then."""
     return options.output is Output.NEW_FILE and bad_new_file_text(options.new_file_text)
+
+
+def ai_text_problem(options: SubtitlesOptions) -> bool:
+    """Whether the options write translations beside the video named with a text that cannot name them."""
+    beside = options.output is not Output.VIDEO
+    return beside and options.translate is Translate.ALWAYS and bad_new_file_text(options.ai_file_text)
+
+
+def ai_name_problem(options: SubtitlesOptions) -> bool:
+    """Whether the options put translations into the video under an empty track name, which would not tell them from
+    the subtitle already there."""
+    into = options.output is Output.VIDEO
+    return into and options.translate is Translate.ALWAYS and not options.ai_track_name.strip()

@@ -10,6 +10,7 @@ from showrunner.stages.subtitles.options import (
     RuleSetUse,
     SubtitlesOptions,
     SyncEngine,
+    Translate,
     Wanted,
 )
 from showrunner.stages.subtitles.plan import (
@@ -46,6 +47,7 @@ __all__ = [
     "SubtitlePlan",
     "SubtitlesOptions",
     "SyncEngine",
+    "Translate",
     "Wanted",
     "choose_reference",
     "plan_subtitles",

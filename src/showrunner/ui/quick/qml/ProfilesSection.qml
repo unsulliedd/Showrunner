@@ -299,6 +299,45 @@ SettingsPage {
             text: (page.profile.problems || {}).new_file_text || ""
             tone: "drop"
         }
+
+        SettingLabel {
+            text: Strings.t("prefs.profiles.ai_file_text")
+            note: Strings.t("prefs.profiles.ai_file_text_hint")
+        }
+
+        InputField {
+            objectName: "aiFileText"
+            Layout.fillWidth: true
+            mono: true
+            enabled: page.editable
+            label: Strings.t("prefs.profiles.ai_file_text")
+            text: page.profile.ai_file_text ?? ""
+            onEditingFinished: if (text !== page.profile.ai_file_text) app.settings.set_ai_file_text(text)
+        }
+
+        Hint {
+            text: (page.profile.problems || {}).ai_file_text || ""
+            tone: "drop"
+        }
+
+        SettingLabel {
+            text: Strings.t("prefs.profiles.ai_track_name")
+            note: Strings.t("prefs.profiles.ai_track_name_hint")
+        }
+
+        InputField {
+            objectName: "aiTrackName"
+            Layout.fillWidth: true
+            enabled: page.editable
+            label: Strings.t("prefs.profiles.ai_track_name")
+            text: page.profile.ai_track_name ?? ""
+            onEditingFinished: if (text !== page.profile.ai_track_name) app.settings.set_ai_track_name(text)
+        }
+
+        Hint {
+            text: (page.profile.problems || {}).ai_track_name || ""
+            tone: "drop"
+        }
     }
 
     SaveAsPopup {

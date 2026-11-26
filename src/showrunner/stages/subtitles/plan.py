@@ -3,8 +3,9 @@ the work and its inputs, and nothing is read, run or written until Apply.
 
 A finished subtitle is one subtitle, in one language, that goes into the new file or beside the video, as the place's
 Output asks. It is made in three cases only: a paired file gets the cleanup, sync and re-split the place asks for (into
-the video only where the track plan adds it, beside the video whether it does or not); a wanted language no subtitle of
-the file has is translated from the reference; an embedded text track in a wanted language is cleaned.
+the video only where the track plan adds it, beside the video whether it does or not); a wanted language is translated
+from the reference where no subtitle of the file has it, or wherever the place asks for a translation always; an
+embedded text track in a wanted language is cleaned.
 """
 
 from __future__ import annotations
@@ -19,7 +20,15 @@ from showrunner.core.language import Language
 from showrunner.core.media import MediaItem, SubtitleFile
 from showrunner.core.track import Track, TrackKind
 from showrunner.stages.subtitles.beside import is_result, language_name, new_file_name
-from showrunner.stages.subtitles.options import Approval, Lines, Output, ReferenceKind, SubtitlesOptions, SyncEngine
+from showrunner.stages.subtitles.options import (
+    Approval,
+    Lines,
+    Output,
+    ReferenceKind,
+    SubtitlesOptions,
+    SyncEngine,
+    Translate,
+)
 from showrunner.stages.subtitles.prompt import DEFAULT_CONTEXT, DEFAULT_WINDOW
 from showrunner.stages.tracks import KindTest, PlanRefused, TrackMatch, TracksOptions, matches, plan_tracks, stand_in
 from showrunner.tools.cleanit import RuleSet
@@ -54,7 +63,7 @@ class StepKind(StrEnum):
 class Source(StrEnum):
     PAIRED = "paired"  # a subtitle file beside the video that the track plan adds
     EMBEDDED = "embedded"  # a text track of the video, replaced in the new file by its cleaned text
-    TRANSLATION = "translation"  # made from the reference, for a wanted language the file lacks
+    TRANSLATION = "translation"  # made from the reference, for a wanted language the file lacks or for every one
 
 
 class Cannot(StrEnum):
@@ -128,6 +137,10 @@ class FinishedSubtitle:
     missing: tuple[StepKind, ...] = ()
     # Where the subtitle stage writes it beside the video; None for one that goes into the new file through Mux.
     target: Path | None = None
+    # TRANSLATION: the file has a subtitle in its language already, which stays as it is next to this one.
+    existing: bool = False
+    # The track name it gets in the new file; empty leaves it unnamed.
+    name: str = ""
 
     @property
     def replaces(self) -> bool:
@@ -154,7 +167,9 @@ class SubtitlePlan:
     # them until Tracks adds them.
     not_added: tuple[SubtitleFile, ...] = ()
     # Beside the video as new files: the ones whose new file the scan found beside the video, named with the place's
-    # new-file text, so an earlier run wrote it and nothing is planned for them.
+    # new-file text, so an earlier run wrote it and nothing is planned for them; so too a translation made whatever
+    # subtitles exist, whose file named with the AI text lies beside the video, or whose named track the video holds
+    # (`target` None).
     written_earlier: tuple[FinishedSubtitle, ...] = ()
 
     @property
@@ -221,6 +236,9 @@ def plan_subtitles(
     found: list[FinishedSubtitle] = []
 
     def add_paired(paired: SubtitleFile) -> None:
+        # A translation an earlier run wrote beside the video is a result, never a source to work on again.
+        if is_result(paired.path.name, options.ai_file_text):
+            return
         format_ = FORMATS.get(paired.path.suffix.casefold())
         # A picture file beside the video has no text to clean, sync or re-split.
         if format_ is not None and (steps := _clean(chosen, rule_sets, paired.language) + sync + resplit):
@@ -252,9 +270,14 @@ def plan_subtitles(
             if options.output is not Output.NEW_FILE or not is_result(paired.path.name, options.new_file_text):
                 add_paired(paired)
     # A translation takes the reference's timing, so it is not synced either.
-    absent = [tag for tag in options.wanted() if not _present(item, tag)]
-    reference = choose_reference(item, options, prefer, tracks.flags_from_names) if absent or sync else None
-    for tag in absent:
+    always = options.translate is Translate.ALWAYS
+    translated = [tag for tag in options.wanted() if always or not _present(item, tag)]
+    reference = choose_reference(item, options, prefer, tracks.flags_from_names) if translated or sync else None
+    earlier: list[FinishedSubtitle] = []
+    for tag in translated:
+        # The reference's own language is never translated from itself.
+        if always and reference is not None and reference.track is not None and _fits(tag, reference.track):
+            continue
         if (language := Language.parse(tag)) is not None:
             # The reference is cleaned for its own language before it is translated, the translation for its own.
             source = reference.track.language if reference is not None and reference.track is not None else None
@@ -262,9 +285,26 @@ def plan_subtitles(
             translate = Step(StepKind.TRANSLATE, names, rules, settings=windowing, model=model)
             steps = (translate, *_clean(chosen, rule_sets, language))
             waits = every or options.approval is Approval.TRANSLATIONS
-            found.append(FinishedSubtitle(Source.TRANSLATION, language, steps, "srt", waits=waits))
+            name = options.ai_track_name.strip() if always else ""
+            translation = FinishedSubtitle(
+                Source.TRANSLATION,
+                language,
+                steps,
+                "srt",
+                waits=waits,
+                existing=always and _present(item, tag),
+                name=name,
+            )
+            if (
+                always
+                and not beside
+                and any(_fits(tag, t) for t in item.file.subtitle_tracks if is_ai_track(t, options))
+            ):
+                earlier.append(translation)
+            else:
+                found.append(translation)
 
-    ready, cannot, left_out, earlier = [], [], [], []
+    ready, cannot, left_out = [], [], []
     # Compared without case, as Windows names files.
     scanned = {str(subtitle.path).casefold() for subtitle in item.subtitles}
     taken = set(scanned)
@@ -273,8 +313,10 @@ def plan_subtitles(
         if beside:
             finished = replace(finished, target=_target(finished, video, options))
             key = str(finished.target).casefold()
-            # Named with the new-file text after its own paired file, so it is that file's result.
-            result = options.output is Output.NEW_FILE and finished.paired is not None and key in scanned
+            # Named with the new-file text after its own paired file, or with the AI text after the video, so it is the
+            # result of an earlier run.
+            named = options.output is Output.NEW_FILE and finished.paired is not None
+            result = key in scanned and (named or (always and finished.source is Source.TRANSLATION))
             if result:
                 earlier.append(finished)
                 taken.add(key)
@@ -323,7 +365,9 @@ def _target(finished: FinishedSubtitle, video: Path, options: SubtitlesOptions) 
     if finished.paired is None:
         flags = finished.track.flags if finished.track is not None else None
         forced, sdh = (flags.forced, flags.hearing_impaired) if flags is not None else (False, False)
-        return video.with_name(language_name(video.stem, finished.language, finished.format, forced=forced, sdh=sdh))
+        always = finished.source is Source.TRANSLATION and options.translate is Translate.ALWAYS
+        stem = video.stem + options.ai_file_text if always else video.stem
+        return video.with_name(language_name(stem, finished.language, finished.format, forced=forced, sdh=sdh))
     path = finished.paired.path
     if options.output is Output.REPLACE:
         return path
@@ -395,7 +439,8 @@ def choose_reference(
     chosen = options.reference
     if chosen.kind is ReferenceKind.AUDIO:
         return ReferenceTrack(None)
-    subtitles = item.file.subtitle_tracks
+    # A translation an earlier run made is never translated from again.
+    subtitles = [t for t in item.file.subtitle_tracks if not is_ai_track(t, options)]
     chosen_track = next((t for t in subtitles if matches(chosen.track, t, flags_from_name=flags_from_names)), None)
     if chosen.kind is ReferenceKind.TRACK and chosen_track is not None:
         return ReferenceTrack(chosen_track)
@@ -405,6 +450,15 @@ def choose_reference(
     in_language = [t for t in (*text, *picture) if matches(preferred, t, flags_from_name=flags_from_names)]
     track = next(iter((*in_language, *text, *picture)), None)
     return ReferenceTrack(track, fallback=chosen.kind is ReferenceKind.TRACK)
+
+
+def is_ai_track(track: Track, options: SubtitlesOptions) -> bool:
+    """Whether the track is a translation an earlier run put into the video, named with the AI track name.
+
+    shortcut: known by its name only, so a track renamed since (by Names or by hand) is translated again and can be the
+    reference; mark the track itself once the mux can write a tag of its own."""
+    name = options.ai_track_name.strip().casefold()
+    return track.kind is TrackKind.SUBTITLE and bool(name) and track.name.strip().casefold() == name
 
 
 def _text(track: Track) -> bool:

@@ -138,7 +138,7 @@ def plan_mux(
     translations = [(f, path) for f, path in finished if f.source is Source.TRANSLATION]
     for n, (translation, path) in enumerate(translations, 1):
         track = Track(lowest - n, TrackKind.SUBTITLE, language=translation.language)
-        planned_tracks.append(MuxTrack(PlannedTrack(track), "", translation.language, track.flags, path))
+        planned_tracks.append(MuxTrack(PlannedTrack(track), translation.name, translation.language, track.flags, path))
     return MuxPlan(
         file.path,
         output_path(file.path, options.suffix),

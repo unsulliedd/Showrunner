@@ -5,6 +5,7 @@ and a wait for approval nothing can give leaves the translation out while the fi
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -16,9 +17,18 @@ from showrunner.app.profiles import registered  # noqa: F401
 from showrunner.app.profiles.profile import Profile
 from showrunner.core.cue import Cue, read_cues, write_cues
 from showrunner.core.language import Language
-from showrunner.core.media import Episode, MediaFile, MediaItem
+from showrunner.core.media import Episode, MediaFile, MediaItem, SubtitleFile
 from showrunner.core.track import SubtitleProperties, Track, TrackKind, VideoProperties
-from showrunner.stages.subtitles import AiModels, Approval, StepKind, SubtitlePlan, SubtitlesOptions, Wanted
+from showrunner.stages.subtitles import (
+    AiModels,
+    Approval,
+    Output,
+    StepKind,
+    SubtitlePlan,
+    SubtitlesOptions,
+    Translate,
+    Wanted,
+)
 from showrunner.stages.subtitles.translate import NOT_TRANSLATED, TranslateError, translate_runner
 from showrunner.stages.subtitles.work import StepWork
 from showrunner.tools.cleanit import RuleBook
@@ -91,3 +101,27 @@ def test_a_translation_waiting_for_approval_is_left_out_until_a_view_can_approve
     # nothing of the file waits; its other changes plan as they would without it.
     assert [(f.language, f.missing) for f in work.left_out] == [(Language("deu"), (StepKind.APPROVAL,))]
     assert (work.finished, work.waits, plan.state) == ((), False, PlanState.UNCHANGED)
+
+
+def test_a_second_always_run_beside_the_video_asks_nothing_and_leaves_the_ai_file(
+    tmp_path: Path, translator: Any
+) -> None:
+    # A real scan pairs one Turkish file with the video and offers the other as an alternative, so the second run sees
+    # the same item as the first, without the file the first wrote.
+    paired = tmp_path / "Show Name - S01E01.tr.srt"
+    write_cues(paired, [Cue(1.0, 1.5, "eski")])
+    video = replace(item(tmp_path), subtitles=(SubtitleFile(paired, Language("tur")),))
+    options = SubtitlesOptions(languages={"tr": Wanted.WANTED}, translate=Translate.ALWAYS, output=Output.NEW_FILE)
+    profile = Profile.defaults("Test").with_options("subtitles", options)
+    first = stage(tmp_path, translator())
+    assert first.apply(first.plan(video, profile), None).ok
+    written = tmp_path / "Show Name - S01E01_ai.tr.srt"
+    assert [cue.text for cue in read_cues(written)] == [f"tr line {n}" for n in range(4)]
+    assert [cue.text for cue in read_cues(paired)] == ["eski"]
+    stamp = written.stat().st_mtime_ns
+    backend = translator()
+    again = stage(tmp_path, backend)
+    assert again.apply(again.plan(video, profile), None).ok
+    assert backend.asked == []
+    assert written.stat().st_mtime_ns == stamp
+    assert [cue.text for cue in read_cues(paired)] == ["eski"]

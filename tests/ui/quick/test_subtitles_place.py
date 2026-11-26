@@ -198,6 +198,29 @@ def test_subtitles_written_beside_ask_for_no_new_file_and_name_their_file(
     assert next(line for line in detail if line["label"] == "File")["after"] == "Stays as it is"
 
 
+def test_the_translate_row_translates_always_and_names_the_ai_file(
+    engines: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    controller = engines
+    open_season(controller, library, qtbot)
+    add_language(controller, "de")
+    controller.set_subtitle_choice("output", "new-file")
+    controller.set_subtitle_choice("translate", "always")
+    settle(controller, qtbot)
+    translate = row(controller, "translate")
+    assert translate["value"] == "always"
+    assert [c["label"] for c in translate["choices"]] == ["When missing", "Always"]
+    assert "subtitles.translate" in controller.field_marks
+    first = library.items[0].file.path
+    (plan,) = controller.subtitles["files"][0]["plan"]
+    assert plan["steps"] == f"translate → {first.stem}_ai.de.srt"
+    # Turkish, which the episodes have already, is translated next to it.
+    add_language(controller, "tr")
+    settle(controller, qtbot)
+    turkish = next(p for p in controller.subtitles["files"][0]["plan"] if p["code"] == "TUR")
+    assert turkish["steps"] == f"translate · next to the existing one → {first.stem}_ai.tr.srt"
+
+
 def test_a_bad_new_file_text_blocks_the_subtitle_plans_and_says_why(
     engines: WindowController, library: Library, qtbot: QtBot
 ) -> None:

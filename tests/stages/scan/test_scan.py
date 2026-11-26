@@ -191,3 +191,40 @@ def test_a_dropped_subtitle_file_alone_is_unpaired(make: Make) -> None:
 def test_options_are_registered_with_defaults_that_keep_today_behaviour() -> None:
     assert REGISTRY.get("scan") is ScanOptions
     assert ScanOptions() == ScanOptions(detect_untagged_languages=True, subtitle_subfolders=True)
+
+
+def test_a_file_written_beside_its_original_pairs_next_to_it_in_either_size(make: Make, tmp_path: Path) -> None:
+    for episode, (original, result) in ((1, (b"x", b"x" * 50)), (2, (b"x" * 50, b"x"))):
+        make(f"Show Name - S01E0{episode}.mkv")
+        make(f"Show Name - S01E0{episode}.tr.srt", original)
+        make(f"Show Name - S01E0{episode}_cleaned.tr.srt", result)
+        make(f"Show Name - S01E0{episode}_ai.tr.srt", result)
+    result = scan([tmp_path], ScanOptions(detect_untagged_languages=False))
+    assert [sorted(names(item)) for item in result.items] == [
+        [f"Show Name - S01E0{n}.tr.srt", f"Show Name - S01E0{n}_ai.tr.srt", f"Show Name - S01E0{n}_cleaned.tr.srt"]
+        for n in (1, 2)
+    ]
+    assert (result.alternatives, result.unpaired) == ((), ())
+
+
+def test_a_derived_file_keeps_its_own_flags_apart(make: Make, tmp_path: Path) -> None:
+    make("Movie (2010).mkv")
+    for name in ("Movie (2010).en.srt", "Movie (2010).en.forced.srt", "Movie (2010)_cleaned.en.forced.srt"):
+        make(name)
+    result = scan([tmp_path])
+    (item,) = result.items
+    assert sorted((s.path.name, s.forced) for s in item.subtitles) == [
+        ("Movie (2010).en.forced.srt", True),
+        ("Movie (2010).en.srt", False),
+        ("Movie (2010)_cleaned.en.forced.srt", True),
+    ]
+    assert result.alternatives == ()
+
+
+def test_a_name_that_only_goes_on_with_a_digit_is_no_derived_file(make: Make, tmp_path: Path) -> None:
+    make("Show S01E1.mkv")
+    make("Show S01E10.mkv")
+    make("Show S01E1.tr.srt")
+    make("Show S01E10.tr.srt")
+    result = scan([tmp_path], ScanOptions(detect_untagged_languages=False))
+    assert [names(item) for item in result.items] == [["Show S01E1.tr.srt"], ["Show S01E10.tr.srt"]]

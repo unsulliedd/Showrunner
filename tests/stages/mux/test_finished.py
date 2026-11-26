@@ -14,7 +14,7 @@ from showrunner.core.track import TrackKind
 from showrunner.stages.metadata import MetadataOptions, plan_metadata
 from showrunner.stages.mux import MuxOptions, MuxPlan, plan_mux, verify
 from showrunner.stages.mux import apply as module
-from showrunner.stages.subtitles import RuleSetUse, SubtitlesOptions, SyncEngine, Wanted, plan_subtitles
+from showrunner.stages.subtitles import RuleSetUse, SubtitlesOptions, SyncEngine, Translate, Wanted, plan_subtitles
 from showrunner.stages.tracks import PairedFile, TracksOptions
 from showrunner.tools.cleanit import RuleDef, RuleSet
 
@@ -88,3 +88,22 @@ def test_the_check_holds_a_finished_subtitle_to_everything_but_its_codec(b: Simp
     assert verify(plan, after) == ()
     renamed = replace(cleaned, name="Other")
     assert [p.what for p in verify(plan, replace(after, tracks=(*after.tracks[:3], renamed)))] == ["name"]
+
+
+def test_a_translation_made_always_goes_in_named_next_to_the_existing_track_without_the_default(
+    b: SimpleNamespace,
+) -> None:
+    turkish = b.subtitle(3, language="tur", default=True)
+    video = b.item(b.video(0), b.audio(1), b.subtitle(2), turkish)
+    subtitles = SubtitlesOptions(languages={"tr": Wanted.WANTED}, translate=Translate.ALWAYS)
+    plan = planned(video, subtitles, TracksOptions())
+    assert plan is not None
+    existing, added = plan.tracks[-2:]
+    assert (existing.planned.track, existing.content) == (turkish, None)
+    assert (added.name, added.language, added.content) == (
+        "AI translation",
+        Language("tur"),
+        RESULTS / "translation.srt",
+    )
+    assert not added.flags.default
+    assert module._merge_spec(plan, Path("out.mkv")).tracks[-1].name == "AI translation"

@@ -300,3 +300,27 @@ def test_the_new_file_text_reaches_the_batch_and_a_bad_one_is_named(
     for bad in ("", "a/b", "a\b"):
         settings.set_new_file_text(bad)
         assert settings.profile["problems"]["new_file_text"].startswith("The text for new subtitle files")
+
+
+def test_the_ai_texts_reach_the_batch_and_bad_ones_are_named(
+    controller: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    assert controller.save_profile_as("Series") == ""
+    settings = controller.settings
+    settings.open("profiles")
+    assert (settings.profile["ai_file_text"], settings.profile["ai_track_name"]) == ("_ai", "AI translation")
+    assert not {"ai_file_text", "ai_track_name"} & settings.profile["problems"].keys()
+    settings.set_ai_file_text(".machine")
+    settings.set_ai_track_name("Machine")
+    for subtitles in (
+        controller.store.load("Series").value.for_stage("subtitles"),
+        controller.batches.profile(controller.workspace.key).for_stage("subtitles"),  # type: ignore[arg-type]
+    ):
+        assert (subtitles.ai_file_text, subtitles.ai_track_name) == (".machine", "Machine")
+    settle(controller, qtbot)
+    settings.set_ai_file_text("a/b")
+    settings.set_ai_track_name(" ")
+    problems = settings.profile["problems"]
+    assert problems["ai_file_text"].startswith("The text for AI translations")
+    assert problems["ai_track_name"].startswith("The track name for AI translations")

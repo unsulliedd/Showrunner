@@ -128,7 +128,8 @@ def translate_text(plan: SubtitlePlan) -> list[str]:
     for finished in plan.finished:
         if (report := kept_translation(plan, finished)) is not None and (found := translation_found(report)):
             language = finished.language.name if finished.language is not None else tr("tracks.no_language")
-            lines.append(tr("jobs.result.translate", language=language, found=found))
+            key = "jobs.result.translate_next" if finished.existing else "jobs.result.translate"
+            lines.append(tr(key, language=language, found=found))
     return lines
 
 

@@ -237,6 +237,13 @@ def translate_model(finished: FinishedSubtitle) -> str:
     return next((step.model for step in finished.steps if step.kind is StepKind.TRANSLATE), "")
 
 
+def written_earlier(finished: FinishedSubtitle) -> str:
+    """What an earlier run made of a finished subtitle: the file beside the video, or the named track in it."""
+    if finished.target is not None:
+        return tr("subtitles.written_earlier", file=finished.target.name)
+    return tr("subtitles.written_earlier_track", name=finished.name)
+
+
 def left_as_it_was(plan: SubtitlePlan, finished: FinishedSubtitle, store: ResultStore | None = None) -> bool:
     """Whether a new file beside the video was not written for the finished subtitle, since its kept result reads as the
     paired file it was made of (already in sync, nothing to clean). Known once the steps have run."""
@@ -419,8 +426,12 @@ def _blocked(blocks: Mapping[str, StageBlock], mux: MuxOptions, group: ChangeGro
             found += [tr(f"review.blocked.{name.value}", folder=mux.keep_folder) for name in block.names]
     elif group is ChangeGroup.NAMES:
         found += blocked_lines(blocks.get("metadata"))
-    elif (block := blocks.get("subtitles")) is not None and block.new_file_text:
-        found.append(tr("review.blocked.new_file_text"))
+    elif (block := blocks.get("subtitles")) is not None:
+        found += [
+            tr(f"review.blocked.{name}")
+            for name in ("new_file_text", "ai_file_text", "ai_track_name")
+            if getattr(block, name)
+        ]
     return found
 
 
@@ -578,12 +589,15 @@ def _subtitle_lines(file: FilePreview | None, out: bool) -> list[dict[str, objec
     rows = []
     for number, finished in enumerate(work.finished if work is not None else ()):
         language = finished.language.name if finished.language is not None else tr("tracks.no_language")
-        if finished.target is None:
+        if finished.target is None and finished.existing:
+            sentence = tr("review.subtitle.into_video_next", language=language, name=finished.name)
+        elif finished.target is None:
             sentence = tr("review.subtitle.into_video", language=language)
         elif work is not None and left_as_it_was(work, finished):
             sentence = tr("review.subtitle.unchanged", language=language)
         else:
             key = "review.subtitle.replaces" if finished.replaces else "review.subtitle.beside"
+            key = "review.subtitle.beside_next" if finished.existing else key
             sentence = tr(key, language=language, file=finished.target.name)
         label = tr("review.detail.subtitle_files") if number == 0 else ""
         rows.append({**_line("file", "", "", out), "label": label, "text": sentence})
@@ -602,9 +616,8 @@ def _subtitle_lines(file: FilePreview | None, out: bool) -> list[dict[str, objec
                 sentence += f" {tr('status.separator')} {sync_found(report)}"
             rows.append({**_line("file", "", "", out), "label": tr("review.detail.sync"), "text": sentence})
     for finished in work.written_earlier if work is not None else ():
-        assert finished.target is not None
         label = tr("review.detail.subtitle_files") if not rows else ""
-        sentence = tr("subtitles.written_earlier", file=finished.target.name)
+        sentence = written_earlier(finished)
         rows.append({**_line("file", "", "", out), "label": label, "text": sentence, "muted": True})
     if work is not None and work.reference is not None:
         text = tr("review.subtitle.reference", reference=reference_text(work.reference))

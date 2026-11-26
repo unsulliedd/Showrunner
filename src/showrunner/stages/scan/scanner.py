@@ -111,6 +111,25 @@ def scan(paths: Iterable[Path], options: ScanOptions | None = None) -> ScanResul
     )
 
 
+def _derived(group: list[int], paths: list[Path]) -> dict[int, int]:
+    """Index of a derived file -> index of the file it was made of, within one language and flag variant of a folder.
+
+    A file written beside its original (`Show_cleaned.tr.srt` beside `Show.tr.srt`) keeps the original's base name and
+    adds to it, so a base that starts with another's and goes on with a character that is no letter or digit is derived
+    from the shortest such base. The character rule keeps `Show S01E10` from counting as made of `Show S01E1`."""
+    bases = {i: parse_subtitle_name(paths[i].name).base.casefold() for i in group}
+    found: dict[int, int] = {}
+    for index, base in bases.items():
+        roots = [
+            other
+            for other, root in bases.items()
+            if len(root) < len(base) and base.startswith(root) and not base[len(root)].isalnum()
+        ]
+        if roots:
+            found[index] = min(roots, key=lambda other: len(bases[other]))
+    return found
+
+
 def _scan_folder(
     video_paths: list[Path], subtitle_paths: list[Path], options: ScanOptions, shows: Callable[[Path], bool]
 ) -> tuple[list[MediaItem], list[Alternatives], list[SubtitleFile]]:
@@ -127,19 +146,25 @@ def _scan_folder(
         video_keys = name_keys([spaced(p.stem) for p in video_paths])
         # The words common to all subtitle names are found over the whole folder, whatever the language.
         subtitle_keys = name_keys([parse_subtitle_name(p.name).base for p in subtitle_paths])
-        # Each language, forced and SDH variant is paired for itself: a video takes one file of each.
+        # Each language, forced and SDH variant is paired for itself: a video takes one file of each, and the files made
+        # of it.
         variants: dict[tuple, list[int]] = {}
         for index, subtitle in enumerate(found):
             variants.setdefault((subtitle.language, subtitle.forced, subtitle.sdh), []).append(index)
-        for indexes in variants.values():
+        for group in variants.values():
+            derived = _derived(group, subtitle_paths)
+            indexes = [i for i in group if i not in derived]
+            # A derived file goes wherever the file it was made of goes, so it never competes with it.
+            follows = {root: [i for i in group if derived.get(i) == root] for root in indexes}
             matches = pair(video_keys, [subtitle_keys[i] for i in indexes], [_size(subtitle_paths[i]) for i in indexes])
             for match in matches:
-                attached[match.video].append(found[indexes[match.subtitle]])
-                placed.add(indexes[match.subtitle])
+                chosen = [indexes[match.subtitle], *follows[indexes[match.subtitle]]]
+                attached[match.video] += (found[i] for i in chosen)
+                placed.update(chosen)
                 if match.alternatives:
-                    others = tuple(found[indexes[a]] for a in match.alternatives)
-                    placed.update(indexes[a] for a in match.alternatives)
-                    alternatives.append(Alternatives(video_paths[match.video], others))
+                    others = [i for a in match.alternatives for i in (indexes[a], *follows[indexes[a]])]
+                    placed.update(others)
+                    alternatives.append(Alternatives(video_paths[match.video], tuple(found[i] for i in others)))
 
     items = [
         MediaItem(

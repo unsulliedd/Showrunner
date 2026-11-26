@@ -13,7 +13,7 @@ from showrunner.core.media import MediaFile, MediaItem, Movie
 from showrunner.core.naming import NamingContext, NamingOptions, Problem, TokenProblem, check_tokens, preview
 from showrunner.stages.metadata import MetadataOptions
 from showrunner.stages.mux import MuxOptions, NameField, check_names
-from showrunner.stages.subtitles.options import SubtitlesOptions, text_problem
+from showrunner.stages.subtitles.options import SubtitlesOptions, ai_name_problem, ai_text_problem, text_problem
 from showrunner.stages.tracks import RuleProblem, TracksOptions, check_rules
 
 # Unknown tokens, bad padding and cycles show only when a template is rendered; an empty file is enough for that.
@@ -32,11 +32,14 @@ class StageBlock:
     language: str = ""  # an untagged-track language that is not one
     names: tuple[NameField, ...] = ()  # Mux fields that cannot be part of a file name
     new_file_text: bool = False  # the Subtitles text for new files cannot be part of a file name
+    ai_file_text: bool = False  # the Subtitles text for translations beside the video cannot be part of a file name
+    ai_track_name: bool = False  # the track name of translations into the video is empty
 
     @property
     def count(self) -> int:
         problems = sum(len(p) for p in self.templates.values()) + len(self.tokens) + len(self.rules)
-        return problems + bool(self.language) + len(self.names) + self.new_file_text
+        texts = self.new_file_text + self.ai_file_text + self.ai_track_name
+        return problems + bool(self.language) + len(self.names) + texts
 
 
 def template_problems(naming: NamingOptions, template: str) -> tuple[Problem, ...]:
@@ -73,6 +76,13 @@ def blocked_stages(profile: Profile) -> dict[str, StageBlock]:
         found["mux"] = StageBlock("mux", {}, names=names)
 
     subtitles: SubtitlesOptions = profile.for_stage("subtitles")
-    if text_problem(subtitles):
-        found["subtitles"] = StageBlock("subtitles", {}, new_file_text=True)
+    block = StageBlock(
+        "subtitles",
+        {},
+        new_file_text=text_problem(subtitles),
+        ai_file_text=ai_text_problem(subtitles),
+        ai_track_name=ai_name_problem(subtitles),
+    )
+    if block.count:
+        found["subtitles"] = block
     return found

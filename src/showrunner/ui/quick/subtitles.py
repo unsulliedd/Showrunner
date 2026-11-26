@@ -38,6 +38,7 @@ from showrunner.stages.subtitles import (
     SubtitlePlan,
     SubtitlesOptions,
     SyncEngine,
+    Translate,
     Wanted,
     choose_reference,
 )
@@ -57,6 +58,7 @@ from showrunner.ui.quick.review import (
     sync_found,
     track_text,
     translation_found,
+    written_earlier,
 )
 from showrunner.ui.quick.tracks import code, item_number
 from showrunner.ui.quick.workspace import Workspace
@@ -67,6 +69,7 @@ _FALLBACKS_NAMED = 2  # files without the chosen reference named one by one; mor
 # The rows in the order of the work, each with the field it shows.
 ROWS = (
     ("wanted", "languages"),
+    ("translate", "translate"),
     ("reference", "reference"),
     ("cleanup", "cleanup"),
     ("sync", "sync"),
@@ -76,7 +79,13 @@ ROWS = (
     ("output", "output"),
 )
 # The rows chosen from a few values, drawn as segments.
-CHOICES: dict[str, type[StrEnum]] = {"sync": SyncEngine, "lines": Lines, "approval": Approval, "output": Output}
+CHOICES: dict[str, type[StrEnum]] = {
+    "translate": Translate,
+    "sync": SyncEngine,
+    "lines": Lines,
+    "approval": Approval,
+    "output": Output,
+}
 # The value that cancels one received item of a per-item field.
 _NOT_HERE: dict[str, StrEnum] = {"languages": Wanted.NOT_HERE, "cleanup": RuleSetUse.PAUSED}
 _PICKER_TARGET = "wanted"
@@ -172,7 +181,7 @@ class SubtitleSettings(QObject):
             self._workspace.set_options(STAGE, replace(self._options(), **changes))
 
     def set_choice(self, row: str, value: str) -> None:
-        """A segment picked on the Sync, Lines or Approval row."""
+        """A segment picked on a row chosen from a few values (`CHOICES`)."""
         if row in CHOICES:
             self._set(**{row: CHOICES[row](value)})
 
@@ -608,6 +617,8 @@ class SubtitleSettings(QObject):
                 ]
                 if finished.waits:
                     steps.append(tr("subtitles.step.approve"))
+                if finished.existing:
+                    steps.append(tr("subtitles.step.next_to_existing"))
                 reasons = [tr(f"subtitles.cannot.{reason.value}") for reason in finished.cannot]
                 reasons += [unavailable(phase, ai_model(finished)) for phase in missing_phases(finished)[:1]]
                 joined = tr("subtitles.list.steps_separator").join(steps)
@@ -630,11 +641,10 @@ class SubtitleSettings(QObject):
                     }
                 )
             for finished in work.written_earlier if work is not None else ():
-                assert finished.target is not None
                 plan.append(
                     {
                         "code": code(finished.language),
-                        "steps": tr("subtitles.written_earlier", file=finished.target.name),
+                        "steps": written_earlier(finished),
                         "cannot": "",
                         "muted": True,
                     }

@@ -3,6 +3,7 @@ the needs-review mark, and why a translation stopped."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -81,3 +82,37 @@ def test_review_names_the_model_and_what_the_last_run_found(store: ResultStore) 
         "Turkish is translated from the reference with sample:9b · needs review: window 3 of 14 kept the"
         " reference's text"
     )
+
+
+class Planned:
+    """Stands in for a file's preview, with the subtitle plan given."""
+
+    def __init__(self, plan: SubtitlePlan) -> None:
+        self.plan = plan
+
+    def plan_for(self, stage: str) -> StagePlan | None:
+        return StagePlan("subtitles", PlanState.CHANGES, self.plan) if stage == "subtitles" else None
+
+
+def test_a_translation_made_always_says_it_is_new_next_to_the_existing_subtitle(store: ResultStore) -> None:
+    always = replace(TURKISH, existing=True, name="AI translation")
+    beside = replace(always, target=Path("Show_ai.tr.srt"))
+    plan = SubtitlePlan(Path("Show.mkv"), (always, beside), ReferenceTrack(ENGLISH))
+    texts = [row["text"] for row in review._subtitle_lines(Planned(plan), False)][:2]  # type: ignore[arg-type]
+    assert texts == [
+        "Turkish: goes into the new file as an extra track named AI translation, next to the subtitle already there.",
+        "Turkish: written beside the video as Show_ai.tr.srt, next to the subtitle already there.",
+    ]
+    output = store.output(plan, always, 0)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    write_report(output, TranslateReport("sample:9b", 14, 14))
+    assert translate_text(SubtitlePlan(Path("Show.mkv"), (always,), ReferenceTrack(ENGLISH)))[0] == (
+        "Turkish subtitle, new next to the existing one: translated with sample:9b"
+    )
+
+
+def test_a_translation_an_earlier_run_put_into_the_video_names_its_track() -> None:
+    earlier = replace(TURKISH, existing=True, name="AI translation")
+    plan = SubtitlePlan(Path("Show.mkv"), written_earlier=(earlier,))
+    (row,) = review._subtitle_lines(Planned(plan), False)  # type: ignore[arg-type]
+    assert row["text"] == "Written earlier: the track AI translation"

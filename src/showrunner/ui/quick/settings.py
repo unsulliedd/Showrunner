@@ -255,6 +255,10 @@ class Settings(QObject):
         problems = mux_problems(mux)
         if bad_new_file_text(subtitles.new_file_text):
             problems["new_file_text"] = tr("review.blocked.new_file_text")
+        if bad_new_file_text(subtitles.ai_file_text):
+            problems["ai_file_text"] = tr("review.blocked.ai_file_text")
+        if not subtitles.ai_track_name.strip():
+            problems["ai_track_name"] = tr("review.blocked.ai_track_name")
         return {
             "name": name,
             "readable": True,
@@ -265,6 +269,8 @@ class Settings(QObject):
             "keep_folder": mux.keep_folder,
             "suffix": mux.suffix,
             "new_file_text": subtitles.new_file_text,
+            "ai_file_text": subtitles.ai_file_text,
+            "ai_track_name": subtitles.ai_track_name,
             "problems": problems,
             "batches": len(self._window.batches.following(name)),
         }
@@ -300,6 +306,16 @@ class Settings(QObject):
         """Kept as typed: one that cannot name a file shows its problem here and blocks the subtitle plans that would
         use it, as a bad suffix does."""
         self._edit("subtitles", new_file_text=text)
+
+    @Slot(str)
+    def set_ai_file_text(self, text: str) -> None:
+        """Kept as typed, like the new-file text."""
+        self._edit("subtitles", ai_file_text=text)
+
+    @Slot(str)
+    def set_ai_track_name(self, name: str) -> None:
+        """Kept as typed: an empty one shows its problem here and blocks the plans that would use it."""
+        self._edit("subtitles", ai_track_name=name)
 
     @Slot(str, result=str)
     def rename(self, new_name: str) -> str:
