@@ -30,10 +30,12 @@ _log = logging.getLogger(__name__)
 
 # The programs the first-run screen and the status bar show: the ones that read and write the files today.
 SHOWN_PROGRAMS: tuple[str, ...] = ("mkvtoolnix", "ffmpeg")
+# Checked as well, since plans depend on them, though only Settings shows them.
+_PLANNED_PROGRAMS: tuple[str, ...] = (*SHOWN_PROGRAMS, "tesseract")
 
 
 def check_shown() -> Statuses:
-    return {spec_id: check(SPEC_BY_ID[spec_id]) for spec_id in SHOWN_PROGRAMS}
+    return {spec_id: check(SPEC_BY_ID[spec_id]) for spec_id in _PLANNED_PROGRAMS}
 
 
 class FoundPrograms(QObject):
