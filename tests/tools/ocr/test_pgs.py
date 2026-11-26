@@ -114,6 +114,28 @@ def test_a_tesseract_that_cannot_list_its_languages_is_an_error(
         read_pgs(tmp_path / "a.sup", Language("eng"), Path("tesseract"))
 
 
+def test_a_transparent_colour_is_never_ink_however_bright(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import numpy as np
+    from pgsrip.formats import pgs as pgsrip_pgs
+    from pgsrip.formats.pgs import Item as PgsItem
+    from pgsrip.formats.pgs import PaletteEntry, PgsImage
+
+    # A bright transparent background (0), a bright letter (1), a dark outline (2) and a half-seen bright edge (3).
+    palette = [PaletteEntry(235, 128, 128, 0), PaletteEntry(217, 139, 17, 255), PaletteEntry(16, 128, 128, 255)]
+    palette.append(PaletteEntry(235, 128, 128, 128))
+    assert [entry.y for entry in pgs.shown(palette)] == [0, 217, 16, 117]
+    # One row: background, outline, letter, edge, outline, background, then the end of the row. A colour other than 0
+    # is one byte; one pixel of colour 0 is 0x00 0x01; the end of a row is 0x00 0x00.
+    image = PgsImage(bytes([0x00, 0x01, 0x02, 0x01, 0x03, 0x02, 0x00, 0x01, 0x00, 0x00]), palette)
+    stream = tmp_path / "a.sup"
+    stream.write_bytes(b"")
+    monkeypatch.setattr(pgsrip_pgs, "read_display_sets", lambda data, name: [])
+    monkeypatch.setattr(pgsrip_pgs, "read_items", lambda sets, name: [PgsItem(0, 0, 500, image, 0, 0, name)])
+    (item,) = pgs._items(stream)
+    # Only the letter is ink (black) in what goes to Tesseract.
+    assert np.array_equal(item.bitmap, np.array([[0]], dtype=np.uint8))
+
+
 def test_the_engine_knows_only_the_models_it_was_given_and_never_downloads() -> None:
     engine = pgs._engine({"eng", "tur"})
     data = engine.tessdata

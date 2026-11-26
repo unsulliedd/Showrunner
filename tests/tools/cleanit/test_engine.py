@@ -118,6 +118,36 @@ def test_a_book_without_a_folder_has_the_built_in_sets_only() -> None:
     assert book.known(["no-sdh", "gone"]) == (book.sets["no-sdh"],)
 
 
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("f I'm going down to the river, I", "♪ I'm going down to the river, I"),
+        ('~ People spouting,\n"howdy, neighbor" f', '♪ People spouting,\n"howdy, neighbor" ♪'),
+        ("£ Smokin' f", "♪ Smokin' ♪"),
+        ("Heading on up\nto the river ~", "Heading on up\nto the river ♪"),
+    ],
+)
+def test_the_ocr_fixes_turn_a_misread_music_note_into_one(before: str, after: str) -> None:
+    assert clean_text(before, load_book(None).ocr(ENGLISH))[0] == after
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The f word, f.",
+        "of f-stops and fun",
+        "It costs ~5 now",
+        "£10 for this",
+        "Say the letter f.",
+        "If I go",
+        "Half ~ half",
+    ],
+)
+def test_the_music_note_fix_leaves_real_words_alone(text: str) -> None:
+    (music,) = (rule for rule in builtin_sets()["ocr"].rules if rule.name == "music-note")
+    assert clean_text(text, compile_sets([RuleSet("x", (music,))], ENGLISH)) == (text, ())
+
+
 def test_rules_that_never_settle_leave_the_cue_as_it_was_and_say_so() -> None:
     grows = RuleSet("x", (RuleDef("grow", ("a",), RuleKind.TEXT, replacement="aa"),))
     compiled = compile_sets([grows], ENGLISH)

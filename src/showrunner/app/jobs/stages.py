@@ -18,6 +18,7 @@ from showrunner.app.jobs.results import ResultStore
 from showrunner.app.profiles.profile import Profile
 from showrunner.app.rules import RULES
 from showrunner.app.storage.paths import results_dir
+from showrunner.core.language import Language
 from showrunner.core.media import MediaItem
 from showrunner.stages.metadata import MetadataPlan, MetadataRefused, apply_metadata, plan_metadata
 from showrunner.stages.mux import Failure, MuxPlan, MuxRefused, MuxResult, apply_mux, plan_mux, resume_mux
@@ -36,7 +37,7 @@ from showrunner.stages.subtitles.translate import read_report, translate_runner
 from showrunner.stages.subtitles.work import Runner, StepWork
 from showrunner.stages.tracks import PlanRefused, plan_tracks
 from showrunner.tools.cleanit import OCR_EXTRA, OCR_SET, RuleBook, RuleSet
-from showrunner.tools.ocr import installed_languages
+from showrunner.tools.ocr import READING, installed_languages, model_stamp
 from showrunner.tools.probe import Programs
 from showrunner.tools.recycle import recycle
 from showrunner.tools.sync import ENGINES, SyncAdapter
@@ -394,6 +395,8 @@ class SubtitlesStage:
     ai: AiModels | None = None
     # Not a setting of the batch, so not part of the stamp; tests put a stand-in for the shell here.
     recycle: Callable[[Sequence[Path]], None] = field(default=recycle, repr=False, compare=False)
+    # The OCR program, whose model is part of the name a reference read by OCR is kept under; it does not change a plan.
+    tesseract: Path | None = field(default=None, repr=False, compare=False)
     # Part of the stamp of a preview, unlike the runners themselves: what can run decides the plan.
     available: tuple[StepKind, ...] = field(init=False)
 
@@ -459,7 +462,7 @@ class SubtitlesStage:
         reference: Path | None = None
         language = work.reference.track.language if work.reference and work.reference.track else None
         if work.reference is not None and (step := work.reference.step) is not None:
-            reference = store.reference(work, self._ocr_rules() if step.kind is StepKind.OCR else "")
+            reference = store.reference(work, self._ocr_rules(language) if step.kind is StepKind.OCR else "")
             track = work.reference.track
             given = StepWork(step, work.video, None, None, track.language if track else None, track, reference)
             if failed := run(given, [work.video], reference_phase(step)):
@@ -507,13 +510,13 @@ class SubtitlesStage:
         report("beside", 1.0)
         return StepResult(True, detail=count["reused"])
 
-    def _ocr_rules(self) -> str:
-        """The fingerprint of the OCR fixes, which a reference read by OCR is made with."""
-        return "+".join(
-            f"{name}:{self.cleanup.sets[name].fingerprint}"
-            for name in (OCR_SET, OCR_EXTRA)
-            if name in self.cleanup.sets
-        )
+    def _ocr_rules(self, language: Language | None) -> str:
+        """The fingerprint of how a reference in `language` is read by OCR: the way the pictures are read, the model
+        Tesseract reads them with and the OCR fixes."""
+        sets = self.cleanup.sets
+        model = model_stamp(self.tesseract, language) if self.tesseract is not None else ""
+        fixes = (f"{name}:{sets[name].fingerprint}" for name in (OCR_SET, OCR_EXTRA) if name in sets)
+        return "+".join([READING, model, *fixes])
 
     def resume(self, plan: StagePlan, before: FileStamp, cancel: threading.Event | None) -> Resumed:
         # The kept results tell what is done, so running the step again repeats only what was not; a subtitle already
@@ -565,7 +568,7 @@ def pipeline(
     models = ocr_languages(tesseract) if runners is None else None
     sync, syncs = sync_runners(ffmpeg) if runners is None else ({}, None)
     engines = {**RUNNERS, **reading_runners(programs.mkvextract, tesseract), **sync} if runners is None else runners
-    subtitles = SubtitlesStage(results, engines, cleanup, models, syncs, ai)
+    subtitles = SubtitlesStage(results, engines, cleanup, models, syncs, ai, tesseract=tesseract)
     stages: list[Stage] = [TracksStage(), subtitles]
     if programs.mkvmerge is not None:
         mux = MuxStage(programs.mkvmerge, programs, source, results, subtitles.available, cleanup, models, syncs, ai)

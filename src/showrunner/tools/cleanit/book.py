@@ -25,13 +25,24 @@ from showrunner.tools.cleanit.files import (
     parse_file,
     set_name_of,
 )
-from showrunner.tools.cleanit.model import RuleSet
+from showrunner.tools.cleanit.model import Example, RuleDef, RuleSet
 
 # Cleanit's sets in the order a person looks for them.
 BUILTIN_ORDER = ("no-sdh", "no-lyrics", "no-spam", "no-style", "tidy", "ocr")
 # The set picture subtitles read by OCR always get, and the user's own additions to it, which run with it.
 OCR_SET = "ocr"
 OCR_EXTRA = "ocr-fixes"
+# Rules the app adds to cleanit's OCR set. Tesseract's models have no music note, so it reads ♪ as one of these signs;
+# alone at the start or end of a line it is never a word.
+OCR_ADDED = (
+    RuleDef(
+        "music-note",
+        (r"^[f~£](?= )", r"(?<= )[f~£]$"),
+        replacement="♪",
+        flags=("multiline",),
+        examples=(Example("f I'm going down to the river ~", "♪ I'm going down to the river ♪"),),
+    ),
+)
 # The file that pauses built-in rules by name; it is no set of its own.
 PAUSES = "pauses"
 # Sets that are applied by the app itself, not chosen on a place.
@@ -95,8 +106,11 @@ def builtin_sets() -> dict[str, RuleSet]:
         data = pkgutil.get_data("cleanit", f"data/{file}")
         if data is not None:
             rules.setdefault(name, []).append(parse_file(data.decode("utf-8")))
+    added = {OCR_SET: OCR_ADDED}
     return {
-        name: RuleSet(name, tuple(rule for parsed in rules[name] for rule in parsed.rules), builtin=True)
+        name: RuleSet(
+            name, (*(rule for parsed in rules[name] for rule in parsed.rules), *added.get(name, ())), builtin=True
+        )
         for name in BUILTIN_ORDER
         if name in rules
     }

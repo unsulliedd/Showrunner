@@ -21,11 +21,13 @@ from showrunner.tools.ocr.tesseract import installed_languages
 from showrunner.tools.process import ProcessCancelledError
 
 if TYPE_CHECKING:
-    from pgsrip.formats.pgs import Item
+    from pgsrip.formats.pgs import Item, PaletteEntry
 
 # How many subtitle images go to Tesseract at once: a chunk is the unit of Cancel and of progress, and pgsrip packs the
 # images of a chunk into a few large pictures, so a larger chunk is a little faster.
 CHUNK = 120
+# Names the way the pictures are prepared and read; it changes with that way, so text read before is read again.
+READING = "shown-palette"
 # Tesseract is given a path through one process-wide setting, so two reads never overlap.
 _LOCK = threading.Lock()
 
@@ -60,7 +62,17 @@ def _items(stream: Path) -> list[Item]:
     from pgsrip.formats.pgs import read_display_sets, read_items
 
     name = stream.name
-    return read_items(read_display_sets(stream.read_bytes(), name), name)
+    items = read_items(read_display_sets(stream.read_bytes(), name), name)
+    for item in items:
+        item.image = item.image._replace(palette=shown(item.image.palette))
+    return items
+
+
+def shown(palette: Sequence[PaletteEntry]) -> list[PaletteEntry]:
+    """The palette with each colour's brightness as it shows over a dark picture. pgsrip takes every bright entry for
+    ink whatever its transparency, and some discs give the transparent background a bright colour: their letters would
+    reach Tesseract as hollow outlines in a black field."""
+    return [entry._replace(y=entry.y * entry.alpha // 255) for entry in palette]
 
 
 def _read(

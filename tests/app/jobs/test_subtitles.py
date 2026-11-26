@@ -13,6 +13,7 @@ from typing import ClassVar
 
 import pytest
 
+from showrunner.app.jobs import stages as stages_module
 from showrunner.app.jobs.preview import preview
 from showrunner.app.jobs.results import KEEP_DAYS, ResultStore
 from showrunner.app.jobs.run import create_job, run_job
@@ -432,6 +433,29 @@ def test_the_reference_is_kept_by_the_rules_that_read_it(setup) -> None:
     assert isinstance(work, SubtitlePlan)
     assert results.reference(work, "a") != results.reference(work, "b")
     assert results.reference(work) == results.reference(work, "")
+
+
+def test_a_reference_read_by_ocr_is_read_again_when_the_way_of_reading_changes(
+    setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, _, engines, results = setup
+    stage = SubtitlesStage(results, dict.fromkeys(ENGINES, engines), CLEANUP)
+    before = stage._ocr_rules(Language("eng"))
+    monkeypatch.setattr(stages_module, "READING", "another way")
+    assert stage._ocr_rules(Language("eng")) != before
+
+
+def test_a_reference_read_by_ocr_is_read_again_when_another_model_is_installed(setup, tmp_path: Path) -> None:
+    _, _, engines, results = setup
+    model = tmp_path / "ocr" / "tessdata" / "eng.traineddata"
+    model.parent.mkdir(parents=True)
+    model.write_bytes(b"fast")
+    stage = SubtitlesStage(results, dict.fromkeys(ENGINES, engines), CLEANUP, tesseract=tmp_path / "ocr" / "tesseract")
+    english, turkish = stage._ocr_rules(Language("eng")), stage._ocr_rules(Language("tur"))
+    model.write_bytes(b"the best one")
+    assert stage._ocr_rules(Language("eng")) != english
+    # Only the model of the language read counts.
+    assert stage._ocr_rules(Language("tur")) == turkish
 
 
 def test_the_pipeline_has_an_engine_for_each_program_it_found(tmp_path: Path) -> None:

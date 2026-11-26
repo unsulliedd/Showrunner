@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from showrunner.core.language import Language
-from showrunner.tools.ocr import installed_languages, tesseract
+from showrunner.tools.ocr import installed_languages, model_stamp, tesseract
 from showrunner.tools.process import ProgramNotFoundError, RunResult
 
 LISTING = 'List of available languages in "C:\\Tesseract-OCR/tessdata/" (3):\neng\nosd\ntur\n'
@@ -19,6 +19,17 @@ def test_a_language_is_read_with_the_model_of_its_code_or_script() -> None:
     assert tesseract.tesseract_code(Language("zho", "TW")) == "chi_tra"
     assert tesseract.tesseract_code(Language("zho", script="Hant")) == "chi_tra"
     assert tesseract.tesseract_code(Language("srp", script="Latn")) == "srp_latn"
+
+
+def test_the_model_stamp_is_the_model_files_name_size_and_time(tmp_path: Path) -> None:
+    program = tmp_path / "tesseract.exe"
+    assert model_stamp(program, Language("eng")) == ""
+    (tmp_path / "tessdata").mkdir()
+    model = tmp_path / "tessdata" / "chi_sim.traineddata"
+    model.write_bytes(b"1234")
+    stamp = model_stamp(program, Language("zho"))
+    assert stamp == f"chi_sim:4:{model.stat().st_mtime_ns}"
+    assert model_stamp(program, None) == ""
 
 
 def fake_run(result: RunResult | Exception) -> Any:

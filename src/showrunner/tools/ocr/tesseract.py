@@ -34,6 +34,17 @@ def tesseract_code(language: Language | None) -> str:
     return _SCRIPT_CODES.get((language.alpha3, script or ""), language.alpha3)
 
 
+def model_stamp(tesseract: Path, language: Language | None) -> str:
+    """What the model `language` is read with is now, in the data folder beside the program: its name, size and
+    modification time, so another model installed in its place gives another stamp. Empty when it is not there."""
+    code = tesseract_code(language)
+    try:
+        info = (tesseract.parent / "tessdata" / f"{code}.traineddata").stat()
+    except OSError:
+        return ""
+    return f"{code}:{info.st_size}:{info.st_mtime_ns}"
+
+
 def installed_languages(tesseract: Path, *, cancel: threading.Event | None = None) -> frozenset[str] | None:
     """The models Tesseract finds, or None when it cannot be asked (the program is broken or gone)."""
     try:
