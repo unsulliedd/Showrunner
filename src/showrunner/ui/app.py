@@ -50,6 +50,7 @@ def main() -> int:
     if not engine.rootObjects():
         return 1
     controller.start()
+    controller.found.watch_ai()
     QTimer.singleShot(0, controller.restore_workspace)
     code = app.exec()
     controller.stop_jobs()

@@ -135,6 +135,7 @@ def test_the_ai_server_is_asked_again_by_itself_only_while_it_does_not_answer(
     controller: WindowController, server: Server, qtbot: QtBot
 ) -> None:
     started(controller, qtbot)
+    controller.found.watch_ai()
     retry = controller.found._ai_retry
     assert retry.isActive()
     assert retry.interval() == found.AI_RETRY_MS
@@ -154,6 +155,7 @@ def test_the_ai_server_is_asked_again_when_the_app_comes_to_the_front(
     controller: WindowController, server: Server, qtbot: QtBot, qapp: QApplication
 ) -> None:
     started(controller, qtbot)
+    controller.found.watch_ai()
     server.running = True
     qapp.applicationStateChanged.emit(Qt.ApplicationState.ApplicationInactive)
     qtbot.wait(50)

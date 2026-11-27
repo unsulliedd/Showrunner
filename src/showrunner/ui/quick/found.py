@@ -69,6 +69,10 @@ class FoundPrograms(QObject):
         self._ai_retry = QTimer(self)
         self._ai_retry.setInterval(AI_RETRY_MS)
         self._ai_retry.timeout.connect(self._retry_ai)
+
+    def watch_ai(self) -> None:
+        """Ask the AI server again by itself: every half minute while it does not answer, and whenever the app comes
+        to the front. The running app turns this on; a window made for a test asks only when told to."""
         self._ai_retry.start()
         app = QGuiApplication.instance()
         if isinstance(app, QGuiApplication):
