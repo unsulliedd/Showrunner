@@ -294,4 +294,5 @@ def test_an_apply_whose_job_cannot_be_stored_says_why_and_leaves_nothing_locked(
     qtbot.waitUntil(lambda: not controller.applying)
     assert controller.apply_message == "Apply could not get ready: disk I/O error"
     assert not controller.locked
-    assert controller.can_apply
+    # A plan that runs again meanwhile (the programs or the AI server checked anew) holds Apply until it ends.
+    qtbot.waitUntil(lambda: controller.can_apply)
