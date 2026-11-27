@@ -237,6 +237,31 @@ def translate_model(finished: FinishedSubtitle) -> str:
     return next((step.model for step in finished.steps if step.kind is StepKind.TRANSLATE), "")
 
 
+def set_label(name: str) -> str:
+    """The name a rule set is shown by: cleanit's own sets have a name of their own, a set of the user's is its name."""
+    key = f"cleanup.set.{name}"
+    shown = tr(key)
+    return shown if shown != key else name
+
+
+def cleanup_text(finished: FinishedSubtitle) -> str:
+    """Which sets clean the finished subtitle, and for a translation the reference before it, saying so where none
+    does; empty for a subtitle that is neither translated nor cleaned."""
+    language = finished.language.name if finished.language is not None else tr("tracks.no_language")
+    translate = next((step for step in finished.steps if step.kind is StepKind.TRANSLATE), None)
+    clean = next((step for step in finished.steps if step.kind is StepKind.CLEAN), None)
+    parts = []
+    if translate is not None:
+        sets = tr("common.list_separator").join(set_label(name) for name in translate.sets)
+        parts.append(tr("review.subtitle.clean_reference", sets=sets) if sets else tr("review.subtitle.raw_reference"))
+    if clean is not None:
+        sets = tr("common.list_separator").join(set_label(name) for name in clean.sets)
+        parts.append(tr("review.subtitle.clean", language=language, sets=sets))
+    elif translate is not None:
+        parts.append(tr("review.subtitle.not_cleaned", language=language))
+    return f" {tr('status.separator')} ".join(parts)
+
+
 def written_earlier(finished: FinishedSubtitle) -> str:
     """What an earlier run made of a finished subtitle: the file beside the video, or the named track in it."""
     if finished.target is not None:
@@ -608,6 +633,8 @@ def _subtitle_lines(file: FilePreview | None, out: bool) -> list[dict[str, objec
             if (translated := kept_translation(work, finished)) is not None and (found := fell_back_text(translated)):
                 sentence += f" {tr('status.separator')} {found}"
             rows.append({**_line("file", "", "", out), "label": tr("review.detail.translate"), "text": sentence})
+        if work is not None and (cleaning := cleanup_text(finished)):
+            rows.append({**_line("file", "", "", out), "label": tr("review.detail.cleanup"), "text": cleaning})
         sync = next((step for step in finished.steps if step.kind is StepKind.SYNC), None)
         if work is not None and sync is not None:
             language = finished.language.name if finished.language is not None else tr("tracks.no_language")

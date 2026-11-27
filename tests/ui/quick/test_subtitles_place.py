@@ -198,6 +198,37 @@ def test_subtitles_written_beside_ask_for_no_new_file_and_name_their_file(
     assert next(line for line in detail if line["label"] == "File")["after"] == "Stays as it is"
 
 
+def test_a_translation_says_where_cleanup_runs_in_the_file_list_and_review(
+    engines: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    controller = engines
+    open_season(controller, library, qtbot)
+    add_language(controller, "de")
+    controller.set_subtitle_choice("output", "new-file")
+    settle(controller, qtbot)
+
+    def said() -> tuple[str, list[str]]:
+        plan = next(p for p in controller.subtitles["files"][0]["plan"] if p["code"] == "DEU")
+        detail = controller.review["rows"][0]["detail"]
+        cleanup = [line["text"] for line in detail if line["label"] == "Cleanup" and "German" in line["text"]]
+        return plan["steps"].split(" → ")[0], cleanup
+
+    # Nothing cleans either side, and Review says so: the reference's hearing-impaired text would be translated.
+    assert said() == (
+        "translate",
+        ["No rule set cleans the reference before it is translated · No rule set cleans the German translation"],
+    )
+    controller.add_rule_set("no-sdh")
+    settle(controller, qtbot)
+    assert said() == (
+        "clean the reference · translate · clean",
+        [
+            "The reference is cleaned with Hearing impaired before it is translated · German is cleaned with"
+            " Hearing impaired"
+        ],
+    )
+
+
 def test_the_translate_row_translates_always_and_names_the_ai_file(
     engines: WindowController, library: Library, qtbot: QtBot
 ) -> None:

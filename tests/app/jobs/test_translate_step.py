@@ -23,6 +23,7 @@ from showrunner.stages.subtitles import (
     AiModels,
     Approval,
     Output,
+    RuleSetUse,
     StepKind,
     SubtitlePlan,
     SubtitlesOptions,
@@ -31,7 +32,7 @@ from showrunner.stages.subtitles import (
 )
 from showrunner.stages.subtitles.translate import NOT_TRANSLATED, TranslateError, translate_runner
 from showrunner.stages.subtitles.work import StepWork
-from showrunner.tools.cleanit import RuleBook
+from showrunner.tools.cleanit import RuleBook, RuleSet, builtin_sets
 
 TRACKS = (
     Track(0, TrackKind.VIDEO, "V_MPEGH/ISO/HEVC", video=VideoProperties(1920, 1080)),
@@ -125,3 +126,23 @@ def test_a_second_always_run_beside_the_video_asks_nothing_and_leaves_the_ai_fil
     assert backend.asked == []
     assert written.stat().st_mtime_ns == stamp
     assert [cue.text for cue in read_cues(paired)] == ["eski"]
+
+
+def test_a_kept_translation_is_made_again_when_a_rule_of_its_sets_changes(tmp_path: Path) -> None:
+    """The reference's cleanup and the translation's are part of the result's name, so new rules make a new one."""
+    video = item(tmp_path)
+    options = replace(GERMAN, cleanup={"no-sdh": RuleSetUse.USED})
+    profile = Profile.defaults("Test").with_options("subtitles", options)
+    sets = builtin_sets()
+
+    def paths(no_sdh: RuleSet) -> tuple[Path, Path]:
+        runners = {StepKind.READ: reading, StepKind.TRANSLATE: reading, StepKind.CLEAN: reading}
+        found = SubtitlesStage(ResultStore(tmp_path), runners, CleanupSets({"no-sdh": no_sdh}), ai=AI)
+        work = found.plan(video, profile).plan
+        assert isinstance(work, SubtitlePlan)
+        (german,) = work.finished
+        assert [step.kind for step in german.steps] == [StepKind.TRANSLATE, StepKind.CLEAN]
+        return found.results.output(work, german, 0), found.results.final(work, german)
+
+    fewer = replace(sets["no-sdh"], rules=sets["no-sdh"].rules[:-1])
+    assert not set(paths(sets["no-sdh"])) & set(paths(fewer))

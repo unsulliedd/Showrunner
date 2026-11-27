@@ -3,6 +3,7 @@ report of what fell back kept beside the result."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,7 @@ from showrunner.stages.subtitles.translate import (
     window_settings,
 )
 from showrunner.stages.subtitles.work import StepWork
-from showrunner.tools.cleanit import RuleBook, RuleDef, RuleSet
+from showrunner.tools.cleanit import RuleBook, RuleDef, RuleSet, load_book
 
 ENGLISH, TURKISH = Language("eng"), Language("tur")
 
@@ -76,6 +77,24 @@ def test_a_window_that_falls_back_keeps_the_reference_and_is_reported(
     translate_runner(lambda: rerun, book)(given, None)
     assert len(rerun.asked) == 2
     assert read_report(given.output) == TranslateReport("sample:9b", 3, 3, reused=1)
+
+
+def test_cleanits_sets_clean_a_fallen_back_window_and_the_lines_sent_to_the_model(
+    tmp_path: Path, translator: Any
+) -> None:
+    """Hearing-impaired text, speaker names and lyrics as a picture subtitle read by OCR has them: none reaches the
+    model, and a window that falls back keeps the cleaned text."""
+    path = tmp_path / "reference.srt"
+    lines = ["[exhales] Go ahead.", "Mr. Parker: I am tired", "Boys: ♪ There's a place", "[laughter]", "line 4"]
+    write_cues(path, [Cue(float(n), n + 0.5, text) for n, text in enumerate(lines)])
+    step = Step(StepKind.TRANSLATE, ("no-sdh", "no-lyrics"), settings=(("context", "0"), ("window", "1")), model="m")
+    given = StepWork(step, tmp_path / "v.mkv", None, path, TURKISH, None, tmp_path / "out" / "tr.srt", ENGLISH)
+    given.output.parent.mkdir()
+    backend = translator(down={"Go ahead."})
+    translate_runner(lambda: backend, lambda: load_book(None))(given, None)
+    assert [cue.text for cue in read_cues(given.output, TURKISH)] == ["Go ahead.", "tr - I am tired", "tr line 4"]
+    asked = "".join(request.messages[0].content for request in backend.asked)
+    assert not {"exhales", "laughter", "Parker", "♪"} & set(re.findall(r"\w+|♪", asked))
 
 
 def test_a_translation_where_every_window_fell_back_fails(reference: Path, tmp_path: Path, translator: Any) -> None:

@@ -148,6 +148,37 @@ def test_the_music_note_fix_leaves_real_words_alone(text: str) -> None:
     assert clean_text(text, compile_sets([RuleSet("x", (music,))], ENGLISH)) == (text, ())
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Excuse me:\n- Like my friend Sam.",
+        "Run for your lives children:\n- Holy crap!",
+        "At 10:30 tonight.",
+        "Rule one: never run.",
+    ],
+)
+def test_the_speaker_name_rule_leaves_text_that_names_no_speaker(text: str) -> None:
+    (name,) = (r for r in builtin_sets()["no-sdh"].rules if r.name == "replace-speaker-name-with-dash")
+    assert clean_text(text, compile_sets([RuleSet("x", (name,))], ENGLISH)) == (text, ())
+
+
+@pytest.mark.parametrize(
+    ("read", "language"),
+    [
+        ("Boys: f There's a place", ENGLISH),
+        ("All: ! Cleaning the earth\nis a mighty big chore J", ENGLISH),
+        ("J But now it needs help", ENGLISH),
+        ("Şef: J Ama şimdi gerek var", Language("tur")),
+    ],
+)
+def test_a_sung_line_read_by_ocr_goes_with_the_hearing_impaired_and_lyrics_sets(read: str, language: Language) -> None:
+    """OCR reads the music note as a letter, after a speaker's name too; once fixed, the name and the line go."""
+    sets = builtin_sets()
+    fixed = kept_cues(clean_cues([Cue(0, 1, read)], compile_sets([sets["ocr"]], language)))
+    assert "♪" in fixed[0].text
+    assert kept_cues(clean_cues(fixed, compile_sets([sets["no-sdh"], sets["no-lyrics"]], language))) == []
+
+
 def test_rules_that_never_settle_leave_the_cue_as_it_was_and_say_so() -> None:
     grows = RuleSet("x", (RuleDef("grow", ("a",), RuleKind.TEXT, replacement="aa"),))
     compiled = compile_sets([grows], ENGLISH)

@@ -55,6 +55,7 @@ from showrunner.ui.quick.review import (
     left_as_it_was,
     missing_phases,
     reference_text,
+    set_label,
     sync_found,
     track_text,
     translation_found,
@@ -101,13 +102,6 @@ _ROW_WORK: dict[str, tuple[str, ...]] = {
     "model": ("ai", "model", "no_model"),
     "approval": ("approval",),
 }
-
-
-def set_label(name: str) -> str:
-    """The name a rule set is shown by: cleanit's own sets have a name of their own, a set of the user's is its name."""
-    key = f"cleanup.set.{name}"
-    shown = tr(key)
-    return shown if shown != key else name
 
 
 def set_languages(rule_set: RuleSet) -> str:
@@ -609,12 +603,14 @@ class SubtitleSettings(QObject):
             ]
             plan = []
             for finished in (*work.finished, *work.cannot, *work.left_out) if work is not None else ():
-                steps = [
-                    tr("subtitles.step.translate_with", model=step.model)
-                    if step.kind is StepKind.TRANSLATE and step.model
-                    else tr(f"subtitles.step.{step.kind.value}")
-                    for step in finished.steps
-                ]
+                steps = []
+                for step in finished.steps:
+                    if step.kind is StepKind.TRANSLATE and step.sets:
+                        steps.append(tr("subtitles.step.clean_reference"))
+                    if step.kind is StepKind.TRANSLATE and step.model:
+                        steps.append(tr("subtitles.step.translate_with", model=step.model))
+                    else:
+                        steps.append(tr(f"subtitles.step.{step.kind.value}"))
                 if finished.waits:
                     steps.append(tr("subtitles.step.approve"))
                 if finished.existing:

@@ -32,15 +32,40 @@ BUILTIN_ORDER = ("no-sdh", "no-lyrics", "no-spam", "no-style", "tidy", "ocr")
 # The set picture subtitles read by OCR always get, and the user's own additions to it, which run with it.
 OCR_SET = "ocr"
 OCR_EXTRA = "ocr-fixes"
+# A speaker's name as a hearing-impaired subtitle writes it: up to three capitalised words, such as "Mr. Parker".
+# Cleanit's upper-case range stops at Latin-1, so the Turkish capitals are added.
+_NAME = r"[[:upper:]ĞİŞ][^\W\d_]*(?:['\u2019-][^\W\d_]+)?\.?"
+_LABEL = rf"(?:-\s*)?{_NAME}(?: {_NAME}){{0,2}}:\s"
 # Rules the app adds to cleanit's OCR set. Tesseract's models have no music note, so it reads ♪ as one of these signs;
-# alone at the start or end of a line it is never a word.
+# alone at the start or end of a line, or right after a speaker's name, it is never a word.
 OCR_ADDED = (
     RuleDef(
         "music-note",
-        (r"^[f~£](?= )", r"(?<= )[f~£]$"),
+        (r"^[f~£J](?= )", r"(?<= )[f~£J]$"),
         replacement="♪",
         flags=("multiline",),
         examples=(Example("f I'm going down to the river ~", "♪ I'm going down to the river ♪"),),
+    ),
+    RuleDef(
+        "music-note-after-name",
+        (rf"^(?P<x>{_LABEL})[f~£J!](?= )",),
+        replacement=r"\g<x>♪",
+        flags=("multiline",),
+        examples=(Example("Boys: f There's a place", "Boys: ♪ There's a place"),),
+    ),
+)
+# Rules the app adds to cleanit's hearing-impaired set. Cleanit's own takes a speaker's name in capitals only.
+# shortcut: a capitalised word before a colon that is no name ("Listen: ...") loses it too; a rule of names would not.
+NO_SDH_ADDED = (
+    RuleDef(
+        "replace-speaker-name-with-dash",
+        (rf"^{_LABEL}\s*(?:-\s*)?(?P<y>\S.*)$",),
+        replacement=r"- \g<y>",
+        flags=("multiline",),
+        examples=(
+            Example("Mr. Parker: I am tired", "- I am tired"),
+            Example("Bayan Demir: Oturun!", "- Oturun!"),
+        ),
     ),
 )
 # The file that pauses built-in rules by name; it is no set of its own.
@@ -106,7 +131,7 @@ def builtin_sets() -> dict[str, RuleSet]:
         data = pkgutil.get_data("cleanit", f"data/{file}")
         if data is not None:
             rules.setdefault(name, []).append(parse_file(data.decode("utf-8")))
-    added = {OCR_SET: OCR_ADDED}
+    added = {OCR_SET: OCR_ADDED, "no-sdh": NO_SDH_ADDED}
     return {
         name: RuleSet(
             name, (*(rule for parsed in rules[name] for rule in parsed.rules), *added.get(name, ())), builtin=True
