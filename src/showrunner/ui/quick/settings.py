@@ -202,6 +202,7 @@ class Settings(QObject):
     def set_ai_model(self, name: str) -> None:
         """The model for every place that chooses none; the plans follow it."""
         self._remember(ai_model=name)
+        self._window.found.programs_changed.emit()  # the status bar names the model
         self._window.workspace.replan()
 
     @Slot()

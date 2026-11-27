@@ -245,7 +245,7 @@ def test_close_folder_in_the_menu_closes_only_the_folder_of_the_show(
     show, other = folders
     open_folders(controller, qtbot, *folders)
     pick(controller, qtbot, row(controller, other, "Another Show - S01E01.mkv", up=2))
-    assert keys(controller)[-2:] == ["remove", "close"]
+    assert keys(controller)[-3:] == ["remove", "refresh", "close"]
     close = next(a for a in controller.place_actions if a["key"] == "close")
     assert close["text"] == "Close folder"
     assert "Another Show (2018)" in close["tip"]
@@ -382,8 +382,15 @@ def test_the_library_menu_lists_remove_and_close_with_tips_and_remove_takes_the_
     menu = _named(window, "libraryMenu")
     _click(window, _row(root, controller.tree.row_id(index)), Qt.MouseButton.RightButton)
     qtbot.waitUntil(lambda: bool(menu.property("visible")))
-    entries = {_evaluate(menu, f"itemAt({i})").property("text"): _evaluate(menu, f"itemAt({i})") for i in range(5)}
-    assert list(entries) == ["Discard changes", "Exclude", "Add to queue", "Remove from list", "Close folder"]
+    entries = {_evaluate(menu, f"itemAt({i})").property("text"): _evaluate(menu, f"itemAt({i})") for i in range(6)}
+    assert list(entries) == [
+        "Discard changes",
+        "Exclude",
+        "Add to queue",
+        "Remove from list",
+        "Refresh",
+        "Close folder",
+    ]
     assert "not listed at all" in entries["Remove from list"].property("tip")
     assert "out of every run" in entries["Exclude"].property("tip")
     assert "Another Show (2018)" in entries["Close folder"].property("tip")

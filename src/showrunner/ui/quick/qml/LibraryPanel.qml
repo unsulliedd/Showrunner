@@ -41,10 +41,26 @@ Panel {
                 onClicked: app.choose_folder()
             }
 
+            // Reads the open folders again, under the same rule as Close.
+            IconButton {
+                id: refresh
+
+                objectName: "refreshLibrary"
+                anchors.right: add.left
+                anchors.rightMargin: Theme.space_xs
+                anchors.verticalCenter: parent.verticalCenter
+                visible: app.loaded
+                enabled: app.can_change_library
+                iconName: "refresh"
+                label: Strings.t("library.refresh")
+                tip: Strings.t("tip.library_refresh")
+                onClicked: app.refresh_library()
+            }
+
             // Back to Home; a library being read, applied or read again after a job is not closed under its job.
             IconButton {
                 objectName: "closeFolder"
-                anchors.right: add.left
+                anchors.right: refresh.left
                 anchors.rightMargin: Theme.space_xs
                 anchors.verticalCenter: parent.verticalCenter
                 visible: app.loaded

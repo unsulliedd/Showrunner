@@ -167,6 +167,17 @@ class Places(QObject):
                     "enabled": self._folders.can_change_library,
                 }
             )
+        if key is not None:
+            sources = self._folders.sources(i.file.path for i in self._workspace.items)
+            names = tr("common.list_separator").join(f.name or str(f) for f in sources)
+            actions.append(
+                {
+                    "key": "refresh",
+                    "text": tr("library.refresh"),
+                    "tip": tr("library.refresh_place_tip", folders=names),
+                    "enabled": self._folders.can_change_library,
+                }
+            )
         if folders := self._folders.folders_of_place():
             names = tr("common.list_separator").join(f.name or str(f) for f in folders)
             actions.append(
@@ -190,6 +201,8 @@ class Places(QObject):
             self._run.add_to_queue()
         elif key == "remove":
             self._folders.remove_place()
+        elif key == "refresh":
+            self._folders.refresh_place()
         elif key == "close":
             self._folders.close_place_folders()
 

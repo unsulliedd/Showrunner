@@ -1,4 +1,5 @@
-"""The folders open in the library: reading them, the filter, Home, Recent, Close folder and Remove from list.
+"""The folders open in the library: reading them and reading them again, the filter, Home, Recent, Close folder
+and Remove from list.
 
 Nothing here touches the disk beyond reading: closing a folder or taking a place out of the list only changes what the
 library lists, and the folders stay in Recent.
@@ -7,7 +8,7 @@ library lists, and the folders stay in Recent.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -68,6 +69,7 @@ class Folders(QObject):
         self._loader.failed.connect(self._on_failed)
         self._progress: tuple[int, int] | None = None
         self._cancelling = False
+        self._refreshing: tuple[Path, ...] | None = None  # what the running load reads again, if it is a refresh
         self._unread: dict[Path, BatchKey] = {}  # the running load's videos not yet read, by their (loose) place
         self._open_unread = 0  # how many of them lie in the open place
         self._message = ""  # what the last load ended with, when it is worth saying
@@ -228,6 +230,15 @@ class Folders(QObject):
         workspace.reselect()
         workspace.loading_changed.emit()
 
+    def _above(self) -> list[str]:
+        """The rows above the selected one, nearest first."""
+        tree = self._workspace.tree
+        above, index = [], tree.index_of(self._workspace.selected).parent()
+        while index.isValid():
+            above.append(tree.row_id(index))
+            index = index.parent()
+        return above
+
     # Home
 
     @property
@@ -257,12 +268,8 @@ class Folders(QObject):
         if workspace.key is None or not self.can_change_library:
             return
         gone = {i.file.path for i in workspace.items}
-        above, index = [], workspace.tree.index_of(workspace.selected).parent()
-        while index.isValid():
-            above.append(workspace.tree.row_id(index))
-            index = index.parent()
         workspace.batches.removed |= gone
-        self._show_library(workspace.model.library.without(gone), gone, above)
+        self._show_library(workspace.model.library.without(gone), gone, self._above())
         workspace.save_soon()
 
     def folders_of_place(self) -> tuple[Path, ...]:
@@ -338,6 +345,47 @@ class Folders(QObject):
         self._loader.start(paths, known=known)
         self._workspace.loading_changed.emit()
 
+    def sources(self, paths: Iterable[Path]) -> tuple[Path, ...]:
+        """What to read again for the videos at `paths`: the opened folders that hold them, and those opened one by
+        one. A place inside a show reads its whole folder again, since a scan of a subfolder alone would list it as a
+        folder of its own."""
+        library = self._workspace.model.library
+        paths = tuple(paths)
+        return (*library.folders_of(paths), *(p for p in paths if not library.folders_of((p,))))
+
+    def refresh(self, paths: Iterable[Path] | None = None) -> None:
+        """Read `paths`, or every open folder and file, again: files deleted on disk drop out, new ones come in, and
+        only files that changed are read, the others served from the read cache. Choices, kept per place, stay."""
+        if not self.can_change_library:
+            return
+        library = self._workspace.model.library
+        if paths is None:
+            paths = self.sources(i.file.path for i in library.items)
+            paths = (*library.roots, *(p for p in paths if p not in library.roots))
+        paths = tuple(paths)
+        present = [p for p in paths if p.exists()]
+        self._message = ""
+        if not present:
+            self._renew(paths, LibraryLoad())
+            return
+        self._refreshing = paths
+        # What was taken out of the list stays out, as when the folders are opened again at the start.
+        self._loader.start(present, known=self._workspace.batches.removed)
+        self._workspace.loading_changed.emit()
+
+    def refresh_place(self) -> None:
+        """Read the folders the selected place comes from again."""
+        if self._workspace.key is not None:
+            self.refresh(self.sources(i.file.path for i in self._workspace.items))
+
+    def _renew(self, paths: tuple[Path, ...], load: LibraryLoad) -> None:
+        library = self._workspace.model.library
+        renewed = library.renewed(paths, load)
+        gone = {i.file.path for i in library.items} - {i.file.path for i in renewed.items}
+        self._show_library(renewed, gone, self._above())
+        if renewed.roots != library.roots:
+            self._remember(last_folders=[str(r) for r in renewed.roots])
+
     def cancel_reading(self) -> None:
         """Stop the load after the file being read; what was read so far is kept and the rest shows as not read."""
         if self._loader.busy:
@@ -361,6 +409,7 @@ class Folders(QObject):
     def _on_failed(self, error: Exception) -> None:
         _log.error("Loading failed: %s", error)
         self._progress = None
+        self._refreshing = None
         self._unread, self._open_unread = {}, 0
         self._cancelling = False
         self._message = tr("status.load_failed", error=error)
@@ -370,6 +419,19 @@ class Folders(QObject):
         self._progress = None
         self._unread, self._open_unread = {}, 0
         self._cancelling = False
+        refreshing, self._refreshing = self._refreshing, None
+        if refreshing is not None:
+            # A cancelled refresh leaves the library as it was: its load holds files it did not reach as not read.
+            if load.cancelled:
+                self._message = tr("status.refresh_cancelled")
+                self._workspace.loading_changed.emit()
+            elif self._run.applying or self._run.locked_paths():
+                # A job started meanwhile: its files must not be replaced under it, nor dropped from the list.
+                self._message = tr("status.refresh_skipped")
+                self._workspace.loading_changed.emit()
+            else:
+                self._renew(refreshing, load)
+            return
         if load.cancelled:
             self._message = tr("status.cancelled")
         else:

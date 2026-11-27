@@ -110,6 +110,7 @@ def test_keep_these_files_as_they_are_cancels_what_comes_from_above_and_discard_
         "exclude",
         "queue",
         "remove",
+        "refresh",
     ]  # nothing above a show
     _open(setup, qtbot, fourth, up=0)
     every = controller.change_count

@@ -286,6 +286,7 @@ class WindowController(QObject):
     add_urls = _slot("folders", "add_urls", list)
     open_recent = _slot("folders", "open_recent", str)
     close_folder = _slot("folders", "close_folder")
+    refresh_library = _slot("folders", "refresh", qt_name="refresh_library")
     cancel_reading = _slot("folders", "cancel_reading")
     go_home = _slot("folders", "go_home")
     leave_home = _slot("folders", "leave_home")
@@ -435,6 +436,7 @@ class WindowController(QObject):
     # Programs
 
     programs = _property(list, "found", "programs", programs_changed)
+    status_programs = _property(list, "found", "status_programs", programs_changed)
     refresh_programs = _slot("found", "refresh", qt_name="refresh_programs")
 
     @Slot(str)

@@ -3,7 +3,8 @@ MKVToolNix knows.
 
 All are read on pool threads. Which stages plan depends on the programs found and on the AI server, so the open place
 plans again when they are known or change; unfinished jobs are offered once, at the first check, since resuming one
-runs them.
+runs them. The AI server is a program the user starts and stops at will, so it is asked again by itself while it does
+not answer, and whenever the app comes back to the front.
 """
 
 from __future__ import annotations
@@ -14,12 +15,14 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtGui import QGuiApplication
 
 from showrunner.app.ai import AI, AiStatus
 from showrunner.app.dependencies.service import check, programs_from
 from showrunner.app.languages import read_languages, use_languages
 from showrunner.app.library.loader import BackgroundJob
+from showrunner.app.settings.app_settings import load_settings
 from showrunner.tools.dependencies.detect import State
 from showrunner.tools.dependencies.specs import SPEC_BY_ID
 from showrunner.ui.i18n.catalog import tr
@@ -28,10 +31,12 @@ from showrunner.ui.quick.workspace import Statuses, Workspace
 
 _log = logging.getLogger(__name__)
 
-# The programs the first-run screen and the status bar show: the ones that read and write the files today.
+# The programs the first-run screen shows: the ones that read and write the files.
 SHOWN_PROGRAMS: tuple[str, ...] = ("mkvtoolnix", "ffmpeg")
-# Checked as well, since plans depend on them, though only Settings shows them.
+# Every program the plans depend on, checked at the start and listed in the status bar with the AI server.
 _PLANNED_PROGRAMS: tuple[str, ...] = (*SHOWN_PROGRAMS, "tesseract")
+# How often the AI server is asked again while it does not answer.
+AI_RETRY_MS = 30_000
 
 
 def check_shown() -> Statuses:
@@ -61,6 +66,23 @@ class FoundPrograms(QObject):
         self._ai_before: AiStatus | None = None  # the answer the plans had when the server was last asked
         # Each new plan asks the AI server again once its last answer is old, so the plans follow it within moments.
         workspace.rebuilt.connect(self.check_ai)
+        self._ai_retry = QTimer(self)
+        self._ai_retry.setInterval(AI_RETRY_MS)
+        self._ai_retry.timeout.connect(self._retry_ai)
+        self._ai_retry.start()
+        app = QGuiApplication.instance()
+        if isinstance(app, QGuiApplication):
+            app.applicationStateChanged.connect(self._on_app_state)
+
+    def _retry_ai(self) -> None:
+        status = AI.status()
+        if status is None or not status.running:
+            self.check_ai(now=True)
+
+    def _on_app_state(self, state: Qt.ApplicationState) -> None:
+        # Back at the front: the user may have started the server or pulled a model meanwhile.
+        if state == Qt.ApplicationState.ApplicationActive:
+            self.check_ai(now=True)
 
     def check_ai(self, now: bool = False) -> None:
         """Ask the AI server in the background when its last answer is old, or `now`. Plans read the last answer
@@ -81,6 +103,7 @@ class FoundPrograms(QObject):
             if not status.running:
                 _log.info("The AI server does not answer: %s", status.detail)
             self.ai_changed.emit()
+            self.programs_changed.emit()
             self._workspace.replan()
 
     def _on_ai_failed(self, error: Exception) -> None:
@@ -131,22 +154,57 @@ class FoundPrograms(QObject):
 
     @property
     def programs(self) -> list[dict[str, Any]]:
+        """The programs of the first-run screen."""
+        return [self._row(spec_id) for spec_id in SHOWN_PROGRAMS]
+
+    @property
+    def status_programs(self) -> list[dict[str, Any]]:
+        """Every program the plans use, and the AI server with the model chosen in Settings, for the status bar."""
+        return [*(self._row(spec_id) for spec_id in _PLANNED_PROGRAMS), self._ai_row()]
+
+    def _row(self, spec_id: str) -> dict[str, Any]:
         statuses = self._workspace.statuses
-        rows = []
-        for spec_id in SHOWN_PROGRAMS:
-            name = tr(SPEC_BY_ID[spec_id].name_key)
-            status = statuses.get(spec_id) if statuses is not None else None
-            state = "checking" if statuses is None else (status.state.value if status else State.MISSING.value)
-            version = (status.version or "") if status is not None else ""
-            rows.append(
-                {
-                    "id": spec_id,
-                    "name": name,
-                    "about": tr(f"program.about.{spec_id}"),
-                    "state": state,
-                    "found": state == State.FOUND.value,
-                    "version": version,
-                    "status": tr(f"program.state.{state}", name=name, version=version),
-                }
-            )
-        return rows
+        name = tr(SPEC_BY_ID[spec_id].name_key)
+        status = statuses.get(spec_id) if statuses is not None else None
+        state = "checking" if statuses is None else (status.state.value if status else State.MISSING.value)
+        version = (status.version or "") if status is not None else ""
+        about = tr(f"program.about.{spec_id}")
+        where = status.path if status is not None else None
+        return {
+            "id": spec_id,
+            "name": name,
+            "about": about,
+            "state": state,
+            "found": state == State.FOUND.value,
+            "version": version,
+            "status": tr(f"program.state.{state}", name=name, version=version),
+            "tip": tr("program.where", path=where, about=about) if where is not None else about,
+        }
+
+    def _ai_row(self) -> dict[str, Any]:
+        """The AI server's row, from its last answer: never by running its command, which on some systems starts
+        the server's own app."""
+        status = AI.status()
+        backend = AI.backend.name
+        name = tr(SPEC_BY_ID[backend].name_key)
+        model = load_settings().value.ai_model
+        if status is None:
+            state = "checking"
+        elif not status.running:
+            state = State.STOPPED.value
+        elif not model:
+            state = "no_model"
+        elif model not in status.models:
+            state = "model_missing"
+        else:
+            state = "running"
+        return {
+            "id": backend,
+            "name": name,
+            "about": tr(f"program.about.{backend}"),
+            "state": state,
+            "found": state == "running",
+            "version": "",
+            "status": tr(f"program.state.{state}", name=name, version="", model=model),
+            "tip": tr(f"program.about.{backend}"),
+        }

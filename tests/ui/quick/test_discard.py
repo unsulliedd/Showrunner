@@ -49,6 +49,7 @@ def test_nothing_to_discard_on_a_place_that_follows_its_parent(
         ("exclude", "Exclude", True),
         ("queue", "Add to queue", True),
         ("remove", "Remove from list", True),
+        ("refresh", "Refresh", True),
     ]
     asked: list[bool] = []
     controller.discard_asked.connect(lambda: asked.append(True))

@@ -141,6 +141,14 @@ class Library:
             roots=tuple(r for r in self.roots if r not in folders),
         )
 
+    def renewed(self, paths: Iterable[Path], load: LibraryLoad) -> Library:
+        """The library with `paths`, opened folders and files, read again: what lay in them is replaced by what `load`
+        found there, so files deleted since drop out and new ones come in. The opened folders keep their order; one
+        that is no longer on disk is closed."""
+        paths = tuple(paths)
+        renewed = self.closed(paths).merge(load)
+        return replace(renewed, roots=tuple(r for r in self.roots if r not in paths or r in load.roots))
+
     def with_files(
         self,
         files: dict[Path, MediaFile],

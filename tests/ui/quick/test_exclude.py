@@ -177,7 +177,7 @@ def test_the_menu_and_the_palette_offer_exclude_or_include(
     controller: WindowController, library: Library, qtbot: QtBot
 ) -> None:
     open_season(controller, library, qtbot)
-    assert [a["key"] for a in controller.place_actions] == ["discard", "keep", "exclude", "queue", "remove"]
+    assert [a["key"] for a in controller.place_actions] == ["discard", "keep", "exclude", "queue", "remove", "refresh"]
     controller.place_action("exclude")
     assert controller.place_excluded
     assert [(a["key"], a["text"]) for a in controller.place_actions] == [
@@ -186,6 +186,7 @@ def test_the_menu_and_the_palette_offer_exclude_or_include(
         ("include", "Include"),
         ("queue", "Add to queue"),
         ("remove", "Remove from list"),
+        ("refresh", "Refresh"),
     ]
     controller.palette_query = "include"
     assert [(r["key"], r["label"], r["detail"]) for r in controller.palette] == [
