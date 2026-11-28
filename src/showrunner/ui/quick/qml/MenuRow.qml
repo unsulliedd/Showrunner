@@ -8,6 +8,9 @@ MenuItem {
 
     // What the row does, said on hover; empty for a row whose text says it all.
     property string tip
+    // False draws the row greyed out while it stays hoverable, so its tip can say why it cannot be picked; a disabled
+    // item gets no hover at all. The menu decides what picking it does.
+    property bool available: true
 
     implicitHeight: Theme.row_md
     implicitWidth: Theme.menu_width
@@ -33,11 +36,11 @@ MenuItem {
     contentItem: UiText {
         leftPadding: row.checkable ? Theme.icon_sm + Theme.space_md : 0
         text: row.text
-        color: row.enabled ? Theme.ink : Theme.faint
+        color: row.enabled && row.available ? Theme.ink : Theme.faint
     }
 
     background: Rectangle {
         radius: Theme.radius_sm
-        color: row.highlighted && row.enabled ? Theme.select : "transparent"
+        color: row.highlighted && row.enabled && row.available ? Theme.select : "transparent"
     }
 }

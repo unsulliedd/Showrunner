@@ -85,13 +85,19 @@ class Step:
     # The fingerprint of those sets' rules, so a result made with other rules is not reused after a rule changed.
     rules: str = ""
     engine: SyncEngine = SyncEngine.AS_IT_IS  # SYNC
-    # SYNC: the engine's own settings set on the place. TRANSLATE: the window size and context, from Settings.
+    # SYNC: the engine's own settings set on the place. TRANSLATE: the window size and context, from Settings. RESPLIT
+    # with AI: the window size.
     settings: tuple[tuple[str, str], ...] = ()
-    # TRANSLATE, RESPLIT: the model, the one chosen in Settings where the place chose none, so a result made by another
-    # model is not reused. Empty where no model is known: none is chosen, or no server answers.
+    # TRANSLATE, RESPLIT with AI: the model, the one chosen in Settings where the place chose none, so a result made by
+    # another model is not reused. Empty where no model is known: none is chosen, or no server answers.
     model: str = ""
     # TRANSLATE: the names the model keeps as they are, the title first.
     names: tuple[str, ...] = ()
+    way: Lines = Lines.AS_THEY_ARE  # RESPLIT: by timing or with AI
+
+    @property
+    def uses_ai(self) -> bool:
+        return self.kind is StepKind.TRANSLATE or (self.kind is StepKind.RESPLIT and self.way is Lines.WITH_AI)
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,9 +108,6 @@ class AiModels:
     installed: tuple[str, ...] = ()
     window: int = DEFAULT_WINDOW  # the cues a translation asks the model for at a time
     context: int = DEFAULT_CONTEXT  # the cues before and after a window sent along to read it in its scene
-
-
-_AI_KINDS = (StepKind.TRANSLATE, StepKind.RESPLIT)
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,7 +238,15 @@ def plan_subtitles(
     model = options.model or (ai.default if ai is not None else "")
     windows = ai or AiModels()
     windowing = (("context", str(windows.context)), ("window", str(windows.window)))
-    resplit = (Step(StepKind.RESPLIT, model=model),) if sync and options.lines is Lines.RESPLIT else ()
+    resplit: tuple[Step, ...] = ()
+    timing = options.timing_settings()
+    if sync and options.lines is Lines.WITH_AI:
+        window = options.lines_settings.get("ai.window") or windowing[1][1]
+        settings = tuple(sorted((*timing, ("window", window))))
+        resplit = (Step(StepKind.RESPLIT, settings=settings, model=model, way=Lines.WITH_AI),)
+    elif sync and options.lines is Lines.BY_TIMING:
+        # No model, so a model chosen elsewhere does not run it again.
+        resplit = (Step(StepKind.RESPLIT, settings=timing, way=Lines.BY_TIMING),)
     every = options.approval is Approval.EVERY
     beside = options.output is not Output.VIDEO
 
@@ -440,7 +451,7 @@ def _missing(
             needed.add(StepKind.AUDIO)
             lacking.add(StepKind.AUDIO)
     for step in finished.steps:
-        if step.kind in _AI_KINDS:
+        if step.uses_ai:
             needed.add(StepKind.AI)
             if ai is not None and step.model not in ai.installed:
                 needed.add(StepKind.MODEL)

@@ -105,21 +105,27 @@ def read_answer(cues: Sequence[Cue], window: Window, text: str) -> list[Cue]:
     order; raises `ValueError` otherwise. A cue the answer leaves empty keeps its own text: the model found nothing to
     translate in it (a sound, a garbled line), and losing the whole window for it would cost every other line."""
     own = window.own(cues)
+    return [
+        replace(cue, text="\n".join(line.strip() for line in lines if line.strip()) or cue.text)
+        for cue, lines in zip(own, numbered(text, len(own)), strict=True)
+    ]
+
+
+def numbered(text: str, count: int) -> list[list[str]]:
+    """The lines answered for each of the numbers 1 to `count`. Lenient on form (blank lines, code fences, the text on
+    the number's own line), strict on the numbers: each once and in order; raises `ValueError` otherwise."""
     found: list[tuple[int, list[str]]] = []
     for line in text.splitlines():
         if _FENCE.match(line):
             continue
-        if (numbered := _NUMBER.match(line)) is not None:
-            found.append((int(numbered.group(1)), [numbered.group(2)] if numbered.group(2).strip() else []))
+        if (number := _NUMBER.match(line)) is not None:
+            found.append((int(number.group(1)), [number.group(2)] if number.group(2).strip() else []))
         elif found:
             found[-1][1].append(line)
     numbers = [number for number, _ in found]
-    if numbers != list(range(1, len(own) + 1)):
-        raise ValueError(f"cues {numbers} for 1 to {len(own)}")
-    return [
-        replace(cue, text="\n".join(line.strip() for line in lines if line.strip()) or cue.text)
-        for cue, (_, lines) in zip(own, found, strict=True)
-    ]
+    if numbers != list(range(1, count + 1)):
+        raise ValueError(f"cues {numbers} for 1 to {count}")
+    return [lines for _, lines in found]
 
 
 def _context_line(cue: Cue) -> str:

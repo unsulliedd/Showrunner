@@ -49,6 +49,9 @@ class AppSettings:
     overview_tracks_height: int = 0
     # Height of the settings box on Subtitles, set by the separator under it; 0 until the user has moved it.
     subtitles_rows_height: int = 0
+    # Widths of the file and subtitles-now columns of the Subtitles file list, set by their dividers; 0 until moved.
+    subtitles_file_width: int = 0
+    subtitles_now_width: int = 0
     # Which files the Tracks strip shows: "all", "differ" (each run of files that follow every track as one), or ""
     # until the user picks, when it folds the runs only where every file would not fit.
     matrix_files: str = ""

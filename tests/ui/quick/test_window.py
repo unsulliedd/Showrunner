@@ -179,6 +179,13 @@ def test_the_height_of_the_subtitle_settings_is_kept_in_the_settings(controller:
     assert load_settings().value.overview_tracks_height == 0  # apart from the tracks box's height
 
 
+def test_the_subtitle_list_column_widths_are_kept_in_the_settings(controller: WindowController) -> None:
+    assert (controller.subtitles_file_width(), controller.subtitles_now_width()) == (0, 0)
+    controller.save_subtitles_columns(320, 140)
+    assert (controller.subtitles_file_width(), controller.subtitles_now_width()) == (320, 140)
+    assert load_settings().value.subtitles_rows_height == 0  # apart from the settings box's height
+
+
 def test_only_local_urls_are_read(tmp_path: Path) -> None:
     file = tmp_path / "x.mkv"
     urls = [

@@ -306,10 +306,10 @@ def test_the_sync_row_shows_the_engines_settings_by_place(
     low = shown["ffsubsync.unsure_below"]
     assert (low["value"], low["placeholder"], low["own"], low["number"]) == ("", "0.1", False, True)
     assert [c["key"] for c in shown["ffsubsync.vad"]["choices"]] == ["", "auditok"]
-    controller.set_sync_setting("ffsubsync.max_offset", "30")
-    controller.set_sync_setting("ffsubsync.in_sync_below", "soon")  # no number: not taken
-    controller.set_sync_setting("ffsubsync.in_sync_below", "-1")
-    controller.set_sync_setting("ffsubsync.vad", "auditok")
+    controller.set_setting("ffsubsync.max_offset", "30")
+    controller.set_setting("ffsubsync.in_sync_below", "soon")  # no number: not taken
+    controller.set_setting("ffsubsync.in_sync_below", "-1")
+    controller.set_setting("ffsubsync.vad", "auditok")
     shown = fields(controller)
     assert (shown["ffsubsync.max_offset"]["value"], shown["ffsubsync.max_offset"]["own"]) == ("30", True)
     assert shown["ffsubsync.in_sync_below"]["value"] == ""
@@ -321,14 +321,14 @@ def test_the_sync_row_shows_the_engines_settings_by_place(
     assert (received["value"], received["placeholder"], received["own"]) == ("", "30", False)
     assert received["mark"] == {"from": "From the show", "over": ""}
     # Its own value overrides, and emptying the field gives the show's back.
-    controller.set_sync_setting("ffsubsync.max_offset", "90")
+    controller.set_setting("ffsubsync.max_offset", "90")
     own = fields(controller)["ffsubsync.max_offset"]
     assert (own["value"], own["own"], own["mark"]["over"]) == ("90", True, "Overrides the show")
-    controller.set_sync_setting("ffsubsync.max_offset", "")
+    controller.set_setting("ffsubsync.max_offset", "")
     assert fields(controller)["ffsubsync.max_offset"]["own"] is False
     assert fields(controller)["ffsubsync.max_offset"]["placeholder"] == "30"
     # Following the show again on the Sync row takes the season's own settings away with its engine.
-    controller.set_sync_setting("ffsubsync.max_offset", "90")
+    controller.set_setting("ffsubsync.max_offset", "90")
     controller.follow_subtitles("sync")
     assert fields(controller)["ffsubsync.max_offset"]["own"] is False
     # Another engine has no settings in this version.
@@ -387,3 +387,47 @@ def test_kept_names_are_typed_on_the_show_and_taken_back_on_a_season(
     controller.toggle_subtitle_item("names", "Town Square")
     qtbot.waitUntil(lambda: row(controller, "names")["items"][0]["off"] is True)
     assert row(controller, "names")["items"][0]["mark"]["over"] == "Overrides the show"
+
+
+def lines_fields(controller: WindowController) -> dict[str, dict[str, Any]]:
+    return {f["key"]: f for f in row(controller, "lines")["settings"]}
+
+
+def test_the_lines_row_shows_the_chosen_way_s_settings_by_place(
+    engines: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    controller = engines
+    open_season(controller, library, qtbot)
+    season = controller.tree.index_of(str(library.items[2].file.path)).parent()
+    controller.select(season.parent())
+    assert row(controller, "lines")["settings"] == []  # as they are: nothing to set
+    controller.set_subtitle_choice("lines", "resplit")
+    timing = ["timing.longest_line", "timing.two_lines_from", "timing.smallest_overlap", "timing.punctuation"]
+    assert list(lines_fields(controller)) == timing
+    shown = lines_fields(controller)
+    assert (shown["timing.longest_line"]["placeholder"], shown["timing.longest_line"]["label"]) == (
+        "42",
+        "Longest line (characters)",
+    )
+    assert [c["key"] for c in shown["timing.punctuation"]["choices"]] == ["", "weak", "strong"]
+    # With AI adds its own window, its default translation's window in Settings.
+    controller.set_subtitle_choice("lines", "ai")
+    assert list(lines_fields(controller)) == [*timing, "ai.window"]
+    assert lines_fields(controller)["ai.window"]["placeholder"] == "40"
+    # A value out of its range is not taken; one in it is, and the season receives it.
+    controller.set_setting("timing.longest_line", "10")
+    assert lines_fields(controller)["timing.longest_line"]["value"] == ""
+    controller.set_setting("timing.longest_line", "37")
+    controller.set_setting("timing.smallest_overlap", "0,5")  # a decimal comma
+    controller.set_setting("timing.punctuation", "strong")
+    shown = lines_fields(controller)
+    assert (shown["timing.longest_line"]["value"], shown["timing.smallest_overlap"]["value"]) == ("37", "0.5")
+    assert shown["timing.punctuation"]["current"] == "strong"
+    controller.select(season)
+    settle(controller, qtbot)
+    received = lines_fields(controller)["timing.longest_line"]
+    assert (received["value"], received["placeholder"], received["mark"]["from"]) == ("", "37", "From the show")
+    # Following the show again on the Lines row takes the season's own settings away with its way.
+    controller.set_setting("timing.longest_line", "50")
+    controller.follow_subtitles("lines")
+    assert lines_fields(controller)["timing.longest_line"]["own"] is False

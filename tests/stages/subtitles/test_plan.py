@@ -93,7 +93,7 @@ def test_a_paired_file_the_tracks_add_is_cleaned_synced_and_resplit(b: SimpleNam
         cleanup={"Lyrics": RuleSetUse.USED, "Hearing impaired": RuleSetUse.USED, "Ads": RuleSetUse.PAUSED},
         sync=SyncEngine.ALASS,
         sync_settings={"alass.split_penalty": "7", "ffsubsync.max_offset": "60", "alass.splits": ""},
-        lines=Lines.RESPLIT,
+        lines=Lines.WITH_AI,
         model="Sample 9B Instruct",
     )
     plan = plan_subtitles(episode(b, b.subtitle(2)), options, ADD_TURKISH)
@@ -102,7 +102,7 @@ def test_a_paired_file_the_tracks_add_is_cleaned_synced_and_resplit(b: SimpleNam
     assert finished.steps == (
         cleaning("Hearing impaired", "Lyrics"),  # sorted, paused sets left out
         Step(StepKind.SYNC, engine=SyncEngine.ALASS, settings=(("split_penalty", "7"),)),
-        Step(StepKind.RESPLIT, model="Sample 9B Instruct"),
+        Step(StepKind.RESPLIT, settings=(("window", "40"),), model="Sample 9B Instruct", way=Lines.WITH_AI),
     )
     # Sync and re-split work against the English text track.
     assert plan.reference is not None
@@ -122,9 +122,33 @@ def test_a_paired_file_the_tracks_do_not_add_gets_no_work(b: SimpleNamespace) ->
 
 
 def test_resplit_runs_only_after_a_sync(b: SimpleNamespace) -> None:
-    options = SubtitlesOptions(cleanup=CLEAN, lines=Lines.RESPLIT)
+    options = SubtitlesOptions(cleanup=CLEAN, lines=Lines.BY_TIMING)
     (finished,) = plan_subtitles(episode(b, b.subtitle(2)), options, ADD_TURKISH).finished
     assert [s.kind for s in finished.steps] == [StepKind.CLEAN]
+
+
+def test_the_lines_settings_go_into_the_resplit_step(b: SimpleNamespace) -> None:
+    lines_settings = {"timing.longest_line": "37", "timing.punctuation": "", "ai.window": "12"}
+    options = SubtitlesOptions(sync=SyncEngine.ALASS, lines=Lines.BY_TIMING, lines_settings=lines_settings)
+    (finished,) = plan_subtitles(episode(b, b.subtitle(2)), options, ADD_TURKISH, ai=AiModels()).finished
+    # Only the timing's set values: an empty one is the default, the AI way's is not the timing's.
+    assert finished.steps[-1].settings == (("timing.longest_line", "37"),)
+    with_ai = replace(options, lines=Lines.WITH_AI)
+    (finished,) = plan_subtitles(episode(b, b.subtitle(2)), replace(with_ai, model="m"), ADD_TURKISH).finished
+    assert finished.steps[-1].settings == (("timing.longest_line", "37"), ("window", "12"))
+
+
+def test_resplit_by_timing_needs_no_model_and_no_server(b: SimpleNamespace) -> None:
+    options = SubtitlesOptions(sync=SyncEngine.ALASS, lines=Lines.BY_TIMING, model="other:3b")
+    no_server = frozenset(StepKind) - {StepKind.AI}
+    plan = plan_subtitles(episode(b, b.subtitle(2)), options, ADD_TURKISH, available=no_server, ai=AiModels())
+    (finished,) = plan.finished
+    # No model in the step, so a model chosen in Settings or on the place does not run it again.
+    assert finished.steps[-1] == Step(StepKind.RESPLIT, way=Lines.BY_TIMING)
+    # With AI is left out without a server, as a translation is.
+    with_ai = replace(options, lines=Lines.WITH_AI)
+    (left,) = plan_subtitles(episode(b, b.subtitle(2)), with_ai, ADD_TURKISH, available=no_server).left_out
+    assert left.missing == (StepKind.AI,)
 
 
 def test_a_missing_wanted_language_is_translated_and_waits_when_asked(b: SimpleNamespace) -> None:
@@ -429,11 +453,9 @@ def test_a_place_that_chooses_no_model_translates_with_the_settings_one(b: Simpl
     plan = plan_subtitles(episode(b, b.subtitle(2)), GERMAN, TracksOptions(), ai=INSTALLED)
     # Named in the step, so a translation made by another model is not reused after Settings changed.
     assert _translate_of(plan.finished[0]).model == "sample:9b"
-    own = replace(GERMAN, model="other:3b", lines=Lines.RESPLIT, sync=SyncEngine.FFSUBSYNC)
+    own = replace(GERMAN, model="other:3b", lines=Lines.WITH_AI, sync=SyncEngine.FFSUBSYNC)
     plan = plan_subtitles(episode(b, b.subtitle(2)), own, ADD_TURKISH, ai=INSTALLED)
-    assert {s.model for f in plan.finished for s in f.steps if s.kind in (StepKind.TRANSLATE, StepKind.RESPLIT)} == {
-        "other:3b"
-    }
+    assert {s.model for f in plan.finished for s in f.steps if s.uses_ai} == {"other:3b"}
 
 
 def test_ai_work_without_a_server_or_its_model_is_left_out_and_says_which(b: SimpleNamespace) -> None:
@@ -517,7 +539,7 @@ def test_a_chosen_paired_file_is_matched_in_every_episode_by_what_it_is(b: Simpl
 
 
 def test_a_reference_file_is_synced_to_the_audio_first_and_never_re_split_onto_itself(b: SimpleNamespace) -> None:
-    options = SubtitlesOptions(cleanup=CLEAN, sync=SyncEngine.ALASS, lines=Lines.RESPLIT)
+    options = SubtitlesOptions(cleanup=CLEAN, sync=SyncEngine.ALASS, lines=Lines.BY_TIMING)
     tracks = TracksOptions(add_paired=[PairedFile.of(TURKISH), PairedFile.of(ENGLISH)])
     item = episode(b, pgs(3), paired=(TURKISH, ENGLISH))
     plan = plan_subtitles(item, options, tracks, syncs={SyncEngine.ALASS: True})

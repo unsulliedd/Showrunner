@@ -47,8 +47,15 @@ class SyncEngine(StrEnum):
 
 
 class Lines(StrEnum):
+    """How a synced subtitle's words are moved onto the reference's cues, taking their timing and line breaks."""
+
     AS_THEY_ARE = ""
-    RESPLIT = "resplit"  # onto the reference's lines, after a sync
+    # Each line onto the cues it overlaps, cut in proportion; needs no model. Its stored value is the one re-split had
+    # before it had two ways, so a place that chose re-split then keeps the default way.
+    BY_TIMING = "resplit"
+    # The model says which words go on which cue, a window it fails going by timing. Shown as experimental: on small
+    # models it was measured no better than by timing, at minutes an episode.
+    WITH_AI = "ai"
 
 
 class Approval(StrEnum):
@@ -96,8 +103,10 @@ class SubtitlesOptions:
     # into the sync step, which hands them to the adapter and judges its outcome by the two thresholds among them.
     sync_settings: dict[str, str] = field(default_factory=dict)
     lines: Lines = Lines.AS_THEY_ARE
-    # The model that translates and re-splits; empty for the one chosen in Settings. Planned into those steps; no
-    # engine re-splits yet.
+    # `<way>.<setting>` -> the value as typed; empty is the measured default. The timing's (`timing.`) serve both ways,
+    # since the AI way starts from the timing's cuts; `ai.window` is the AI way's own. Planned into the re-split step.
+    lines_settings: dict[str, str] = field(default_factory=dict)
+    # The model that translates and re-splits with AI; empty for the one chosen in Settings. Planned into those steps.
     model: str = ""
     approval: Approval = Approval.NONE
     output: Output = Output.VIDEO
@@ -132,9 +141,13 @@ class SubtitlesOptions:
             )
         )
 
+    def timing_settings(self) -> tuple[tuple[str, str], ...]:
+        """The timing's settings that are set, with their prefix, sorted so the same values plan the same work."""
+        return tuple(sorted((k, v) for k, v in self.lines_settings.items() if k.startswith("timing.") and v))
+
 
 # The fields laid over what a place receives item by item rather than replaced whole.
-PER_ITEM_FIELDS = ("languages", "names", "cleanup", "sync_settings")
+PER_ITEM_FIELDS = ("languages", "names", "cleanup", "sync_settings", "lines_settings")
 # Characters Windows does not allow in a file name, the path separators among them.
 _FORBIDDEN = set('<>:"/\\|?*')
 
