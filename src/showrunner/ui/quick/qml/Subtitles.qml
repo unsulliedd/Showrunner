@@ -19,11 +19,23 @@ Item {
     // The most the box may take: what the rest of the place needs stays, so the file list never shrinks to nothing.
     readonly property int maxBox: Math.max(
         Theme.tracks_min_height,
-        column.height - headings.height - split.height - 3 * column.spacing - Theme.rows_min_height)
+        column.height - split.height - 2 * column.spacing - listBox.Layout.minimumHeight)
     readonly property int boxHeight: clampBox(chosenHeight > 0 ? chosenHeight : box.implicitHeight)
+    // The widths the user gave the file list's first two columns with their dividers, 0 until then.
+    property int chosenFile: app.subtitles_file_width()
+    property int chosenNow: app.subtitles_now_width()
+    readonly property int fileWidth: clampColumn(chosenFile > 0 ? chosenFile : Theme.subtitles_file_width, nowWidth)
+    readonly property int nowWidth: clampColumn(chosenNow > 0 ? chosenNow : Theme.matrix_label, chosenFile > 0
+        ? chosenFile : Theme.subtitles_file_width)
 
     function clampBox(height) {
         return Math.max(Theme.tracks_min_height, Math.min(height, maxBox))
+    }
+
+    // A column keeps its least width, and leaves the other one and the plan column theirs.
+    function clampColumn(width, other) {
+        const room = listColumn.width - 2 * Theme.space_md - 2 * Theme.space_md - other - Theme.column_min_width
+        return Math.max(Theme.column_min_width, Math.min(width, room))
     }
 
     ColumnLayout {
@@ -278,9 +290,11 @@ Item {
                                         Layout.minimumHeight: Theme.row_lg
                                         spacing: Theme.space_sm
 
+                                        // Choose sits right after the value; a long value elides before it.
                                         UiText {
                                             objectName: "subtitleValue_" + row.modelData.key
                                             Layout.fillWidth: true
+                                            Layout.maximumWidth: implicitWidth
                                             text: row.modelData.text ?? ""
                                             color: row.modelData.received ? Theme.muted : Theme.ink
                                             font.pixelSize: Theme.text_sm
@@ -305,6 +319,10 @@ Item {
 
                                             actions: row.modelData.pick ?? []
                                             onPicked: key => Qt.callLater(() => row.modelData.key === "model" ? app.pick_model(key) : app.pick_reference(key))
+                                        }
+
+                                        Item {
+                                            Layout.fillWidth: true
                                         }
                                     }
 
@@ -365,8 +383,10 @@ Item {
                                     id: menu
 
                                     actions: [
-                                        {"key": "follow", "text": place.view.follow ?? "", "enabled": row.modelData.own},
-                                        {"key": "as_it_is", "text": Strings.t("subtitles.menu.as_it_is"), "enabled": true}
+                                        {"key": "follow", "text": place.view.follow ?? "", "enabled": row.modelData.own,
+                                         "tip": Strings.t(row.modelData.own ? "subtitles.menu.follow_tip" : "subtitles.menu.follow_none_tip")},
+                                        {"key": "as_it_is", "text": Strings.t("subtitles.menu.as_it_is"), "enabled": true,
+                                         "tip": Strings.t("subtitles.menu.as_it_is_tip")}
                                     ]
                                     onPicked: key => Qt.callLater(() => key === "follow" ? app.follow_subtitles(row.modelData.key) : app.subtitles_as_it_is(row.modelData.key))
                                 }
@@ -480,158 +500,228 @@ Item {
             onCommitted: app.save_subtitles_rows_height(place.chosenHeight)
         }
 
-        RowLayout {
-            id: headings
+        // The file list, framed as the settings box above it; its first two columns are sized by dividers.
+        Rectangle {
+            id: listBox
 
-            Layout.fillWidth: true
-            spacing: Theme.space_md
-
-            UiText {
-                Layout.preferredWidth: Theme.matrix_label
-                text: Strings.t("subtitles.list.file")
-                color: Theme.faint
-                font.pixelSize: Theme.text_xs
-            }
-
-            UiText {
-                objectName: "subtitlesNowHeading"
-                Layout.preferredWidth: Theme.matrix_label
-                text: Strings.t("subtitles.list.now")
-                color: Theme.faint
-                font.pixelSize: Theme.text_xs
-                Accessible.description: Strings.t("subtitles.list.now_tip")
-
-                HoverHandler {
-                    id: nowHover
-                }
-
-                Tip {
-                    visible: nowHover.hovered
-                    text: Strings.t("subtitles.list.now_tip")
-                }
-            }
-
-            UiText {
-                Layout.fillWidth: true
-                text: Strings.t("subtitles.list.plan")
-                color: Theme.faint
-                font.pixelSize: Theme.text_xs
-            }
-        }
-
-        ScrollPane {
-            id: scroll
-
-            objectName: "subtitleFiles"
+            objectName: "subtitleList"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            contentWidth: availableWidth
-            clip: true
+            Layout.minimumHeight: headings.height + listColumn.spacing + Theme.rows_min_height + 2 * Theme.space_lg
+            radius: Theme.radius_lg
+            color: Theme.panel
+            border.width: Theme.stroke
+            border.color: Theme.line
 
-            Column {
-                width: scroll.availableWidth
+            ColumnLayout {
+                id: listColumn
 
-                Repeater {
-                    model: place.files.length
+                anchors.fill: parent
+                anchors.margins: Theme.space_lg
+                spacing: Theme.space_sm
+                RowLayout {
+                    id: headings
 
-                    delegate: Item {
-                        id: file
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Theme.space_md
+                    Layout.rightMargin: Theme.space_md
+                    spacing: Theme.space_md
 
-                        required property int index
-                        readonly property var modelData: place.files[index]
+                    UiText {
+                        Layout.preferredWidth: place.fileWidth
+                        text: Strings.t("subtitles.list.file")
+                        color: Theme.faint
+                        font.pixelSize: Theme.text_xs
+                    }
 
-                        width: parent.width
-                        height: Math.max(Theme.list_row, plans.implicitHeight + Theme.space_md)
+                    UiText {
+                        objectName: "subtitlesNowHeading"
+                        Layout.preferredWidth: place.nowWidth
+                        text: Strings.t("subtitles.list.now")
+                        color: Theme.faint
+                        font.pixelSize: Theme.text_xs
+                        Accessible.description: Strings.t("subtitles.list.now_tip")
 
-                        // The selected file is the one the Lines panel and the Inspector show.
-                        Rectangle {
-                            anchors.fill: parent
-                            z: -1
-                            radius: Theme.radius_md
-                            color: file.modelData.path === app.focus_path ? Theme.select : "transparent"
-
-                            MouseArea {
-                                objectName: "subtitleFile_" + file.index
-                                anchors.fill: parent
-                                onClicked: app.focus_file(file.modelData.path)
-                            }
+                        HoverHandler {
+                            id: nowHover
                         }
 
-                        RowLayout {
-                            anchors.fill: parent
-                            spacing: Theme.space_md
+                        Tip {
+                            visible: nowHover.hovered
+                            text: Strings.t("subtitles.list.now_tip")
+                        }
+                    }
 
-                            UiText {
-                                Layout.preferredWidth: Theme.matrix_label
-                                text: file.modelData.number !== "" ? file.modelData.number + "  " + file.modelData.file : file.modelData.file
-                                elide: Text.ElideMiddle
-                                font.pixelSize: Theme.text_sm
-                            }
+                    UiText {
+                        Layout.fillWidth: true
+                        text: Strings.t("subtitles.list.plan")
+                        color: Theme.faint
+                        font.pixelSize: Theme.text_xs
+                    }
+                }
 
-                            UiText {
-                                Layout.preferredWidth: Theme.matrix_label
-                                text: file.modelData.now.join("  ")
-                                color: Theme.muted
-                                mono: true
-                                font.pixelSize: Theme.text_xs
-                                elide: Text.ElideRight
-                            }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: Theme.stroke
+                    color: Theme.line
+                }
 
-                            Column {
-                                id: plans
+                ScrollPane {
+                    id: scroll
 
-                                Layout.fillWidth: true
+                    objectName: "subtitleFiles"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    contentWidth: availableWidth
+                    clip: true
 
-                                UiText {
-                                    visible: file.modelData.plan.length === 0
-                                    text: Strings.t("tracks.rule.as_it_is")
-                                    color: Theme.faint
-                                    font.pixelSize: Theme.text_sm
-                                }
+                    Column {
+                        width: scroll.availableWidth
 
-                                Repeater {
-                                    model: file.modelData.plan
+                        Repeater {
+                            model: place.files.length
 
-                                    delegate: Row {
-                                        required property var modelData
+                            delegate: Item {
+                                id: file
 
-                                        spacing: Theme.space_sm
+                                required property int index
+                                readonly property var modelData: place.files[index]
 
-                                        CodeBadge {
-                                            code: modelData.code
-                                            look: modelData.cannot !== "" ? "dropped" : "kept"
-                                        }
+                                width: parent.width
+                                height: Math.max(Theme.list_row, plans.implicitHeight + Theme.space_md)
 
-                                        UiText {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            text: modelData.cannot === "" ? modelData.steps : modelData.steps === "" ? modelData.cannot : modelData.steps + " " + Strings.t("status.separator") + " " + modelData.cannot
-                                            color: modelData.cannot !== "" ? Theme.change : modelData.muted ? Theme.muted : Theme.ink
-                                            font.pixelSize: Theme.text_sm
-                                        }
+                                // The selected file is the one the Lines panel and the Inspector show.
+                                Rectangle {
+                                    anchors.fill: parent
+                                    z: -1
+                                    radius: Theme.radius_md
+                                    color: file.modelData.path === app.focus_path ? Theme.select : "transparent"
 
-                                        // What the last sync of this subtitle found, kept by the run.
-                                        UiText {
-                                            objectName: "syncFound"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            visible: (modelData.found ?? "") !== ""
-                                            text: modelData.found ?? ""
-                                            color: modelData.review ? Theme.change : Theme.faint
-                                            font.pixelSize: Theme.text_xs
-                                        }
+                                    MouseArea {
+                                        objectName: "subtitleFile_" + file.index
+                                        anchors.fill: parent
+                                        onClicked: app.focus_file(file.modelData.path)
                                     }
                                 }
 
-                                UiText {
-                                    objectName: "fileReference_" + file.index
-                                    visible: (file.modelData.reference ?? "") !== ""
-                                    text: file.modelData.reference ?? ""
-                                    color: Theme.faint
-                                    font.pixelSize: Theme.text_xs
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: Theme.space_md
+                                    anchors.rightMargin: Theme.space_md
+                                    spacing: Theme.space_md
+
+                                    UiText {
+                                        Layout.preferredWidth: place.fileWidth
+                                        text: file.modelData.number !== "" ? file.modelData.number + "  " + file.modelData.file : file.modelData.file
+                                        elide: Text.ElideMiddle
+                                        font.pixelSize: Theme.text_sm
+                                    }
+
+                                    UiText {
+                                        Layout.preferredWidth: place.nowWidth
+                                        text: file.modelData.now.join("  ")
+                                        color: Theme.muted
+                                        mono: true
+                                        font.pixelSize: Theme.text_xs
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Column {
+                                        id: plans
+
+                                        Layout.fillWidth: true
+
+                                        UiText {
+                                            visible: file.modelData.plan.length === 0
+                                            text: Strings.t("tracks.rule.as_it_is")
+                                            color: Theme.faint
+                                            font.pixelSize: Theme.text_sm
+                                        }
+
+                                        Repeater {
+                                            model: file.modelData.plan
+
+                                            delegate: RowLayout {
+                                                required property var modelData
+
+                                                width: plans.width
+                                                spacing: Theme.space_sm
+
+                                                CodeBadge {
+                                                    Layout.alignment: Qt.AlignTop
+                                                    code: modelData.code
+                                                    look: modelData.cannot !== "" ? "dropped" : "kept"
+                                                }
+
+                                                // Each takes no more than its text needs, so the sync note stays beside
+                                                // the steps; where the line is too long, both wrap.
+                                                UiText {
+                                                    Layout.fillWidth: true
+                                                    Layout.maximumWidth: implicitWidth
+                                                    wrapMode: Text.WordWrap
+                                                    elide: Text.ElideNone
+                                                    text: modelData.cannot === "" ? modelData.steps : modelData.steps === "" ? modelData.cannot : modelData.steps + " " + Strings.t("status.separator") + " " + modelData.cannot
+                                                    color: modelData.cannot !== "" ? Theme.change : modelData.muted ? Theme.muted : Theme.ink
+                                                    font.pixelSize: Theme.text_sm
+                                                }
+
+                                                // What the last sync of this subtitle found, kept by the run.
+                                                UiText {
+                                                    objectName: "syncFound"
+                                                    Layout.fillWidth: true
+                                                    Layout.maximumWidth: implicitWidth
+                                                    wrapMode: Text.WordWrap
+                                                    elide: Text.ElideNone
+                                                    visible: (modelData.found ?? "") !== ""
+                                                    text: modelData.found ?? ""
+                                                    color: modelData.review ? Theme.change : Theme.faint
+                                                    font.pixelSize: Theme.text_xs
+                                                }
+
+                                                Item {
+                                                    Layout.fillWidth: true
+                                                }
+                                            }
+                                        }
+
+                                        UiText {
+                                            objectName: "fileReference_" + file.index
+                                            width: plans.width
+                                            wrapMode: Text.WordWrap
+                                            elide: Text.ElideNone
+                                            visible: (file.modelData.reference ?? "") !== ""
+                                            text: file.modelData.reference ?? ""
+                                            color: Theme.faint
+                                            font.pixelSize: Theme.text_xs
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            }
+
+            WidthSplit {
+                objectName: "subtitleFileDivider"
+                x: listColumn.x + Theme.space_md + place.fileWidth
+                y: listColumn.y + headings.y
+                height: headings.height
+                name: Strings.t("subtitles.list.file_divider")
+                value: place.fileWidth
+                onAdjusted: width => place.chosenFile = place.clampColumn(width, place.nowWidth)
+                onCommitted: app.save_subtitles_columns(place.chosenFile, place.chosenNow)
+            }
+
+            WidthSplit {
+                objectName: "subtitleNowDivider"
+                x: listColumn.x + Theme.space_md + place.fileWidth + Theme.space_md + place.nowWidth
+                y: listColumn.y + headings.y
+                height: headings.height
+                name: Strings.t("subtitles.list.now_divider")
+                value: place.nowWidth
+                onAdjusted: width => place.chosenNow = place.clampColumn(width, place.fileWidth)
+                onCommitted: app.save_subtitles_columns(place.chosenFile, place.chosenNow)
             }
         }
     }

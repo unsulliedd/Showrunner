@@ -353,6 +353,8 @@ SIZES: dict[str, int] = {
     "tracks_min_height": 160,  # the least a box above a separator keeps: Overview's tracks, Subtitles' settings
     "rows_min_height": 120,  # the least the file list under such a separator keeps
     "separator_step": 24,  # what an arrow key moves a separator
+    "subtitles_file_width": 300,  # the file column of the Subtitles list until the user moves its divider
+    "column_min_width": 80,  # the least a column with a divider keeps
     "track_title_width": 132,  # the codec column of a track row on Overview
     "track_mark_width": 120,  # where a track row's choice comes from, right-aligned before its flags
     "track_files_width": 76,  # the "Files" button at the end of a track row

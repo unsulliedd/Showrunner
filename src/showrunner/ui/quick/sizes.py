@@ -76,6 +76,23 @@ class Sizes:
         except OSError:
             _log.exception("Could not save the height of the subtitle settings")
 
+    def subtitles_file_width(self) -> int:
+        """The width the user gave the Subtitles list's file column, 0 when none."""
+        return load_settings().value.subtitles_file_width
+
+    def subtitles_now_width(self) -> int:
+        """The width the user gave the Subtitles list's subtitles-now column, 0 when none."""
+        return load_settings().value.subtitles_now_width
+
+    def save_subtitles_columns(self, file: int, now: int) -> None:
+        settings = load_settings().value
+        if (file, now) == (settings.subtitles_file_width, settings.subtitles_now_width):
+            return
+        try:
+            save_settings(replace(settings, subtitles_file_width=file, subtitles_now_width=now))
+        except OSError:
+            _log.exception("Could not save the column widths of the subtitle files")
+
     def matrix_files(self) -> str:
         """Which files the Tracks strip shows, as the user last chose: `all`, `differ`, or empty for none chosen."""
         return load_settings().value.matrix_files
