@@ -30,9 +30,10 @@ from showrunner.core.track import ObjectAudio, Track, TrackFlags, TrackKind, fla
 from showrunner.stages.metadata import MetadataPlan
 from showrunner.stages.metadata.plan import FLAG_FIELDS
 from showrunner.stages.mux.options import MuxOptions
-from showrunner.stages.subtitles import FinishedSubtitle, ReferenceTrack, StepKind, SubtitlePlan
+from showrunner.stages.subtitles import FinishedSubtitle, Lines, ReferenceTrack, Step, StepKind, SubtitlePlan
 from showrunner.stages.subtitles.beside import reads_as_original
 from showrunner.stages.subtitles.plan import PGS
+from showrunner.stages.subtitles.resplit_ai import ResplitReport
 from showrunner.stages.subtitles.sync import SyncReport
 from showrunner.stages.subtitles.translate import TranslateReport
 from showrunner.stages.tracks import NO_LANGUAGE, TrackPlan, TracksOptions, is_paired
@@ -238,6 +239,35 @@ def fell_back_text(report: TranslateReport) -> str:
     return tr("subtitles.translate.found.review", fell_back=fell_back, total=report.windows)
 
 
+def kept_resplit(
+    plan: SubtitlePlan, finished: FinishedSubtitle, store: ResultStore | None = None
+) -> ResplitReport | None:
+    """What the re-split with AI of the finished subtitle did when it last ran, or has done so far while it runs; None
+    before it has run, or for one re-split by timing."""
+    return (store or ResultStore(results_dir())).resplit_report(plan, finished)
+
+
+def resplit_step(finished: FinishedSubtitle) -> Step | None:
+    return next((step for step in finished.steps if step.kind is StepKind.RESPLIT), None)
+
+
+def resplit_found(step: Step, report: ResplitReport | None) -> str:
+    """Which way the re-split went: by timing; or with the model, and the windows that went by timing, once it ran."""
+    if step.way is not Lines.WITH_AI:
+        return tr("subtitles.resplit.found.timing")
+    found = tr("subtitles.resplit.found.ai", model=step.model)
+    if report is None or not report.finished or not report.by_timing:
+        return found
+    if len(report.by_timing) == report.windows:
+        went = tr("subtitles.resplit.found.all_timing", total=report.windows)
+    else:
+        windows = tr("common.list_separator").join(str(number) for number in report.by_timing)
+        went = tr_plural(
+            "subtitles.resplit.found.by_timing", len(report.by_timing), windows=windows, total=report.windows
+        )
+    return f"{found} {tr('status.separator')} {went}"
+
+
 def translate_model(finished: FinishedSubtitle) -> str:
     """The model the finished subtitle is translated with; empty for one that is not translated."""
     return next((step.model for step in finished.steps if step.kind is StepKind.TRANSLATE), "")
@@ -296,7 +326,7 @@ def missing_phases(finished: FinishedSubtitle) -> list[str]:
 
 def ai_model(finished: FinishedSubtitle) -> str:
     """The model the finished subtitle's AI work asks for; empty for one with no AI work, or none chosen."""
-    return next((step.model for step in finished.steps if step.kind in (StepKind.TRANSLATE, StepKind.RESPLIT)), "")
+    return next((step.model for step in finished.steps if step.uses_ai), "")
 
 
 def backend_name() -> str:
@@ -648,6 +678,11 @@ def _subtitle_lines(file: FilePreview | None, out: bool) -> list[dict[str, objec
             if (report := kept_sync(work, finished)) is not None:
                 sentence += f" {tr('status.separator')} {sync_found(report)}"
             rows.append({**_line("file", "", "", out), "label": tr("review.detail.sync"), "text": sentence})
+        if work is not None and (resplit := resplit_step(finished)) is not None:
+            language = finished.language.name if finished.language is not None else tr("tracks.no_language")
+            found = resplit_found(resplit, kept_resplit(work, finished))
+            sentence = tr("review.subtitle.resplit", language=language, found=found)
+            rows.append({**_line("file", "", "", out), "label": tr("review.detail.resplit"), "text": sentence})
     for finished in work.written_earlier if work is not None else ():
         label = tr("review.detail.subtitle_files") if not rows else ""
         sentence = written_earlier(finished)

@@ -21,6 +21,8 @@ from pathlib import Path
 from showrunner.app.jobs.hashing import stamp
 from showrunner.app.storage.files import write_json_atomic
 from showrunner.stages.subtitles import FinishedSubtitle, StepKind, SubtitlePlan
+from showrunner.stages.subtitles.resplit_ai import ResplitReport
+from showrunner.stages.subtitles.resplit_ai import read_report as read_resplit
 from showrunner.stages.subtitles.sync import SyncReport, read_report
 from showrunner.stages.subtitles.translate import TranslateReport
 from showrunner.stages.subtitles.translate import read_report as read_translation
@@ -63,6 +65,14 @@ class ResultStore:
         for index, step in enumerate(finished.steps):
             if step.kind is StepKind.TRANSLATE:
                 return read_translation(self.output(plan, finished, index))
+        return None
+
+    def resplit_report(self, plan: SubtitlePlan, finished: FinishedSubtitle) -> ResplitReport | None:
+        """What the finished subtitle's re-split with AI did, or has done so far while it runs; None before it ran, or
+        for one re-split by timing or not at all."""
+        for index, step in enumerate(finished.steps):
+            if step.kind is StepKind.RESPLIT and step.uses_ai:
+                return read_resplit(self.output(plan, finished, index))
         return None
 
     def reference(self, plan: SubtitlePlan, rules: str = "") -> Path:

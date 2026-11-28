@@ -32,9 +32,12 @@ from showrunner.tools.ai import ErrorKind
 from showrunner.ui.i18n.catalog import tr, tr_plural
 from showrunner.ui.quick.review import (
     backend_name,
+    kept_resplit,
     kept_sync,
     kept_translation,
     left_as_it_was,
+    resplit_found,
+    resplit_step,
     sync_found,
     translation_found,
 )
@@ -45,7 +48,7 @@ _log = logging.getLogger(__name__)
 # order: the original moves only after the new file passed its check.
 PHASES: dict[str, tuple[str, ...]] = {"mux": ("write", "check", "original", "rename"), "metadata": ("edit",)}
 # The phases that show how far they are, in percent, while they run.
-_PERCENT_PHASES = ("write", "ocr", "sync", "translate")
+_PERCENT_PHASES = ("write", "ocr", "sync", "translate", "resplit")
 # A step's message when the AI server or its model went away while it ran, by the kind of failure.
 _AI_FAILURES = {ErrorKind.UNREACHABLE.value: "ai_unreachable", ErrorKind.MODEL_MISSING.value: "ai_model_missing"}
 _BESIDE_FAILURES = {failure.value for failure in BesideFailure}
@@ -133,10 +136,24 @@ def translate_text(plan: SubtitlePlan) -> list[str]:
     return lines
 
 
-def window_text(plan: SubtitlePlan) -> str:
-    """ "window 3 of 14": the window the translation that is running asks the model for; empty when none runs."""
+def resplit_text(plan: SubtitlePlan) -> list[str]:
+    """Which way the re-split of each finished subtitle went, and for one with AI which windows went by timing."""
+    lines = []
     for finished in plan.finished:
-        if (report := kept_translation(plan, finished)) is not None and not report.finished:
+        if (step := resplit_step(finished)) is not None:
+            language = finished.language.name if finished.language is not None else tr("tracks.no_language")
+            lines.append(
+                tr("jobs.result.resplit", language=language, found=resplit_found(step, kept_resplit(plan, finished)))
+            )
+    return lines
+
+
+def window_text(plan: SubtitlePlan, phase: str = "translate") -> str:
+    """ "window 3 of 14": the window the translation or re-split with AI that is running asks the model for; empty
+    when none runs. Re-split by timing has no windows."""
+    for finished in plan.finished:
+        report = kept_translation(plan, finished) if phase == "translate" else kept_resplit(plan, finished)
+        if report is not None and not report.finished:
             return tr("jobs.translate.window", number=report.done + 1, total=report.windows)
     return ""
 
@@ -381,8 +398,8 @@ class JobProgress:
                 "label": tr(f"jobs.phase.{name}"),
                 "state": mark,
                 "percent": percent if mark == "active" and name in _PERCENT_PHASES else -1,
-                "note": window_text(work)
-                if isinstance(work, SubtitlePlan) and mark == "active" and name == "translate"
+                "note": window_text(work, name)
+                if isinstance(work, SubtitlePlan) and mark == "active" and name in ("translate", "resplit")
                 else "",
             }
             for name, mark in zip(names, marks, strict=True)
@@ -410,7 +427,7 @@ class JobProgress:
                 lines.append(edited_text(record.detail))
             elif record.state is StepState.DONE and isinstance(work := step.plan.plan, SubtitlePlan):
                 lines += beside_text(work) if work.written else [tr("jobs.result.done")]
-                lines += sync_text(work) + translate_text(work)
+                lines += sync_text(work) + translate_text(work) + resplit_text(work)
             elif record.state is StepState.DONE:
                 lines.append(tr("jobs.result.done"))
             else:

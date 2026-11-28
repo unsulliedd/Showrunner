@@ -398,7 +398,7 @@ Item {
                                 elide: Text.ElideNone
                             }
 
-                            // The chosen engine's settings: the two thresholds, then its own, each marked by where its
+                            // The row's settings (Sync: the engine's; Lines: the chosen way's), each marked by where its
                             // value comes from; an empty field shows what the place receives, or the engine's default.
                             Flow {
                                 objectName: "syncSettings"
@@ -440,7 +440,7 @@ Item {
                                             // The view decides what is taken (a number, "." or ","); the field shows
                                             // its answer again, so a refused entry does not stay on screen.
                                             onEditingFinished: {
-                                                app.set_sync_setting(setting.modelData.key, text)
+                                                app.set_setting(setting.modelData.key, text)
                                                 text = Qt.binding(() => setting.modelData.value)
                                             }
                                         }
@@ -451,7 +451,7 @@ Item {
                                             model: setting.modelData.choices ?? []
                                             current: setting.modelData.current ?? ""
                                             name: setting.modelData.label
-                                            onPicked: key => app.set_sync_setting(setting.modelData.key, key)
+                                            onPicked: key => app.set_setting(setting.modelData.key, key)
                                         }
 
                                         PlaceMark {
