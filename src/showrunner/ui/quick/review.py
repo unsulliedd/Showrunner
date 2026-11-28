@@ -35,7 +35,7 @@ from showrunner.stages.subtitles.beside import reads_as_original
 from showrunner.stages.subtitles.plan import PGS
 from showrunner.stages.subtitles.sync import SyncReport
 from showrunner.stages.subtitles.translate import TranslateReport
-from showrunner.stages.tracks import NO_LANGUAGE, TrackPlan, TracksOptions
+from showrunner.stages.tracks import NO_LANGUAGE, TrackPlan, TracksOptions, is_paired
 from showrunner.tools.mkvtoolnix.propedit import Property
 from showrunner.ui.i18n.catalog import tr, tr_plural
 from showrunner.ui.quick.names import blocked_lines
@@ -176,11 +176,17 @@ def track_text(track: Track) -> str:
 
 
 def reference_text(reference: ReferenceTrack) -> str:
-    """What a file works against: the track, read by OCR where it is a picture, or the audio."""
+    """What a file works against: the track, read by OCR where it is a picture, a paired file, or the audio."""
     if reference.track is None:
         return tr("subtitles.reference.audio")
-    text = track_text(reference.track)
+    text = group_text(reference.track)
     return tr("subtitles.reference.ocr_of", track=text) if reference.track.codec == PGS else text
+
+
+def group_text(track: Track) -> str:
+    """A reference group in words: the track, or the paired file a stand-in track is, said apart from a track."""
+    text = track_text(track)
+    return tr("subtitles.reference.file_of", track=text) if is_paired(track) else text
 
 
 # A stretch under this is the rounding of a frame rate, not a change worth saying.

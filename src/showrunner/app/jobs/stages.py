@@ -18,6 +18,7 @@ from showrunner.app.jobs.results import ResultStore
 from showrunner.app.profiles.profile import Profile
 from showrunner.app.rules import RULES
 from showrunner.app.storage.paths import results_dir
+from showrunner.core.cue import read_cues, write_cues
 from showrunner.core.language import Language
 from showrunner.core.media import MediaItem
 from showrunner.stages.metadata import MetadataPlan, MetadataRefused, apply_metadata, plan_metadata
@@ -165,6 +166,8 @@ def subtitle_phases(plan: SubtitlePlan) -> tuple[str, ...]:
     held = {step.kind.value for finished in plan.finished for step in finished.steps}
     if plan.reference is not None and plan.reference.step is not None:
         held.add(reference_phase(plan.reference.step))
+    if plan.reference is not None and plan.reference.sync is not None:
+        held.add(StepKind.SYNC.value)
     if plan.waits:
         held.add(APPROVAL)
     if plan.written:
@@ -428,6 +431,8 @@ class SubtitlesStage:
         steps_in: Counter[str] = Counter(step.kind.value for finished in work.finished for step in finished.steps)
         if work.reference is not None and work.reference.step is not None:
             steps_in[reference_phase(work.reference.step)] += 1
+        if work.reference is not None and work.reference.sync is not None:
+            steps_in[StepKind.SYNC.value] += 1
         steps_in["beside"] = int(bool(work.written))
         count = {"reused": 0}
         done_in: Counter[str] = Counter()
@@ -467,6 +472,22 @@ class SubtitlesStage:
             given = StepWork(step, work.video, None, None, track.language if track else None, track, reference)
             if failed := run(given, [work.video], reference_phase(step)):
                 return StepResult(False, failed)
+        elif work.reference is not None and (paired := work.reference.paired) is not None:
+            reference = store.reference(work)
+            # Stamped with the file, so a reference changed on disk is read again and the work against it runs again.
+            # A file that cannot be read fails the step with its own error, as a step's engine does.
+            if not store.kept(reference, [paired.path]):
+                cues = read_cues(paired.path, language)
+                reference.parent.mkdir(parents=True, exist_ok=True)
+                write_cues(reference, cues, language=language)
+                store.keep(reference, [paired.path])
+            if (sync := work.reference.sync) is not None:
+                # Synced to the audio (no reference given), kept apart by the sync's engine and settings.
+                synced = store.reference(work, repr(sync))
+                given = StepWork(sync, work.video, reference, None, language, None, synced)
+                if failed := run(given, [work.video, reference], StepKind.SYNC.value):
+                    return StepResult(False, failed)
+                reference = synced
         settled: set[int] = set()
         for number, finished in enumerate(work.finished):
             # Its original is in the Recycle Bin, so the steps made of it cannot run again; the checked copy is the

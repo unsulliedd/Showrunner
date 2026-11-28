@@ -44,8 +44,7 @@ class ResultStore:
         )
         steps = finished.steps[: index + 1]
         # The reference matters to the steps that work against it, so another reference makes another result.
-        reference = plan.reference.track.id if plan.reference and plan.reference.track else None
-        return self.root / _digest(made_of) / f"{_digest((repr(steps), reference))}.{finished.format}"
+        return self.root / _digest(made_of) / f"{_digest((repr(steps), _reference_key(plan)))}.{finished.format}"
 
     def final(self, plan: SubtitlePlan, finished: FinishedSubtitle) -> Path:
         """The result that goes into the new file: the last step's."""
@@ -69,8 +68,7 @@ class ResultStore:
     def reference(self, plan: SubtitlePlan, rules: str = "") -> Path:
         """Where the file's reference is kept once read, as text. `rules` is the fingerprint of the rules the reading
         applies (the OCR fixes), so a changed rule reads it again."""
-        track = plan.reference.track if plan.reference else None
-        return self.root / _digest((str(plan.video), track.id if track else None, rules)) / "reference.srt"
+        return self.root / _digest((str(plan.video), _reference_key(plan), rules)) / "reference.srt"
 
     def kept(self, output: Path, inputs: Sequence[Path]) -> bool:
         """Whether `output` is there and was made from `inputs` as they are now."""
@@ -101,6 +99,15 @@ class ResultStore:
                     shutil.rmtree(folder)
             except OSError:
                 continue  # in use or gone; tried again next time
+
+
+def _reference_key(plan: SubtitlePlan) -> object:
+    """What the reference is: a paired file by its path, since its place among the paired files can shift; a track by
+    its number in the video; None for the audio."""
+    reference = plan.reference
+    if reference is None or reference.track is None:
+        return None
+    return str(reference.paired.path) if reference.paired is not None else reference.track.id
 
 
 def _stamps(inputs: Sequence[Path]) -> list[dict[str, object]]:

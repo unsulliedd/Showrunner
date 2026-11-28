@@ -28,7 +28,16 @@ from showrunner.stages.subtitles import (
 )
 from showrunner.stages.subtitles import plan_subtitles as _plan
 from showrunner.stages.subtitles.plan import glossary
-from showrunner.stages.tracks import KindTest, PairedFile, TrackMatch, TrackRule, TracksOptions, Verdict
+from showrunner.stages.tracks import (
+    FlagTest,
+    KindTest,
+    PairedFile,
+    SourceTest,
+    TrackMatch,
+    TrackRule,
+    TracksOptions,
+    Verdict,
+)
 from showrunner.tools.cleanit import RuleDef, RuleSet
 
 TURKISH = SubtitleFile(Path("Show Name - S01E01.tr.srt"), Language("tur"))
@@ -453,3 +462,75 @@ def test_a_translation_keeps_the_title_and_the_place_s_kept_names(b: SimpleNames
 def test_a_movie_keeps_its_own_title(b: SimpleNamespace) -> None:
     item = replace(episode(b, b.subtitle(2)), identity=Movie("Movie Name", 2020))
     assert glossary(item, SubtitlesOptions()) == ("Movie Name",)
+
+
+ENGLISH = SubtitleFile(Path("Show Name - S01E01.en.srt"), Language("eng"))
+GERMAN_WANTED = SubtitlesOptions(languages={"de": Wanted.WANTED})
+
+
+def test_automatic_takes_a_text_track_then_a_paired_file_then_a_picture(b: SimpleNamespace) -> None:
+    text, picture = b.subtitle(2), pgs(3)
+    reference = plan_subtitles(episode(b, text, picture, paired=(ENGLISH,)), GERMAN_WANTED, TracksOptions()).reference
+    assert (reference.track, reference.paired) == (text, None)
+    # A video with only a picture track works against the English file beside it, with no OCR.
+    reference = plan_subtitles(episode(b, picture, paired=(TURKISH, ENGLISH)), GERMAN_WANTED, TracksOptions()).reference
+    assert reference.paired == ENGLISH
+    assert reference.track.language == ENGLISH.language
+    assert reference.step is None
+    # An English file comes before a text track in another language.
+    spanish = b.subtitle(2, language="spa")
+    reference = plan_subtitles(episode(b, spanish, paired=(ENGLISH,)), GERMAN_WANTED, TracksOptions()).reference
+    assert reference.paired == ENGLISH
+
+
+def test_a_paired_file_in_another_language_is_never_automatic_s(b: SimpleNamespace) -> None:
+    spanish_pgs = pgs(3, "spa")
+    reference = plan_subtitles(episode(b, spanish_pgs), GERMAN_WANTED, TracksOptions()).reference
+    assert (reference.track, reference.paired) == (spanish_pgs, None)
+    assert plan_subtitles(episode(b), GERMAN_WANTED, TracksOptions()).cannot[0].cannot == (Cannot.NO_REFERENCE,)
+
+
+def test_a_file_the_app_wrote_is_never_the_reference(b: SimpleNamespace) -> None:
+    written = (
+        SubtitleFile(Path("Show Name - S01E01_cleaned.en.srt"), Language("eng")),
+        SubtitleFile(Path("Show Name - S01E01_ai.en.srt"), Language("eng")),
+    )
+    picture = pgs(3)
+    reference = plan_subtitles(episode(b, picture, paired=written), GERMAN_WANTED, TracksOptions()).reference
+    assert (reference.track, reference.paired) == (picture, None)
+    chosen = Reference(ReferenceKind.TRACK, TrackMatch(kind=KindTest.SUBTITLE, source=SourceTest.PAIRED))
+    options = replace(GERMAN_WANTED, reference=chosen)
+    assert plan_subtitles(episode(b, picture, paired=written), options, TracksOptions()).reference.fallback
+
+
+def test_a_chosen_paired_file_is_matched_in_every_episode_by_what_it_is(b: SimpleNamespace) -> None:
+    sdh = TrackMatch(kind=KindTest.SUBTITLE, languages=["en"], hearing_impaired=FlagTest.SET, source=SourceTest.PAIRED)
+    options = replace(GERMAN_WANTED, reference=Reference(ReferenceKind.TRACK, sdh))
+    text = b.subtitle(2)
+    for number in (1, 2):
+        paired = SubtitleFile(Path(f"Show Name - S01E0{number}.en.sdh.srt"), Language("eng"), sdh=True)
+        reference = plan_subtitles(episode(b, text, paired=(ENGLISH, paired)), options, TracksOptions()).reference
+        assert (reference.paired, reference.fallback) == (paired, False)
+    # An episode with only the plain file falls back to Automatic, which takes the text track.
+    reference = plan_subtitles(episode(b, text, paired=(ENGLISH,)), options, TracksOptions()).reference
+    assert (reference.track, reference.paired, reference.fallback) == (text, None, True)
+
+
+def test_a_reference_file_is_synced_to_the_audio_first_and_never_re_split_onto_itself(b: SimpleNamespace) -> None:
+    options = SubtitlesOptions(cleanup=CLEAN, sync=SyncEngine.ALASS, lines=Lines.RESPLIT)
+    tracks = TracksOptions(add_paired=[PairedFile.of(TURKISH), PairedFile.of(ENGLISH)])
+    item = episode(b, pgs(3), paired=(TURKISH, ENGLISH))
+    plan = plan_subtitles(item, options, tracks, syncs={SyncEngine.ALASS: True})
+    assert plan.reference.paired == ENGLISH
+    assert plan.reference.sync == Step(StepKind.SYNC, engine=SyncEngine.ALASS, settings=options.engine_settings())
+    steps = {finished.paired: [step.kind for step in finished.steps] for finished in plan.finished}
+    # Its own sync moves it onto the synced reference; other files are re-split onto it.
+    assert steps == {
+        TURKISH: [StepKind.CLEAN, StepKind.SYNC, StepKind.RESPLIT],
+        ENGLISH: [StepKind.CLEAN, StepKind.SYNC],
+    }
+    # An engine that cannot work against the audio leaves the reference file in its own time, never read by OCR.
+    plan = plan_subtitles(item, options, tracks, syncs={SyncEngine.ALASS: False})
+    assert (plan.reference.paired, plan.reference.sync) == (ENGLISH, None)
+    steps = {finished.paired: [step.kind for step in finished.steps] for finished in plan.finished}
+    assert steps[ENGLISH] == [StepKind.CLEAN]

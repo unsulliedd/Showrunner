@@ -111,15 +111,19 @@ _AI_KINDS = (StepKind.TRANSLATE, StepKind.RESPLIT)
 class ReferenceTrack:
     """What a file's sync, re-split and translation work against."""
 
-    track: Track | None  # None: the audio
+    track: Track | None  # None: the audio; for a paired file, the track it stands in as
     # The place chose a group this file has no track of, so Automatic found this one; the Reference row and Review name
     # such files.
     fallback: bool = False
+    paired: SubtitleFile | None = None  # a text subtitle file beside the video, read as it lies
+    # For a paired file where the place syncs: the sync that moves it onto the audio before anything works against it.
+    sync: Step | None = None
 
     @property
     def step(self) -> Step | None:
-        """How the reference is read before the work that needs it; none for the audio."""
-        if self.track is None:
+        """How the reference is read out of the video before the work that needs it; none for the audio, and none for
+        a paired file, which needs no program to read."""
+        if self.track is None or self.paired is not None:
             return None
         return Step(StepKind.OCR if self.track.codec == PGS else StepKind.READ)
 
@@ -312,6 +316,10 @@ def plan_subtitles(
     # Compared without case, as Windows names files.
     scanned = {str(subtitle.path).casefold() for subtitle in item.subtitles}
     taken = set(scanned)
+    if reference is not None and reference.paired is not None:
+        if sync and StepKind.SYNC in available and (syncs is None or syncs.get(options.sync, False)):
+            reference = replace(reference, sync=sync[0])
+        found = [left for f in found if (left := _not_against_itself(f, reference)) is not None]
     for finished in found:
         reasons = _reasons(finished, reference)
         if beside:
@@ -361,6 +369,17 @@ def _covering(
 def _clean(chosen: tuple[str, ...], rule_sets: Mapping[str, RuleSet], language: Language | None) -> tuple[Step, ...]:
     names, rules = _covering(chosen, rule_sets, language)
     return (Step(StepKind.CLEAN, names, rules),) if names else ()
+
+
+def _not_against_itself(finished: FinishedSubtitle, reference: ReferenceTrack) -> FinishedSubtitle | None:
+    """The reference file is never re-split onto itself. Its sync moves it onto the reference synced to the audio; where
+    the engine cannot work against the audio there is none, and it is left in its own time. None where nothing is
+    left."""
+    if finished.paired is None or reference.paired is None or finished.paired.path != reference.paired.path:
+        return finished
+    dropped = (StepKind.RESPLIT,) if reference.sync is not None else (StepKind.SYNC, StepKind.RESPLIT)
+    steps = tuple(step for step in finished.steps if step.kind not in dropped)
+    return replace(finished, steps=steps) if steps else None
 
 
 def _target(finished: FinishedSubtitle, video: Path, options: SubtitlesOptions) -> Path:
@@ -449,23 +468,52 @@ def choose_reference(
     prefer: str = DEFAULT_REFERENCE_LANGUAGE,
     flags_from_names: bool = True,
 ) -> ReferenceTrack:
-    """The track a file's sync, re-split and translation work against: the place's choice where the file has a track of
-    that group, else Automatic's, which is a track in the `prefer` language first, a text track before a picture one.
-    The flags a track's name implies count as set when `flags_from_names`, as in the groups of the Tracks tab."""
+    """What a file's sync, re-split and translation work against: the place's choice where the file has a track or
+    paired file of that group, else Automatic's. Automatic takes a text track in the `prefer` language, then a paired
+    text file in it, then a picture track in it; then any text track, then any picture track. A paired file in another
+    language is never Automatic's. The flags a track's name implies count as set when `flags_from_names`, as in the
+    groups of the Tracks tab."""
     chosen = options.reference
     if chosen.kind is ReferenceKind.AUDIO:
         return ReferenceTrack(None)
     # A translation an earlier run made is never translated from again.
     subtitles = [t for t in item.file.subtitle_tracks if not is_ai_track(t, options)]
-    chosen_track = next((t for t in subtitles if matches(chosen.track, t, flags_from_name=flags_from_names)), None)
-    if chosen.kind is ReferenceKind.TRACK and chosen_track is not None:
-        return ReferenceTrack(chosen_track)
+    files = reference_files(item, options)
+    # A stand-in's id is negative, so it never meets an embedded track's.
+    by_id = {track.id: paired for paired, track in files}
+    stand_ins = [track for _, track in files]
+
+    def found(track: Track | None, fallback: bool = False) -> ReferenceTrack:
+        return ReferenceTrack(track, fallback, by_id.get(track.id) if track is not None else None)
+
+    if chosen.kind is ReferenceKind.TRACK and (
+        chosen_track := next(
+            (t for t in (*subtitles, *stand_ins) if matches(chosen.track, t, flags_from_name=flags_from_names)), None
+        )
+    ):
+        return found(chosen_track)
     preferred = TrackMatch(kind=KindTest.SUBTITLE, languages=[prefer])
+
+    def fits(track: Track) -> bool:
+        return matches(preferred, track, flags_from_name=flags_from_names)
+
     picture = [t for t in subtitles if t.codec == PGS]
     text = [t for t in subtitles if _text(t)]
-    in_language = [t for t in (*text, *picture) if matches(preferred, t, flags_from_name=flags_from_names)]
+    in_language = [t for t in (*text, *stand_ins, *picture) if fits(t)]
     track = next(iter((*in_language, *text, *picture)), None)
-    return ReferenceTrack(track, fallback=chosen.kind is ReferenceKind.TRACK)
+    return found(track, fallback=chosen.kind is ReferenceKind.TRACK)
+
+
+def reference_files(item: MediaItem, options: SubtitlesOptions) -> list[tuple[SubtitleFile, Track]]:
+    """The paired files that can be the reference, each with the track it stands in as: the text files beside the
+    video, but for one the app wrote (named with the new-file or AI text)."""
+    return [
+        (paired, stand_in(paired, index))
+        for index, paired in enumerate(item.subtitles)
+        if paired.path.suffix.casefold() in FORMATS
+        and not is_result(paired.path.name, options.new_file_text)
+        and not is_result(paired.path.name, options.ai_file_text)
+    ]
 
 
 def is_ai_track(track: Track, options: SubtitlesOptions) -> bool:

@@ -41,6 +41,7 @@ from showrunner.stages.subtitles import (
     Translate,
     Wanted,
     choose_reference,
+    reference_files,
 )
 from showrunner.tools.cleanit import RuleBook, RuleSet
 from showrunner.tools.sync import ENGINES, IN_SYNC_BELOW, UNSURE_BELOW, Setting, SettingKind
@@ -50,6 +51,7 @@ from showrunner.ui.quick.review import (
     NEEDS,
     ai_model,
     backend_name,
+    group_text,
     kept_sync,
     kept_translation,
     left_as_it_was,
@@ -57,7 +59,6 @@ from showrunner.ui.quick.review import (
     reference_text,
     set_label,
     sync_found,
-    track_text,
     translation_found,
     written_earlier,
 )
@@ -428,11 +429,13 @@ class SubtitleSettings(QObject):
         """The groups of subtitle tracks the batch's videos hold, in the order first seen: the signature the Tracks
         tab tells them apart by, a track of it, and how many files have one."""
         items = self._workspace.items
+        options = self._options()
         grouping = TrackGroups.of(items, self._flags_from_names())
         first: dict[TrackSignature, Track] = {}
         files: Counter[TrackSignature] = Counter()
         for item in items:
-            seen = {grouping.signature(track): track for track in item.file.subtitle_tracks}
+            paired = (track for _, track in reference_files(item, options))
+            seen = {grouping.signature(track): track for track in (*item.file.subtitle_tracks, *paired)}
             files.update(seen.keys())
             for signature, track in seen.items():
                 first.setdefault(signature, track)
@@ -451,7 +454,7 @@ class SubtitleSettings(QObject):
             None,
         )
         if value.kind is ReferenceKind.TRACK:
-            text = track_text(chosen) if chosen is not None else tr("subtitles.reference.track")
+            text = group_text(chosen) if chosen is not None else tr("subtitles.reference.track")
         else:
             text = tr(f"subtitles.reference.{value.kind.name.lower()}")
         pick = [{"key": _AUTOMATIC, "text": tr("subtitles.reference.automatic"), "enabled": True}]
@@ -459,7 +462,7 @@ class SubtitleSettings(QObject):
             {
                 "key": str(index),
                 "text": tr(
-                    "subtitles.reference.group", track=track_text(track), files=tr_plural("cleanup.files", count)
+                    "subtitles.reference.group", track=group_text(track), files=tr_plural("cleanup.files", count)
                 ),
                 "enabled": True,
             }
@@ -489,7 +492,7 @@ class SubtitleSettings(QObject):
         """The files the chosen group is missing in, each with the track Automatic used instead."""
         if not lacking:
             return ""
-        wanted = track_text(chosen) if chosen is not None else tr("subtitles.reference.track")
+        wanted = group_text(chosen) if chosen is not None else tr("subtitles.reference.track")
         if len(lacking) > _FALLBACKS_NAMED:
             return tr_plural("subtitles.reference.fallback_many", len(lacking), track=wanted)
         return f" {tr('status.separator')} ".join(

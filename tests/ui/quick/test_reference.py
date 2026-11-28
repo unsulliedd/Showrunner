@@ -42,11 +42,13 @@ def test_the_row_offers_the_groups_of_the_batch_and_says_what_automatic_found(
 ) -> None:
     open_season(controller, library, qtbot)
     row = reference_row(controller)
-    assert [p["key"] for p in row["pick"]] == ["automatic", "0", "1", "2", "audio"]
-    assert [p["text"] for p in row["pick"][1:4]] == [
+    assert [p["key"] for p in row["pick"]] == ["automatic", "0", "1", "2", "3", "audio"]
+    # The text files beside the videos are offered too, said apart from the tracks.
+    assert [p["text"] for p in row["pick"][1:5]] == [
         "English SubRip (SDH) · 10 files",
         "English SubRip · 10 files",
         "Turkish SubRip (Forced) · 9 files",
+        "Turkish SubRip file beside the video · 10 files",
     ]
     assert (row["text"], row["fallbacks"]) == ("Automatic", "")
     # English text tracks come first, and the SDH one is the first of them in every file.
@@ -70,6 +72,17 @@ def test_a_chosen_group_a_file_lacks_falls_back_and_the_row_names_the_file(
     assert (reference_row(controller)["text"], reference_row(controller)["fallbacks"]) == ("The audio", "")
     controller.pick_reference("automatic")
     assert reference_row(controller)["text"] == "Automatic"
+
+
+def test_a_chosen_paired_file_group_is_the_reference_in_every_file_that_has_one(
+    controller: WindowController, library: Any, qtbot: QtBot
+) -> None:
+    open_season(controller, library, qtbot)
+    controller.pick_reference("3")
+    settle(controller, qtbot)
+    row = reference_row(controller)
+    assert row["text"] == "Turkish SubRip file beside the video"
+    assert (row["found"], row["fallbacks"]) == ("Turkish SubRip file beside the video in 10 files", "")
 
 
 def test_a_file_that_works_against_the_reference_names_it(

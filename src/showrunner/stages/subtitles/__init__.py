@@ -25,6 +25,7 @@ from showrunner.stages.subtitles.plan import (
     SubtitlePlan,
     choose_reference,
     plan_subtitles,
+    reference_files,
     track_format,
 )
 
@@ -51,5 +52,6 @@ __all__ = [
     "Wanted",
     "choose_reference",
     "plan_subtitles",
+    "reference_files",
     "track_format",
 ]

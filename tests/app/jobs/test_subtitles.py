@@ -85,8 +85,8 @@ class Engines:
         if kind is StepKind.CLEAN:
             cues = [replace(cue, text=cue.text.upper()) for cue in cues]
         else:
-            assert work.reference is not None
-            assert work.reference.exists()
+            # No reference: the sync is against the audio.
+            assert work.reference is None or work.reference.exists()
             cues = [replace(cue, start=cue.start + 1, end=cue.end + 1) for cue in cues]
         write_cues(work.output, cues)
 
@@ -490,3 +490,42 @@ def test_the_progress_of_a_file_never_goes_back_across_its_subtitles(setup) -> N
     stage.apply(plan, None, seen.append)
     assert seen == sorted(seen)
     assert seen[-1] == pytest.approx(1.0)
+
+
+def test_a_paired_file_reference_is_read_as_it_lies_synced_to_the_audio_and_read_again_once_it_changes(
+    setup, tmp_path: Path
+) -> None:
+    item, profile, engines, results = setup
+    english = tmp_path / "Show Name - S01E01.en.srt"
+    english.write_text("1\n00:00:01,000 --> 00:00:02,000\nhello\n", encoding="utf-8")
+    picture = Track(2, TrackKind.SUBTITLE, "S_HDMV/PGS", Language("eng"), subtitle=SubtitleProperties(False))
+    item = replace(
+        item,
+        file=replace(item.file, tracks=(*TRACKS[:2], picture)),
+        subtitles=(*item.subtitles, SubtitleFile(english, Language("eng"))),
+    )
+    stage = SubtitlesStage(results, dict.fromkeys(ENGINES, engines), CLEANUP)
+    plan = stage.plan(item, profile)
+    work = plan.plan
+    assert isinstance(work, SubtitlePlan)
+    assert work.reference is not None
+    assert work.reference.paired == item.subtitles[1]
+    # Nothing is taken out of the video or read by OCR.
+    assert subtitle_phases(work) == ("clean", "sync")
+    assert stage.apply(plan, None).ok
+    # The reference is the file moved onto the audio; the Turkish file is synced to it.
+    synced = results.reference(work, repr(work.reference.sync))
+    assert read_cues(synced) == [Cue(2.0, 3.0, "hello")]
+    assert engines.ran == {StepKind.CLEAN: 1, StepKind.SYNC: 2}
+    assert stage.apply(plan, None).ok
+    assert engines.ran == {StepKind.CLEAN: 1, StepKind.SYNC: 2}
+    # The file changed on disk, so the reference is read and synced again and the work stamped with it runs again.
+    english.write_text("1\n00:00:03,000 --> 00:00:04,000\nhello again\n", encoding="utf-8")
+    assert stage.apply(plan, None).ok
+    assert read_cues(synced) == [Cue(4.0, 5.0, "hello again")]
+    assert engines.ran == {StepKind.CLEAN: 2, StepKind.SYNC: 4}
+    # Other sync settings sync the reference again, into a result of their own.
+    alass = SubtitlesStage(results, dict.fromkeys(ENGINES, engines), CLEANUP)
+    other = alass.plan(item, profile.with_options("subtitles", replace(WORK, sync=SyncEngine.ALASS)))
+    assert isinstance(other.plan, SubtitlePlan)
+    assert results.reference(other.plan, repr(other.plan.reference.sync)) != synced
