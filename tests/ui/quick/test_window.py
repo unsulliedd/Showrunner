@@ -171,6 +171,14 @@ def test_the_height_of_the_tracks_box_is_kept_in_the_settings(controller: Window
     assert load_settings().value.panel_sizes == {}  # a setting of its own, not a panel's saved state
 
 
+def test_the_height_of_the_subtitle_settings_is_kept_in_the_settings(controller: WindowController) -> None:
+    assert controller.subtitles_rows_height() == 0
+    controller.save_subtitles_rows_height(240)
+    assert controller.subtitles_rows_height() == 240
+    assert load_settings().value.subtitles_rows_height == 240
+    assert load_settings().value.overview_tracks_height == 0  # apart from the tracks box's height
+
+
 def test_only_local_urls_are_read(tmp_path: Path) -> None:
     file = tmp_path / "x.mkv"
     urls = [

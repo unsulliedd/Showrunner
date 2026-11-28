@@ -14,362 +14,428 @@ Item {
     readonly property var rows: view.rows ?? []
     readonly property var files: view.files ?? []
 
+    // The height the user gave the settings box with the separator, 0 until then: the box then fits its rows.
+    property int chosenHeight: app.subtitles_rows_height()
+    // The most the box may take: what the rest of the place needs stays, so the file list never shrinks to nothing.
+    readonly property int maxBox: Math.max(
+        Theme.tracks_min_height,
+        column.height - headings.height - split.height - 3 * column.spacing - Theme.rows_min_height)
+    readonly property int boxHeight: clampBox(chosenHeight > 0 ? chosenHeight : box.implicitHeight)
+
+    function clampBox(height) {
+        return Math.max(Theme.tracks_min_height, Math.min(height, maxBox))
+    }
+
     ColumnLayout {
+        id: column
+
         anchors.fill: parent
         anchors.margins: Theme.space_lg
         spacing: Theme.space_lg
 
         Rectangle {
+            id: box
+
             objectName: "subtitlesBox"
             Layout.fillWidth: true
+            Layout.preferredHeight: place.boxHeight
+            Layout.minimumHeight: Theme.tracks_min_height
             implicitHeight: rows.implicitHeight + 2 * Theme.space_lg
             radius: Theme.radius_lg
             color: Theme.panel
             border.width: Theme.stroke
             border.color: Theme.line
 
-            ColumnLayout {
-                id: rows
+            // Past the height the separator gives the box, its rows scroll, so the file list below keeps its room.
+            ScrollPane {
+                id: rowScroll
 
+                objectName: "subtitleRows"
                 anchors.fill: parent
                 anchors.margins: Theme.space_lg
-                spacing: Theme.space_md
+                contentWidth: availableWidth
+                clip: true
 
-                UiText {
-                    Layout.fillWidth: true
-                    text: place.view.title ?? ""
-                    font.weight: Font.DemiBold
-                }
+                ColumnLayout {
+                    id: rows
 
-                UiText {
-                    Layout.fillWidth: true
-                    text: Strings.t("subtitles.box.lead")
-                    color: Theme.muted
-                    font.pixelSize: Theme.text_sm
-                    wrapMode: Text.WordWrap
-                }
+                    width: rowScroll.availableWidth
+                    spacing: Theme.space_md
 
-                // Counts, not the rows: a new view then updates the delegates in place, so a segment keeps the
-                // keyboard and an open row menu keeps its row.
-                Repeater {
-                    model: place.rows.length
-
-                    delegate: ColumnLayout {
-                        id: row
-
-                        required property int index
-                        readonly property var modelData: place.rows[index]
-
-                        objectName: "subtitleRow_" + modelData.key
+                    UiText {
                         Layout.fillWidth: true
-                        spacing: Theme.space_xs
+                        text: place.view.title ?? ""
+                        font.weight: Font.DemiBold
+                    }
 
-                        RowLayout {
+                    UiText {
+                        Layout.fillWidth: true
+                        text: Strings.t("subtitles.box.lead")
+                        color: Theme.muted
+                        font.pixelSize: Theme.text_sm
+                        wrapMode: Text.WordWrap
+                    }
+
+                    // Counts, not the rows: a new view then updates the delegates in place, so a segment keeps the
+                    // keyboard and an open row menu keeps its row.
+                    Repeater {
+                        model: place.rows.length
+
+                        delegate: ColumnLayout {
+                            id: row
+
+                            required property int index
+                            readonly property var modelData: place.rows[index]
+
+                            objectName: "subtitleRow_" + modelData.key
                             Layout.fillWidth: true
-                            Layout.minimumHeight: Theme.row_lg
-                            spacing: Theme.space_md
+                            spacing: Theme.space_xs
+
+                            // One grid for every row: the label, the control and the mark each keep a column of a fixed
+                            // width, all at the top, so a row that wraps onto more lines keeps its label by its first
+                            // line.
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.minimumHeight: Theme.row_lg
+                                spacing: Theme.space_md
+
+                                UiText {
+                                    Layout.preferredWidth: Theme.matrix_label
+                                    Layout.preferredHeight: Theme.row_lg
+                                    Layout.alignment: Qt.AlignTop
+                                    verticalAlignment: Text.AlignVCenter
+                                    text: row.modelData.label
+                                    color: Theme.muted
+                                    font.pixelSize: Theme.text_sm
+                                }
+
+                                Segmented {
+                                    Layout.alignment: Qt.AlignTop
+                                    visible: row.modelData.choices !== undefined
+                                    model: row.modelData.choices ?? []
+                                    current: row.modelData.value ?? ""
+                                    name: row.modelData.label
+                                    onPicked: key => app.set_subtitle_choice(row.modelData.key, key)
+                                }
+
+                                Flow {
+                                    visible: row.modelData.items !== undefined
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignTop
+                                    spacing: Theme.space_sm
+
+                                    Repeater {
+                                        model: row.modelData.items ?? []
+
+                                        delegate: Row {
+                                            id: item
+
+                                            required property var modelData
+
+                                            spacing: Theme.space_xs
+
+                                            CodeBadge {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                code: item.modelData.label
+                                                look: item.modelData.off ? "dropped" : "kept"
+                                                Accessible.name: item.modelData.name
+                                            }
+
+                                            UiText {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                visible: row.modelData.key === "cleanup"
+                                                text: item.modelData.name
+                                                color: item.modelData.own ? Theme.ink : Theme.muted
+                                                font.pixelSize: Theme.text_sm
+                                                font.strikeout: item.modelData.off
+                                            }
+
+                                            UiText {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                visible: row.modelData.key === "cleanup" && !item.modelData.missing
+                                                text: item.modelData.languages ?? ""
+                                                color: Theme.muted
+                                                font.pixelSize: Theme.text_sm
+                                            }
+
+                                            UiText {
+                                                objectName: "cleanupMissing"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                visible: item.modelData.missing === true
+                                                text: Strings.t("cleanup.missing")
+                                                color: Theme.change
+                                                font.pixelSize: Theme.text_sm
+                                            }
+
+                                            IconButton {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                implicitWidth: Theme.row_sm
+                                                implicitHeight: Theme.row_sm
+                                                iconName: row.modelData.key === "cleanup" ? (item.modelData.off ? "play" : "pause") : (item.modelData.off ? "plus" : "x")
+                                                active: item.modelData.off
+                                                label: item.modelData.off ? Strings.t("subtitles.item.back") : Strings.t("subtitles.item.off")
+                                                enabled: !app.locked
+                                                onClicked: app.toggle_subtitle_item(row.modelData.key, item.modelData.key)
+                                            }
+
+                                            PlaceMark {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                choice: item.modelData.mark
+                                                color: choice.over ? Theme.control : Theme.muted
+                                                font.pixelSize: Theme.text_sm
+                                            }
+                                        }
+                                    }
+
+                                    ActionButton {
+                                        visible: row.modelData.key === "wanted"
+                                        kind: "ghost"
+                                        size: Theme.row_sm
+                                        iconName: "plus"
+                                        text: Strings.t("subtitles.wanted.add")
+                                        enabled: !app.locked
+                                        onClicked: app.pick_wanted_language()
+                                    }
+
+                                    ActionButton {
+                                        id: addSet
+
+                                        objectName: "cleanupAdd"
+                                        visible: row.modelData.key === "cleanup"
+                                        kind: "ghost"
+                                        size: Theme.row_sm
+                                        iconName: "plus"
+                                        text: Strings.t("cleanup.add")
+                                        enabled: !app.locked && (row.modelData.add ?? []).length > 0
+                                        onClicked: addMenu.popup(addSet, 0, addSet.height)
+                                    }
+
+                                    ActionMenu {
+                                        id: addMenu
+
+                                        actions: row.modelData.add ?? []
+                                        onPicked: key => Qt.callLater(() => app.add_rule_set(key))
+                                    }
+
+                                    ActionButton {
+                                        objectName: "cleanupEdit"
+                                        visible: row.modelData.key === "cleanup"
+                                        kind: "ghost"
+                                        size: Theme.row_sm
+                                        iconName: "edit"
+                                        text: Strings.t("cleanup.edit")
+                                        onClicked: app.edit_rule_sets("")
+                                    }
+
+                                    UiText {
+                                        objectName: "cleanupCount"
+                                        visible: row.modelData.key === "cleanup" && (row.modelData.count ?? "") !== ""
+                                        text: row.modelData.count ?? ""
+                                        color: Theme.muted
+                                        font.pixelSize: Theme.text_sm
+                                    }
+
+                                    UiText {
+                                        visible: (row.modelData.items ?? []).length === 0 && row.modelData.key !== "wanted"
+                                        text: row.modelData.empty ?? ""
+                                        color: Theme.muted
+                                        font.pixelSize: Theme.text_sm
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    visible: row.modelData.text !== undefined
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignTop
+                                    spacing: 0
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Layout.minimumHeight: Theme.row_lg
+                                        spacing: Theme.space_sm
+
+                                        UiText {
+                                            objectName: "subtitleValue_" + row.modelData.key
+                                            Layout.fillWidth: true
+                                            text: row.modelData.text ?? ""
+                                            color: row.modelData.received ? Theme.muted : Theme.ink
+                                            font.pixelSize: Theme.text_sm
+                                            elide: Text.ElideRight
+                                        }
+
+                                        ActionButton {
+                                            id: pickValue
+
+                                            objectName: row.modelData.key + "Pick"
+                                            visible: row.modelData.pick !== undefined
+                                            kind: "ghost"
+                                            size: Theme.row_sm
+                                            iconName: "down"
+                                            text: Strings.t("subtitles.reference.pick")
+                                            enabled: !app.locked
+                                            onClicked: valueMenu.popup(pickValue, 0, pickValue.height)
+                                        }
+
+                                        ActionMenu {
+                                            id: valueMenu
+
+                                            actions: row.modelData.pick ?? []
+                                            onPicked: key => Qt.callLater(() => row.modelData.key === "model" ? app.pick_model(key) : app.pick_reference(key))
+                                        }
+                                    }
+
+                                    // What each file works against.
+                                    UiText {
+                                        objectName: "referenceFound"
+                                        Layout.fillWidth: true
+                                        visible: (row.modelData.found ?? "") !== ""
+                                        text: row.modelData.found ?? ""
+                                        color: Theme.muted
+                                        font.pixelSize: Theme.text_sm
+                                        wrapMode: Text.WordWrap
+                                        elide: Text.ElideNone
+                                    }
+                                }
+
+                                Item {
+                                    visible: row.modelData.choices !== undefined
+                                    Layout.fillWidth: true
+                                }
+
+                                // Always in the layout, empty or not: a hidden mark would give its column to the
+                                // control and the rows would no longer line up.
+                                PlaceMark {
+                                    Layout.preferredWidth: Theme.track_mark_width
+                                    Layout.preferredHeight: Theme.row_lg
+                                    Layout.alignment: Qt.AlignTop
+                                    visible: true
+                                    horizontalAlignment: Text.AlignRight
+                                    verticalAlignment: Text.AlignVCenter
+                                    choice: app.field_marks["subtitles." + row.modelData.key] || ({})
+                                    color: choice.over ? Theme.control : Theme.muted
+                                    font.pixelSize: Theme.text_sm
+                                }
+
+                                HelpTip {
+                                    Layout.alignment: Qt.AlignTop
+                                    Layout.topMargin: (Theme.row_lg - Theme.help_chip) / 2
+                                    topic: row.modelData.help
+                                }
+
+                                IconButton {
+                                    id: more
+
+                                    objectName: "subtitleMenu_" + row.modelData.key
+                                    Layout.alignment: Qt.AlignTop
+                                    Layout.topMargin: (Theme.row_lg - Theme.row_sm) / 2
+                                    visible: (place.view.follow ?? "") !== ""
+                                    implicitWidth: Theme.row_sm
+                                    implicitHeight: Theme.row_sm
+                                    iconName: "down"
+                                    label: row.modelData.label
+                                    enabled: !app.locked
+                                    onClicked: menu.popup(more, 0, more.height)
+                                }
+
+                                ActionMenu {
+                                    id: menu
+
+                                    actions: [
+                                        {"key": "follow", "text": place.view.follow ?? "", "enabled": row.modelData.own},
+                                        {"key": "as_it_is", "text": Strings.t("subtitles.menu.as_it_is"), "enabled": true}
+                                    ]
+                                    onPicked: key => Qt.callLater(() => key === "follow" ? app.follow_subtitles(row.modelData.key) : app.subtitles_as_it_is(row.modelData.key))
+                                }
+                            }
+
+                            // The files the chosen reference is missing in, and the row's work left out where no engine
+                            // can do it: each on a line of its own under the control.
+                            UiText {
+                                objectName: "referenceFallbacks"
+                                Layout.fillWidth: true
+                                Layout.leftMargin: Theme.matrix_label + Theme.space_md
+                                visible: (row.modelData.fallbacks ?? "") !== ""
+                                text: row.modelData.fallbacks ?? ""
+                                color: Theme.change
+                                font.pixelSize: Theme.text_sm
+                                wrapMode: Text.WordWrap
+                                elide: Text.ElideNone
+                            }
 
                             UiText {
-                                Layout.preferredWidth: Theme.matrix_label
-                                text: row.modelData.label
-                                color: Theme.muted
-                                font.pixelSize: Theme.text_sm
-                            }
-
-                            Segmented {
-                                visible: row.modelData.choices !== undefined
-                                model: row.modelData.choices ?? []
-                                current: row.modelData.value ?? ""
-                                name: row.modelData.label
-                                onPicked: key => app.set_subtitle_choice(row.modelData.key, key)
-                            }
-
-                            Flow {
-                                visible: row.modelData.items !== undefined
+                                objectName: "subtitleNote_" + row.modelData.key
                                 Layout.fillWidth: true
-                                spacing: Theme.space_sm
+                                Layout.leftMargin: Theme.matrix_label + Theme.space_md
+                                visible: text !== ""
+                                text: row.modelData.note ?? ""
+                                color: Theme.change
+                                font.pixelSize: Theme.text_sm
+                                wrapMode: Text.WordWrap
+                                elide: Text.ElideNone
+                            }
 
+                            // The chosen engine's settings: the two thresholds, then its own, each marked by where its
+                            // value comes from; an empty field shows what the place receives, or the engine's default.
+                            Flow {
+                                objectName: "syncSettings"
+                                Layout.fillWidth: true
+                                Layout.leftMargin: Theme.matrix_label + Theme.space_md
+                                visible: (row.modelData.settings ?? []).length > 0
+                                spacing: Theme.space_md
+
+                                // A count, as the rows are: a new view updates the fields in place, so one keeps the
+                                // keyboard while the field before it is committed.
                                 Repeater {
-                                    model: row.modelData.items ?? []
+                                    model: (row.modelData.settings ?? []).length
 
                                     delegate: Row {
-                                        id: item
+                                        id: setting
 
-                                        required property var modelData
+                                        required property int index
+                                        readonly property var modelData: row.modelData.settings[index]
 
-                                        spacing: Theme.space_xs
-
-                                        CodeBadge {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            code: item.modelData.label
-                                            look: item.modelData.off ? "dropped" : "kept"
-                                            Accessible.name: item.modelData.name
-                                        }
+                                        spacing: Theme.space_sm
 
                                         UiText {
                                             anchors.verticalCenter: parent.verticalCenter
-                                            visible: row.modelData.key === "cleanup"
-                                            text: item.modelData.name
-                                            color: item.modelData.own ? Theme.ink : Theme.muted
+                                            text: setting.modelData.label
+                                            color: Theme.muted
                                             font.pixelSize: Theme.text_sm
-                                            font.strikeout: item.modelData.off
                                         }
 
-                                        UiText {
+                                        InputField {
+                                            objectName: "syncSetting_" + setting.modelData.key
                                             anchors.verticalCenter: parent.verticalCenter
-                                            visible: row.modelData.key === "cleanup" && !item.modelData.missing
-                                            text: item.modelData.languages ?? ""
-                                            color: Theme.faint
-                                            font.pixelSize: Theme.text_xs
-                                        }
-
-                                        UiText {
-                                            objectName: "cleanupMissing"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            visible: item.modelData.missing === true
-                                            text: Strings.t("cleanup.missing")
-                                            color: Theme.change
-                                            font.pixelSize: Theme.text_xs
-                                        }
-
-                                        IconButton {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            implicitWidth: Theme.row_sm
-                                            implicitHeight: Theme.row_sm
-                                            iconName: row.modelData.key === "cleanup" ? (item.modelData.off ? "play" : "pause") : (item.modelData.off ? "plus" : "x")
-                                            active: item.modelData.off
-                                            label: item.modelData.off ? Strings.t("subtitles.item.back") : Strings.t("subtitles.item.off")
+                                            visible: setting.modelData.choices === undefined
+                                            implicitWidth: Theme.matrix_label
+                                            mono: true
+                                            label: setting.modelData.label
+                                            placeholderText: setting.modelData.placeholder
+                                            text: setting.modelData.value
                                             enabled: !app.locked
-                                            onClicked: app.toggle_subtitle_item(row.modelData.key, item.modelData.key)
+                                            // The view decides what is taken (a number, "." or ","); the field shows
+                                            // its answer again, so a refused entry does not stay on screen.
+                                            onEditingFinished: {
+                                                app.set_sync_setting(setting.modelData.key, text)
+                                                text = Qt.binding(() => setting.modelData.value)
+                                            }
+                                        }
+
+                                        Segmented {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            visible: setting.modelData.choices !== undefined
+                                            model: setting.modelData.choices ?? []
+                                            current: setting.modelData.current ?? ""
+                                            name: setting.modelData.label
+                                            onPicked: key => app.set_sync_setting(setting.modelData.key, key)
                                         }
 
                                         PlaceMark {
                                             anchors.verticalCenter: parent.verticalCenter
-                                            choice: item.modelData.mark
+                                            choice: setting.modelData.mark
+                                            color: choice.over ? Theme.control : Theme.muted
+                                            font.pixelSize: Theme.text_sm
                                         }
-                                    }
-                                }
-
-                                ActionButton {
-                                    visible: row.modelData.key === "wanted"
-                                    kind: "ghost"
-                                    size: Theme.row_sm
-                                    iconName: "plus"
-                                    text: Strings.t("subtitles.wanted.add")
-                                    enabled: !app.locked
-                                    onClicked: app.pick_wanted_language()
-                                }
-
-                                ActionButton {
-                                    id: addSet
-
-                                    objectName: "cleanupAdd"
-                                    visible: row.modelData.key === "cleanup"
-                                    kind: "ghost"
-                                    size: Theme.row_sm
-                                    iconName: "plus"
-                                    text: Strings.t("cleanup.add")
-                                    enabled: !app.locked && (row.modelData.add ?? []).length > 0
-                                    onClicked: addMenu.popup(addSet, 0, addSet.height)
-                                }
-
-                                ActionMenu {
-                                    id: addMenu
-
-                                    actions: row.modelData.add ?? []
-                                    onPicked: key => Qt.callLater(() => app.add_rule_set(key))
-                                }
-
-                                ActionButton {
-                                    objectName: "cleanupEdit"
-                                    visible: row.modelData.key === "cleanup"
-                                    kind: "ghost"
-                                    size: Theme.row_sm
-                                    iconName: "edit"
-                                    text: Strings.t("cleanup.edit")
-                                    onClicked: app.edit_rule_sets("")
-                                }
-
-                                UiText {
-                                    objectName: "cleanupCount"
-                                    visible: row.modelData.key === "cleanup" && (row.modelData.count ?? "") !== ""
-                                    text: row.modelData.count ?? ""
-                                    color: Theme.muted
-                                    font.pixelSize: Theme.text_xs
-                                }
-
-                                UiText {
-                                    visible: (row.modelData.items ?? []).length === 0 && row.modelData.key !== "wanted"
-                                    text: row.modelData.empty ?? ""
-                                    color: Theme.faint
-                                    font.pixelSize: Theme.text_sm
-                                }
-                            }
-
-                            ColumnLayout {
-                                visible: row.modelData.text !== undefined
-                                Layout.fillWidth: true
-                                spacing: 0
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: Theme.space_sm
-
-                                    UiText {
-                                        objectName: "subtitleValue_" + row.modelData.key
-                                        Layout.fillWidth: true
-                                        text: row.modelData.text ?? ""
-                                        color: row.modelData.received ? Theme.muted : Theme.ink
-                                        font.pixelSize: Theme.text_sm
-                                        elide: Text.ElideRight
-                                    }
-
-                                    ActionButton {
-                                        id: pickValue
-
-                                        objectName: row.modelData.key + "Pick"
-                                        visible: row.modelData.pick !== undefined
-                                        kind: "ghost"
-                                        size: Theme.row_sm
-                                        iconName: "down"
-                                        text: Strings.t("subtitles.reference.pick")
-                                        enabled: !app.locked
-                                        onClicked: valueMenu.popup(pickValue, 0, pickValue.height)
-                                    }
-
-                                    ActionMenu {
-                                        id: valueMenu
-
-                                        actions: row.modelData.pick ?? []
-                                        onPicked: key => Qt.callLater(() => row.modelData.key === "model" ? app.pick_model(key) : app.pick_reference(key))
-                                    }
-                                }
-
-                                // What each file works against, and the files the chosen track is missing in.
-                                UiText {
-                                    objectName: "referenceFound"
-                                    Layout.fillWidth: true
-                                    visible: (row.modelData.found ?? "") !== ""
-                                    text: row.modelData.found ?? ""
-                                    color: Theme.faint
-                                    font.pixelSize: Theme.text_xs
-                                    elide: Text.ElideRight
-                                }
-
-                                UiText {
-                                    objectName: "referenceFallbacks"
-                                    Layout.fillWidth: true
-                                    visible: (row.modelData.fallbacks ?? "") !== ""
-                                    text: row.modelData.fallbacks ?? ""
-                                    color: Theme.change
-                                    font.pixelSize: Theme.text_xs
-                                    elide: Text.ElideRight
-                                }
-                            }
-
-                            Item {
-                                visible: row.modelData.choices !== undefined
-                                Layout.fillWidth: true
-                            }
-
-                            // The row's work is left out where no engine can do it.
-                            UiText {
-                                objectName: "subtitleNote_" + row.modelData.key
-                                visible: text !== ""
-                                text: row.modelData.note ?? ""
-                                color: Theme.change
-                                font.pixelSize: Theme.text_xs
-                                elide: Text.ElideRight
-                            }
-
-                            PlaceMark {
-                                Layout.maximumWidth: Theme.track_mark_width
-                                choice: app.field_marks["subtitles." + row.modelData.key] || ({})
-                            }
-
-                            IconButton {
-                                id: more
-
-                                objectName: "subtitleMenu_" + row.modelData.key
-                                visible: (place.view.follow ?? "") !== ""
-                                implicitWidth: Theme.row_sm
-                                implicitHeight: Theme.row_sm
-                                iconName: "down"
-                                label: row.modelData.label
-                                enabled: !app.locked
-                                onClicked: menu.popup(more, 0, more.height)
-                            }
-
-                            ActionMenu {
-                                id: menu
-
-                                actions: [
-                                    {"key": "follow", "text": place.view.follow ?? "", "enabled": row.modelData.own},
-                                    {"key": "as_it_is", "text": Strings.t("subtitles.menu.as_it_is"), "enabled": true}
-                                ]
-                                onPicked: key => Qt.callLater(() => key === "follow" ? app.follow_subtitles(row.modelData.key) : app.subtitles_as_it_is(row.modelData.key))
-                            }
-                        }
-
-                        // The chosen engine's settings: the two thresholds, then its own, each marked by where its value
-                        // comes from; an empty field shows what the place receives, or the engine's default.
-                        Flow {
-                            objectName: "syncSettings"
-                            Layout.fillWidth: true
-                            Layout.leftMargin: Theme.matrix_label + Theme.space_md
-                            visible: (row.modelData.settings ?? []).length > 0
-                            spacing: Theme.space_md
-
-                            // A count, as the rows are: a new view updates the fields in place, so one keeps the keyboard
-                            // while the field before it is committed.
-                            Repeater {
-                                model: (row.modelData.settings ?? []).length
-
-                                delegate: Row {
-                                    id: setting
-
-                                    required property int index
-                                    readonly property var modelData: row.modelData.settings[index]
-
-                                    spacing: Theme.space_sm
-
-                                    UiText {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: setting.modelData.label
-                                        color: Theme.muted
-                                        font.pixelSize: Theme.text_xs
-                                    }
-
-                                    InputField {
-                                        objectName: "syncSetting_" + setting.modelData.key
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        visible: setting.modelData.choices === undefined
-                                        implicitWidth: Theme.matrix_label
-                                        mono: true
-                                        label: setting.modelData.label
-                                        placeholderText: setting.modelData.placeholder
-                                        text: setting.modelData.value
-                                        enabled: !app.locked
-                                        // The view decides what is taken (a number, "." or ","); the field shows its answer
-                                        // again, so a refused entry does not stay on screen.
-                                        onEditingFinished: {
-                                            app.set_sync_setting(setting.modelData.key, text)
-                                            text = Qt.binding(() => setting.modelData.value)
-                                        }
-                                    }
-
-                                    Segmented {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        visible: setting.modelData.choices !== undefined
-                                        model: setting.modelData.choices ?? []
-                                        current: setting.modelData.current ?? ""
-                                        name: setting.modelData.label
-                                        onPicked: key => app.set_sync_setting(setting.modelData.key, key)
-                                    }
-
-                                    PlaceMark {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        choice: setting.modelData.mark
                                     }
                                 }
                             }
@@ -379,7 +445,20 @@ Item {
             }
         }
 
+        HeightSplit {
+            id: split
+
+            objectName: "subtitlesSeparator"
+            Layout.fillWidth: true
+            name: Strings.t("subtitles.separator")
+            value: place.boxHeight
+            onAdjusted: height => place.chosenHeight = place.clampBox(height)
+            onCommitted: app.save_subtitles_rows_height(place.chosenHeight)
+        }
+
         RowLayout {
+            id: headings
+
             Layout.fillWidth: true
             spacing: Theme.space_md
 
@@ -391,10 +470,21 @@ Item {
             }
 
             UiText {
+                objectName: "subtitlesNowHeading"
                 Layout.preferredWidth: Theme.matrix_label
                 text: Strings.t("subtitles.list.now")
                 color: Theme.faint
                 font.pixelSize: Theme.text_xs
+                Accessible.description: Strings.t("subtitles.list.now_tip")
+
+                HoverHandler {
+                    id: nowHover
+                }
+
+                Tip {
+                    visible: nowHover.hovered
+                    text: Strings.t("subtitles.list.now_tip")
+                }
             }
 
             UiText {

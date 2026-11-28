@@ -350,9 +350,9 @@ SIZES: dict[str, int] = {
     "cue_time_width": 96,  # the time of a line in the Lines panel and in the rule test
     "language_list_height": 304,  # its list of languages
     "language_side_height": 120,  # each of its short lists, regions and scripts
-    "tracks_min_height": 160,  # the least Overview's tracks box keeps when its separator is dragged up
-    "rows_min_height": 120,  # the least Overview's file list keeps when the separator is dragged down
-    "separator_step": 24,  # what an arrow key moves Overview's separator
+    "tracks_min_height": 160,  # the least a box above a separator keeps: Overview's tracks, Subtitles' settings
+    "rows_min_height": 120,  # the least the file list under such a separator keeps
+    "separator_step": 24,  # what an arrow key moves a separator
     "track_title_width": 132,  # the codec column of a track row on Overview
     "track_mark_width": 120,  # where a track row's choice comes from, right-aligned before its flags
     "track_files_width": 76,  # the "Files" button at the end of a track row

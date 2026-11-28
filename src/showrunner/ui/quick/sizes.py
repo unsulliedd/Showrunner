@@ -63,6 +63,19 @@ class Sizes:
         except OSError:
             _log.exception("Could not save the height of the tracks box")
 
+    def subtitles_rows_height(self) -> int:
+        """The height the user gave the Subtitles settings box, 0 when none."""
+        return load_settings().value.subtitles_rows_height
+
+    def save_subtitles_rows_height(self, height: int) -> None:
+        settings = load_settings().value
+        if height == settings.subtitles_rows_height:
+            return
+        try:
+            save_settings(replace(settings, subtitles_rows_height=height))
+        except OSError:
+            _log.exception("Could not save the height of the subtitle settings")
+
     def matrix_files(self) -> str:
         """Which files the Tracks strip shows, as the user last chose: `all`, `differ`, or empty for none chosen."""
         return load_settings().value.matrix_files

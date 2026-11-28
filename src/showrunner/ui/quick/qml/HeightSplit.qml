@@ -9,6 +9,8 @@ Item {
     id: bar
 
     property int value: 0
+    // What a screen reader calls the bar: the panel whose height it sets.
+    property string name: Strings.t("overview.separator")
     // Where the pointer was in the window and what `value` was when the drag began; the bar itself moves as the
     // panels do, so its own coordinates cannot measure the drag.
     property real pressedAt: 0
@@ -20,7 +22,7 @@ Item {
     implicitHeight: Theme.panel_gap
     activeFocusOnTab: true
     Accessible.role: Accessible.Splitter
-    Accessible.name: Strings.t("overview.separator")
+    Accessible.name: name
     Keys.onUpPressed: adjusted(value - Theme.separator_step)
     Keys.onDownPressed: adjusted(value + Theme.separator_step)
     Keys.onReleased: event => {

@@ -456,6 +456,8 @@ class WindowController(QObject):
     save_window_state = _slot("sizes", "save_window_state", int, int, int, int, bool)
     overview_tracks_height = _slot("sizes", "overview_tracks_height", result=int)
     save_overview_tracks_height = _slot("sizes", "save_overview_tracks_height", int)
+    subtitles_rows_height = _slot("sizes", "subtitles_rows_height", result=int)
+    save_subtitles_rows_height = _slot("sizes", "save_subtitles_rows_height", int)
     matrix_files = _slot("sizes", "matrix_files", result=str)
     save_matrix_files = _slot("sizes", "save_matrix_files", str)
     panel_state = _slot("sizes", "panel_state", str, result=QByteArray)

@@ -16,6 +16,7 @@ from showrunner.app.library.library import Library
 from showrunner.ui.i18n.catalog import tr
 from showrunner.ui.quick.engine import QML_DIR
 from showrunner.ui.quick.help import HELP_TOPICS, help_topic
+from showrunner.ui.quick.subtitles import ROWS
 from showrunner.ui.quick.window import WindowController
 
 from .test_choices import open_season
@@ -46,6 +47,8 @@ def test_the_qml_uses_exactly_the_known_topics() -> None:
     used = {
         topic for path in QML_DIR.glob("*.qml") for topic in re.findall(r'\btopic: "([^"]+)"', path.read_text("utf-8"))
     }
+    # The Subtitles rows name theirs in the row the view builds, not in the QML.
+    used |= {f"subtitles_{row}" for row, _name in ROWS}
     assert used == set(HELP_TOPICS)
 
 

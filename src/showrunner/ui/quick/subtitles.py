@@ -87,6 +87,8 @@ CHOICES: dict[str, type[StrEnum]] = {
     "approval": Approval,
     "output": Output,
 }
+# The rows whose choices explain themselves in a tooltip; the engines' names and the two Lines choices need none.
+_CHOICE_TIPS = ("translate", "approval", "output")
 # The value that cancels one received item of a per-item field.
 _NOT_HERE: dict[str, StrEnum] = {"languages": Wanted.NOT_HERE, "cleanup": RuleSetUse.PAUSED}
 _PICKER_TARGET = "wanted"
@@ -314,12 +316,16 @@ class SubtitleSettings(QObject):
             # Only a nearer place has a value of its own to take back.
             "own": key.parent is not None and name in batches.own(key).get(STAGE, {}),
             "received": origin is not None and origin != key,
+            "help": f"subtitles_{row}",
         }
         value = getattr(options, name)
         if row in CHOICES:
             shown["choices"] = [
                 {"key": v.value, "label": tr(f"subtitles.{row}.{v.name.lower()}")} for v in CHOICES[row]
             ]
+            if row in _CHOICE_TIPS:
+                for choice, v in zip(shown["choices"], CHOICES[row], strict=True):
+                    choice["tip"] = tr(f"subtitles.{row}.{v.name.lower()}.tip")
             shown["value"] = value.value
             if row == "sync":
                 shown["settings"] = self._sync_settings(key, options)

@@ -3,8 +3,9 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
-// A choice of a few values as one row of segments; each entry of `model` has a `key` and a `label`. Left and Right
-// move the choice while a segment has focus. `name` names the group for screen readers.
+// A choice of a few values as one row of segments; each entry of `model` has a `key`, a `label` and, when the label
+// does not explain itself, a `tip` shown on hover. Left and Right move the choice while a segment has focus. `name`
+// names the group for screen readers.
 Rectangle {
     id: group
 
@@ -68,6 +69,7 @@ Rectangle {
                 Accessible.role: Accessible.RadioButton
                 Accessible.name: text
                 Accessible.checked: chosen
+                Accessible.description: modelData.tip ?? ""
                 onClicked: group.picked(modelData.key)
                 Keys.onLeftPressed: group.step(-1)
                 Keys.onRightPressed: group.step(1)
@@ -77,6 +79,11 @@ Rectangle {
                     color: segment.chosen ? Theme.panel_3 : segment.hovered ? Theme.panel_2 : "transparent"
                     border.width: segment.visualFocus ? Theme.stroke : 0
                     border.color: Theme.control
+                }
+
+                Tip {
+                    visible: segment.hovered && (segment.modelData.tip ?? "") !== ""
+                    text: segment.modelData.tip ?? ""
                 }
 
                 contentItem: UiText {

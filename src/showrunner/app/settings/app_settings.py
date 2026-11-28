@@ -47,6 +47,8 @@ class AppSettings:
     panel_sizes: dict[str, str] = field(default_factory=dict)
     # Height of the tracks box on Overview, set by the separator under it; 0 until the user has moved it.
     overview_tracks_height: int = 0
+    # Height of the settings box on Subtitles, set by the separator under it; 0 until the user has moved it.
+    subtitles_rows_height: int = 0
     # Which files the Tracks strip shows: "all", "differ" (each run of files that follow every track as one), or ""
     # until the user picks, when it folds the runs only where every file would not fit.
     matrix_files: str = ""

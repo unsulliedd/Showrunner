@@ -16,6 +16,16 @@ HELP_TOPICS: tuple[str, ...] = (
     "language",
     "keep",
     "queue",
+    # One per row of the Subtitles place, named by the row's key.
+    "subtitles_wanted",
+    "subtitles_translate",
+    "subtitles_reference",
+    "subtitles_cleanup",
+    "subtitles_sync",
+    "subtitles_lines",
+    "subtitles_model",
+    "subtitles_approval",
+    "subtitles_output",
 )
 
 
