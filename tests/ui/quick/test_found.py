@@ -141,7 +141,8 @@ def test_the_ai_server_is_asked_again_by_itself_only_while_it_does_not_answer(
     assert retry.interval() == found.AI_RETRY_MS
     asked = server.asked
     retry.timeout.emit()
-    qtbot.waitUntil(lambda: server.asked == asked + 1)
+    # A retry while a check is still out is dropped, so the next one waits for this check to end.
+    qtbot.waitUntil(lambda: server.asked == asked + 1 and not controller.found._asking_ai)
     server.running = True
     retry.timeout.emit()
     qtbot.waitUntil(lambda: dict(states(controller))["ollama"] == "running")
