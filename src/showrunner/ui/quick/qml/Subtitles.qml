@@ -197,6 +197,30 @@ Item {
                                         onClicked: app.pick_wanted_language()
                                     }
 
+                                    InputField {
+                                        objectName: "nameAdd"
+                                        visible: row.modelData.key === "names"
+                                        implicitWidth: Theme.matrix_label
+                                        implicitHeight: Theme.row_sm
+                                        label: Strings.t("subtitles.names.add")
+                                        placeholderText: Strings.t("subtitles.names.add")
+                                        enabled: !app.locked
+                                        onAccepted: {
+                                            app.add_translation_name(text)
+                                            text = ""
+                                        }
+                                    }
+
+                                    UiText {
+                                        objectName: "namesKept"
+                                        visible: (row.modelData.kept ?? "") !== ""
+                                        height: Theme.row_sm
+                                        verticalAlignment: Text.AlignVCenter
+                                        text: row.modelData.kept ?? ""
+                                        color: Theme.muted
+                                        font.pixelSize: Theme.text_sm
+                                    }
+
                                     ActionButton {
                                         id: addSet
 
@@ -236,7 +260,7 @@ Item {
                                     }
 
                                     UiText {
-                                        visible: (row.modelData.items ?? []).length === 0 && row.modelData.key !== "wanted"
+                                        visible: (row.modelData.items ?? []).length === 0 && (row.modelData.empty ?? "") !== "" && row.modelData.key !== "wanted"
                                         text: row.modelData.empty ?? ""
                                         color: Theme.muted
                                         font.pixelSize: Theme.text_sm

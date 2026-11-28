@@ -60,6 +60,15 @@ def test_every_cue_is_translated_with_the_reference_s_timing_after_its_cleanup(
     assert {request.temperature for request in backend.asked} == {0.0}
 
 
+def test_the_step_s_names_reach_every_window_s_prompt(reference: Path, tmp_path: Path, translator: Any) -> None:
+    backend = translator()
+    given = work(reference, tmp_path)
+    given = replace(given, step=replace(given.step, names=("Show Name",)))
+    given.output.parent.mkdir()
+    translate_runner(lambda: backend, book)(given, None)
+    assert all("never translated: Show Name." in request.system for request in backend.asked)
+
+
 def test_a_window_that_falls_back_keeps_the_reference_and_is_reported(
     reference: Path, tmp_path: Path, translator: Any
 ) -> None:

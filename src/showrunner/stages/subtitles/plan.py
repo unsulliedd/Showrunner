@@ -17,7 +17,7 @@ from pathlib import Path
 
 from showrunner.core.cue import FORMATS
 from showrunner.core.language import Language
-from showrunner.core.media import MediaItem, SubtitleFile
+from showrunner.core.media import MediaItem, Movie, SubtitleFile
 from showrunner.core.track import Track, TrackKind
 from showrunner.stages.subtitles.beside import is_result, language_name, new_file_name
 from showrunner.stages.subtitles.options import (
@@ -90,6 +90,8 @@ class Step:
     # TRANSLATE, RESPLIT: the model, the one chosen in Settings where the place chose none, so a result made by another
     # model is not reused. Empty where no model is known: none is chosen, or no server answers.
     model: str = ""
+    # TRANSLATE: the names the model keeps as they are, the title first.
+    names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,7 +284,9 @@ def plan_subtitles(
             # The reference is cleaned for its own language before it is translated, the translation for its own.
             source = reference.track.language if reference is not None and reference.track is not None else None
             names, rules = _covering(chosen, rule_sets, source)
-            translate = Step(StepKind.TRANSLATE, names, rules, settings=windowing, model=model)
+            translate = Step(
+                StepKind.TRANSLATE, names, rules, settings=windowing, model=model, names=glossary(item, options)
+            )
             steps = (translate, *_clean(chosen, rule_sets, language))
             waits = every or options.approval is Approval.TRANSLATIONS
             name = options.ai_track_name.strip() if always else ""
@@ -425,6 +429,18 @@ def _missing(
     if finished.waits:
         needed.add(StepKind.APPROVAL)
     return tuple(kind for kind in StepKind if kind in needed and (kind not in available or kind in lacking))
+
+
+def glossary(item: MediaItem, options: SubtitlesOptions) -> tuple[str, ...]:
+    """The names a translation of the file keeps as they are: the show's or movie's title, then the place's kept names,
+    each once whatever its case."""
+    identity = item.identity
+    title = identity.title if isinstance(identity, Movie) else identity.show
+    found: dict[str, str] = {}
+    for name in (title, *options.kept_names()):
+        if name.strip():
+            found.setdefault(name.strip().casefold(), name.strip())
+    return tuple(found.values())
 
 
 def choose_reference(

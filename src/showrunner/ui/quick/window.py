@@ -386,6 +386,7 @@ class WindowController(QObject):
     set_sync_setting = _slot("subtitle_settings", "set_sync_setting", str, str, qt_name="set_sync_setting")
     pick_wanted_language = _slot("subtitle_settings", "pick_language", qt_name="pick_wanted_language")
     add_rule_set = _slot("subtitle_settings", "add_rule_set", str, qt_name="add_rule_set")
+    add_translation_name = _slot("subtitle_settings", "add_name", str, qt_name="add_translation_name")
     edit_rule_sets = _slot("subtitle_settings", "edit_rule_sets", str, qt_name="edit_rule_sets")
     lines = _property("QVariantMap", "lines_panel", "view", lines_changed)
     pick_lines_file = _slot("lines_panel", "pick", int, qt_name="pick_lines_file")

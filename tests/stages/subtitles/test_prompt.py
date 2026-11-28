@@ -38,6 +38,16 @@ def test_the_system_prompt_names_both_languages_and_the_rules() -> None:
         assert rule in prompt
     assert "natural spoken Turkish" in prompt
     assert "context" in prompt
+    assert "These names" not in prompt
+
+
+def test_kept_names_are_listed_in_the_rule_on_names_and_reach_the_request() -> None:
+    prompt = system_prompt(ENGLISH, TURKISH, ("Show Name", "Town {Square}"))
+    assert "as they are. These names stay exactly as written, never translated: Show Name, Town {Square}." in prompt
+    request = translate_request(
+        CUES, WINDOW, model="m", source=ENGLISH, target=TURKISH, context=1, names=("Show Name",)
+    )
+    assert "never translated: Show Name." in request.system
     # A reference of no known language names the target alone.
     assert system_prompt(None, TURKISH).startswith("You translate the subtitles of films and TV shows into Turkish.")
 

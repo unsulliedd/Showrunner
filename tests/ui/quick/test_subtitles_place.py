@@ -365,3 +365,25 @@ def test_a_field_of_the_engines_settings_is_typed_into_and_read_again(
     assert fields(controller)["ffsubsync.max_offset"]["own"] is False
     assert field.property("text") == ""
     assert field.property("placeholderText") == "60"
+
+
+def test_kept_names_are_typed_on_the_show_and_taken_back_on_a_season(
+    engines: WindowController, library: Library, qtbot: QtBot
+) -> None:
+    controller = engines
+    open_season(controller, library, qtbot)
+    season = controller.tree.index_of(str(library.items[2].file.path)).parent()
+    controller.select(season.parent())
+    controller.add_translation_name("  Town\n Square ")
+    controller.add_translation_name("   ")
+    qtbot.waitUntil(lambda: [item["label"] for item in row(controller, "names")["items"]] == ["Town Square"])
+    names = row(controller, "names")
+    assert names["kept"] == f"{library.items[2].identity.show} is always kept"
+    assert names["help"] == "subtitles_names"
+
+    controller.select(season)
+    qtbot.waitUntil(lambda: row(controller, "names")["items"][0]["mark"]["from"] == "From the show")
+    assert row(controller, "names")["items"][0]["off"] is False
+    controller.toggle_subtitle_item("names", "Town Square")
+    qtbot.waitUntil(lambda: row(controller, "names")["items"][0]["off"] is True)
+    assert row(controller, "names")["items"][0]["mark"]["over"] == "Overrides the show"

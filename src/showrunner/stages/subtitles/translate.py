@@ -82,7 +82,9 @@ def translate_runner(backend: Callable[[], Backend], book: Callable[[], RuleBook
         write_report(work.output, TranslateReport(model, total, 0))
 
         def ask(all_cues: Sequence[Cue], window: Window) -> ChatRequest:
-            return translate_request(all_cues, window, model=model, source=source, target=target, context=context)
+            return translate_request(
+                all_cues, window, model=model, source=source, target=target, context=context, names=work.step.names
+            )
 
         def progress(fraction: float) -> None:
             # Only for the views: a report that cannot be written while a view holds it costs nothing.

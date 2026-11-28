@@ -39,7 +39,7 @@ sentence runs on from one cue into the next.
 another speaker and stays a line of its own, starting with "-".
 - Keep markup exactly as it is, around the words it belongs to: tags such as <i>, </i>, <b>, <u>, <font ...> and \
 codes in curly braces such as {{\\an8}}.
-- Keep the names of people, places and brands as they are.
+- Keep the names of people, places and brands as they are.{names}
 - Keep the register of the dialogue: casual speech stays casual, rude stays rude, formal stays formal. Choose the \
 familiar or the polite form of address from the scene.
 - Translate the meaning, not word for word, in natural spoken {target}; keep each line about as short as the original.
@@ -58,9 +58,11 @@ _NUMBER = re.compile(r"^\s*\[(\d+)\]\s*(.*)$")
 _FENCE = re.compile(r"^\s*```")
 
 
-def system_prompt(source: Language | None, target: Language) -> str:
+def system_prompt(source: Language | None, target: Language, names: Sequence[str] = ()) -> str:
+    """The rules of a translation. `names` are kept exactly as they are, even when made of ordinary words."""
     direction = f"from {source.name} into {target.name}" if source is not None else f"into {target.name}"
-    return _SYSTEM.format(direction=direction, target=target.name)
+    listed = f" These names stay exactly as written, never translated: {', '.join(names)}." if names else ""
+    return _SYSTEM.format(direction=direction, target=target.name, names=listed)
 
 
 def window_text(cues: Sequence[Cue], window: Window, context: int) -> str:
@@ -76,10 +78,17 @@ def window_text(cues: Sequence[Cue], window: Window, context: int) -> str:
 
 
 def translate_request(
-    cues: Sequence[Cue], window: Window, *, model: str, source: Language | None, target: Language, context: int
+    cues: Sequence[Cue],
+    window: Window,
+    *,
+    model: str,
+    source: Language | None,
+    target: Language,
+    context: int,
+    names: Sequence[str] = (),
 ) -> ChatRequest:
     message = Message(Role.USER, window_text(cues, window, context))
-    return ChatRequest(model, system_prompt(source, target), (message,), temperature=TEMPERATURE)
+    return ChatRequest(model, system_prompt(source, target, names), (message,), temperature=TEMPERATURE)
 
 
 def retry_request(window: Window, request: ChatRequest, answer: str) -> ChatRequest:

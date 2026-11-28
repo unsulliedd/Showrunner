@@ -64,6 +64,16 @@ def test_a_nearer_place_adds_and_cancels_items_and_still_receives_later_ones(bat
     assert batches.item_origin(FILE, "subtitles", "languages", "it") is None
 
 
+def test_kept_names_are_added_and_taken_back_by_a_nearer_place(batches: Batches) -> None:
+    edit(batches, SHOW, names={"Town Square": WANTED, "Old Mill": WANTED})
+    edit(batches, SEASON, names={"Old Mill": NOT_HERE, "Harbor": WANTED})
+    assert subtitles(batches, FILE).kept_names() == ("Harbor", "Town Square")
+    assert batches.item_origin(FILE, "subtitles", "names", "Town Square") == SHOW
+    # A name the show adds later still reaches the season.
+    edit(batches, SHOW, names={"Town Square": WANTED, "Old Mill": WANTED, "Lighthouse": WANTED})
+    assert subtitles(batches, FILE).kept_names() == ("Harbor", "Lighthouse", "Town Square")
+
+
 def test_an_item_set_back_to_what_is_received_follows_the_parent_again(batches: Batches) -> None:
     edit(batches, SHOW, languages={"tr": WANTED})
     edit(batches, SEASON, languages={"tr": NOT_HERE, "de": WANTED})

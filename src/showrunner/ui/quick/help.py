@@ -20,6 +20,7 @@ HELP_TOPICS: tuple[str, ...] = (
     "subtitles_wanted",
     "subtitles_translate",
     "subtitles_reference",
+    "subtitles_names",
     "subtitles_cleanup",
     "subtitles_sync",
     "subtitles_lines",

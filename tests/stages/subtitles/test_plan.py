@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from showrunner.core.language import Language
-from showrunner.core.media import MediaItem, SubtitleFile
+from showrunner.core.media import MediaItem, Movie, SubtitleFile
 from showrunner.core.track import SubtitleProperties, Track, TrackKind
 from showrunner.stages.subtitles import (
     AiModels,
@@ -27,6 +27,7 @@ from showrunner.stages.subtitles import (
     Wanted,
 )
 from showrunner.stages.subtitles import plan_subtitles as _plan
+from showrunner.stages.subtitles.plan import glossary
 from showrunner.stages.tracks import KindTest, PairedFile, TrackMatch, TrackRule, TracksOptions, Verdict
 from showrunner.tools.cleanit import RuleDef, RuleSet
 
@@ -133,7 +134,9 @@ def test_a_missing_wanted_language_is_translated_and_waits_when_asked(b: SimpleN
         "srt",
     )
     assert german.steps == (
-        replace(cleaning("Hearing impaired", "Lyrics"), kind=StepKind.TRANSLATE, settings=WINDOWING),
+        replace(
+            cleaning("Hearing impaired", "Lyrics"), kind=StepKind.TRANSLATE, settings=WINDOWING, names=("Show Name",)
+        ),
         cleaning("Hearing impaired", "Lyrics"),
     )
     # The only subtitle is a picture one, read by OCR.
@@ -436,3 +439,17 @@ def test_ai_work_without_a_server_or_its_model_is_left_out_and_says_which(b: Sim
     assert (none_chosen.missing, _translate_of(none_chosen).model) == ((StepKind.MODEL,), "")
     # Unchecked, as a plan made without the server's models is.
     assert plan_subtitles(item, gone, TracksOptions()).finished != ()
+
+
+def test_a_translation_keeps_the_title_and_the_place_s_kept_names(b: SimpleNamespace) -> None:
+    options = replace(
+        GERMAN, names={"Town Square": Wanted.WANTED, "show name": Wanted.WANTED, "Old Mill": Wanted.NOT_HERE}
+    )
+    plan = plan_subtitles(episode(b, b.subtitle(2)), options, TracksOptions())
+    # The title first, each name once whatever its case; a name taken back here is not kept.
+    assert _translate_of(plan.finished[0]).names == ("Show Name", "Town Square")
+
+
+def test_a_movie_keeps_its_own_title(b: SimpleNamespace) -> None:
+    item = replace(episode(b, b.subtitle(2)), identity=Movie("Movie Name", 2020))
+    assert glossary(item, SubtitlesOptions()) == ("Movie Name",)

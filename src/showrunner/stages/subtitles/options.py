@@ -1,9 +1,9 @@
 """Options of the subtitle stage: what a place does with the subtitles of its files.
 
 Every field asks for nothing when empty, so a profile without them plans no subtitle work. The fields keyed by item
-(wanted languages, rule sets, engine settings) are laid over the ones received item by item, so a nearer place adds
-a language or pauses a received rule set without replacing the whole list; their second value (`NOT_HERE`,
-`PAUSED`, an empty setting) is how a nearer place cancels one item it receives.
+(wanted languages, kept names, rule sets, engine settings) are laid over the ones received item by item, so a
+nearer place adds a language or pauses a received rule set without replacing the whole list; their second value
+(`NOT_HERE`, `PAUSED`, an empty setting) is how a nearer place cancels one item it receives.
 """
 
 from __future__ import annotations
@@ -83,6 +83,9 @@ class SubtitlesOptions:
     # embedded text track in a wanted language is cleaned.
     languages: dict[str, Wanted] = field(default_factory=dict)
     translate: Translate = Translate.WHEN_MISSING
+    # Name -> kept or not here: names a translation keeps exactly as they are, besides the show's or movie's title,
+    # which is always kept. Read by translations only.
+    names: dict[str, Wanted] = field(default_factory=dict)
     reference: Reference = field(default_factory=Reference)
     # Rule set name -> used or paused. The used sets clean every finished subtitle.
     cleanup: dict[str, RuleSetUse] = field(default_factory=dict)
@@ -110,6 +113,10 @@ class SubtitlesOptions:
     def wanted(self) -> tuple[str, ...]:
         return tuple(tag for tag, value in self.languages.items() if value is Wanted.WANTED)
 
+    def kept_names(self) -> tuple[str, ...]:
+        """The kept names, sorted, so the same list made in another order plans the same work."""
+        return tuple(sorted(name for name, value in self.names.items() if value is Wanted.WANTED))
+
     def rule_sets(self) -> tuple[str, ...]:
         """The used sets, sorted, so the same choice made in another order plans the same work."""
         return tuple(sorted(name for name, use in self.cleanup.items() if use is RuleSetUse.USED))
@@ -127,7 +134,7 @@ class SubtitlesOptions:
 
 
 # The fields laid over what a place receives item by item rather than replaced whole.
-PER_ITEM_FIELDS = ("languages", "cleanup", "sync_settings")
+PER_ITEM_FIELDS = ("languages", "names", "cleanup", "sync_settings")
 # Characters Windows does not allow in a file name, the path separators among them.
 _FORBIDDEN = set('<>:"/\\|?*')
 

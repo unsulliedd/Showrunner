@@ -2,8 +2,8 @@
 batch's files with the finished subtitles each gets. Every edit ends in the open place's own subtitle options.
 
 A row's menu takes the place back to what it receives ("Follow the show again") or makes "as it is" its own value. The
-wanted languages and the rule sets are marked item by item, since a nearer place adds or cancels single items of
-them.
+wanted languages, the kept names and the rule sets are marked item by item, since a nearer place adds or cancels
+single items of them.
 """
 
 from __future__ import annotations
@@ -72,6 +72,7 @@ ROWS = (
     ("wanted", "languages"),
     ("translate", "translate"),
     ("reference", "reference"),
+    ("names", "names"),
     ("cleanup", "cleanup"),
     ("sync", "sync"),
     ("lines", "lines"),
@@ -90,7 +91,9 @@ CHOICES: dict[str, type[StrEnum]] = {
 # The rows whose choices explain themselves in a tooltip; the engines' names and the two Lines choices need none.
 _CHOICE_TIPS = ("translate", "approval", "output")
 # The value that cancels one received item of a per-item field.
-_NOT_HERE: dict[str, StrEnum] = {"languages": Wanted.NOT_HERE, "cleanup": RuleSetUse.PAUSED}
+_NOT_HERE: dict[str, StrEnum] = {"languages": Wanted.NOT_HERE, "names": Wanted.NOT_HERE, "cleanup": RuleSetUse.PAUSED}
+# The value that sets or takes back one item of a per-item field.
+_ON: dict[str, StrEnum] = {"languages": Wanted.WANTED, "names": Wanted.WANTED, "cleanup": RuleSetUse.USED}
 _PICKER_TARGET = "wanted"
 # The Reference row's menu entries that are no group.
 _AUTOMATIC, _AUDIO = "automatic", "audio"
@@ -211,7 +214,7 @@ class SubtitleSettings(QObject):
         values = dict(getattr(self._options(), name))
         received = self._received()
         given = getattr(received, name).get(item) if received is not None else None
-        on = Wanted.WANTED if name == "languages" else RuleSetUse.USED
+        on = _ON[name]
         if values.get(item) is _NOT_HERE[name]:
             values[item] = on
         elif given is on:
@@ -277,6 +280,12 @@ class SubtitleSettings(QObject):
         if self._workspace.key is not None and not self._workspace.locked:
             self._picker.begin(_PICKER_TARGET, tr("subtitles.row.wanted"), "")
 
+    def add_name(self, text: str) -> None:
+        """A name typed on the Kept names row added to this place's own, on one line."""
+        name = " ".join(text.split())
+        if name and self._workspace.key is not None and not self._workspace.locked:
+            self._set(names={**self._options().names, name: Wanted.WANTED})
+
     def _on_language_picked(self, target: str, tag: str) -> None:
         if target == _PICKER_TARGET and tag and self._workspace.key is not None:
             self._set(languages={**self._options().languages, tag: Wanted.WANTED})
@@ -332,6 +341,12 @@ class SubtitleSettings(QObject):
         elif name in _NOT_HERE:
             shown["items"] = [self._item(key, name, item, state) for item, state in value.items()]
             shown["empty"] = tr("tracks.rule.as_it_is")
+            if name == "names":
+                # The title is kept with nothing to set, so the row says so in place of "as it is".
+                shown["empty"] = ""
+                shown["kept"] = (
+                    tr("subtitles.names.title", title=key.title) if key.title else tr("subtitles.names.titles")
+                )
             if name == "cleanup":
                 shown["add"] = [
                     {
