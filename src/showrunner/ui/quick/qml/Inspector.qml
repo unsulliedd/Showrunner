@@ -3,11 +3,13 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Showrunner
 
-// The selected file: its name, what its plans change (and what stays), its title, and its tracks before and after.
+// The selected file: its name, what its plans change (and what stays), its title, its tracks before and after, and its
+// subtitle files, each with the one click that pairs it otherwise.
 ScrollPane {
     id: inspector
 
     readonly property var file: app.inspector
+    readonly property var pairing: file.pairing ?? ({})
 
     contentWidth: availableWidth
     clip: true
@@ -17,6 +19,43 @@ ScrollPane {
         font.pixelSize: Theme.text_xs
         font.weight: Font.DemiBold
         font.letterSpacing: Theme.stroke
+    }
+
+    // One subtitle file with its pairing action: "unpair", "instead" or "here".
+    component PairingRow: RowLayout {
+        id: pairingRow
+
+        required property var modelData
+        required property int index
+        property string action
+
+        Layout.fillWidth: true
+        Layout.preferredHeight: Theme.list_row
+        spacing: Theme.space_md
+
+        CodeBadge {
+            code: pairingRow.modelData.code
+            look: pairingRow.action === "unpair" ? "paired" : "kept"
+        }
+
+        UiText {
+            Layout.fillWidth: true
+            text: pairingRow.modelData.name
+            color: pairingRow.action === "unpair" ? Theme.ink : Theme.muted
+            font.pixelSize: Theme.text_sm
+            elide: Text.ElideMiddle
+        }
+
+        ActionButton {
+            objectName: "pairing_" + pairingRow.action + "_" + pairingRow.index
+            kind: "ghost"
+            size: Theme.row_sm
+            text: Strings.t("inspector.pairing." + pairingRow.action)
+            enabled: !app.locked
+            onClicked: pairingRow.action === "unpair" ? app.unpair_subtitle(pairingRow.modelData.path)
+                : pairingRow.action === "instead" ? app.pair_subtitle_instead(pairingRow.modelData.path, inspector.pairing.video)
+                : app.pair_subtitle(pairingRow.modelData.path, inspector.pairing.video)
+        }
     }
 
     ColumnLayout {
@@ -312,6 +351,60 @@ ScrollPane {
                     visible: track.modelData.forced
                     flag: "forced"
                 }
+            }
+        }
+
+        Heading {
+            Layout.fillWidth: true
+            Layout.topMargin: Theme.space_sm
+            visible: inspector.pairing.video !== undefined
+            text: Strings.t("inspector.subtitle_files")
+        }
+
+        UiText {
+            visible: inspector.pairing.video !== undefined && (inspector.pairing.paired ?? []).length === 0
+            text: Strings.t("inspector.pairing.none")
+            color: Theme.muted
+            font.pixelSize: Theme.text_sm
+        }
+
+        Repeater {
+            model: inspector.pairing.paired ?? []
+
+            delegate: PairingRow {
+                action: "unpair"
+            }
+        }
+
+        UiText {
+            Layout.fillWidth: true
+            visible: (inspector.pairing.alternatives ?? []).length > 0
+            text: Strings.t("inspector.pairing.unsure")
+            color: Theme.change
+            font.pixelSize: Theme.text_sm
+            wrapMode: Text.Wrap
+        }
+
+        Repeater {
+            model: inspector.pairing.alternatives ?? []
+
+            delegate: PairingRow {
+                action: "instead"
+            }
+        }
+
+        Heading {
+            Layout.fillWidth: true
+            Layout.topMargin: Theme.space_sm
+            visible: (inspector.pairing.unpaired ?? []).length > 0
+            text: Strings.t("inspector.pairing.unpaired")
+        }
+
+        Repeater {
+            model: inspector.pairing.unpaired ?? []
+
+            delegate: PairingRow {
+                action: "here"
             }
         }
 

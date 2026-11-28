@@ -177,6 +177,44 @@ class Library:
         unpaired = sorted((*self.unpaired, subtitle), key=lambda s: natural_key(s.path))
         return replace(self, items=items, unpaired=tuple(unpaired))
 
+    def owners(self) -> dict[Path, Path | None]:
+        """Every subtitle file the library knows, by path, with the video it is paired with, or None."""
+        found: dict[Path, Path | None] = {s.path: None for a in self.alternatives for s in a.subtitles}
+        found |= {s.path: None for s in self.unpaired}
+        return found | {s.path: i.file.path for i in self.items for s in i.subtitles}
+
+    def with_pairings(self, pairings: Mapping[Path, Path | None]) -> Library:
+        """The library with the pairings made by hand laid over the scan's: subtitle path -> video path, or None for a
+        file unpaired by hand. An entry whose file or video the library does not hold is passed over. A doubt whose
+        files were all decided by hand is no longer a doubt."""
+        files = {s.path: s for s in (*self.unpaired, *(s for a in self.alternatives for s in a.subtitles))}
+        files |= {s.path: s for i in self.items for s in i.subtitles}
+        videos = {i.file.path for i in self.items}
+        library = self
+        # The pairings first, so a file a pairing replaced is attached when its own entry unpairs it.
+        for path, video in sorted(pairings.items(), key=lambda entry: entry[1] is None):
+            subtitle = files.get(path)
+            owner = library.owners().get(path)
+            if subtitle is None or owner == video or (video is not None and video not in videos):
+                continue
+            if video is None:
+                library = library.unpair(subtitle) if owner is not None else library
+            elif any(a.video == video and subtitle in a.subtitles for a in library.alternatives):
+                library = library.pair_instead(video, subtitle)
+            else:
+                library = library.pair(subtitle, video)
+        decided = tuple(a for a in library.alternatives if all(s.path in pairings for s in a.subtitles))
+        if not decided:
+            return library
+        loose = {s.path for s in library.unpaired} | {s.path for i in library.items for s in i.subtitles}
+        # A doubt's files that no item holds are not listed anywhere else: they join the unpaired files.
+        left = [s for a in decided for s in a.subtitles if s.path not in loose]
+        return replace(
+            library,
+            alternatives=tuple(a for a in library.alternatives if a not in decided),
+            unpaired=tuple(sorted((*library.unpaired, *left), key=lambda s: natural_key(s.path))),
+        )
+
     def pair_instead(self, video: Path, subtitle: SubtitleFile) -> Library:
         """Pair one of the alternatives with the video in place of the file of the same language and kind.
 

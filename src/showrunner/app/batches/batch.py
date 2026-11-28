@@ -18,7 +18,8 @@ reach it either; `forget` removes it like any other own choice.
 
 Whether a place is excluded from every run is a value per place too, kept apart from the choices (`Exclusions`): a
 show's excludes its seasons, episodes and extras unless one of them holds its own value, and Discard leaves it alone.
-The videos taken out of the library's list (`removed`) are kept beside them, by path.
+The videos taken out of the library's list (`removed`) and the subtitle files paired by hand (`pairings`) are kept
+beside them, by path.
 """
 
 from __future__ import annotations
@@ -179,6 +180,9 @@ class Batches:
         # Videos taken out of the library's list, by path. A place's own choices and exclusion stay where they are, so
         # they are there when the video is listed again.
         self.removed: set[Path] = set()
+        # Subtitle files paired by hand: subtitle path -> video path, or None for one unpaired by hand. A rescan pairs
+        # by name again, and these are laid over what it found.
+        self.pairings: dict[Path, Path | None] = {}
         self.last_used: dict[Media, str] = dict(last_used or {})  # media -> the profile a new root starts from
 
     def copy(self, key: BatchKey) -> WorkingCopy:
@@ -418,6 +422,7 @@ class Batches:
             "kept": [_key_json(key) for key in self._kept],
             "excluded": [{"key": _key_json(key), "value": value} for key, value in self.exclusions.values.items()],
             "removed": sorted(str(path) for path in self.removed),
+            "pairings": {str(s): str(v) if v is not None else None for s, v in sorted(self.pairings.items())},
         }
 
     @classmethod
@@ -492,6 +497,10 @@ class Batches:
         for path in removed if isinstance(removed, list) else ():
             if isinstance(path, str) and path:
                 batches.removed.add(Path(path))
+        pairings = data.get("pairings")
+        for subtitle, video in pairings.items() if isinstance(pairings, dict) else ():
+            if subtitle and (video is None or (isinstance(video, str) and video)):
+                batches.pairings[Path(subtitle)] = Path(video) if video is not None else None
         return batches
 
     def _combined(self, key: BatchKey, cache: dict[BatchKey, Profile]) -> Profile:

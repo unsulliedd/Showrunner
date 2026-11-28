@@ -323,6 +323,9 @@ class WindowController(QObject):
     focus_file = _slot("workspace", "focus_file", str)
     cell_tip = _slot("workspace", "cell_tip", int, str, result=str)
     show_place = _slot("workspace", "show_place", str)
+    pair_subtitle = _slot("workspace", "pair_subtitle", str, str)
+    unpair_subtitle = _slot("workspace", "unpair_subtitle", str)
+    pair_subtitle_instead = _slot("workspace", "pair_subtitle_instead", str, str)
 
     # Profile, the place menu, keep, exclude and discard
 

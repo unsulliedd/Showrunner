@@ -380,11 +380,21 @@ class Folders(QObject):
 
     def _renew(self, paths: tuple[Path, ...], load: LibraryLoad) -> None:
         library = self._workspace.model.library
-        renewed = library.renewed(paths, load)
+        renewed = self._paired(library.renewed(paths, load))
         gone = {i.file.path for i in library.items} - {i.file.path for i in renewed.items}
         self._show_library(renewed, gone, self._above())
         if renewed.roots != library.roots:
             self._remember(last_folders=[str(r) for r in renewed.roots])
+
+    def _paired(self, library: Library) -> Library:
+        """`library` with the pairings made by hand laid over the scan's. An entry whose subtitle file or video is no
+        longer on disk is dropped; one whose folder is merely not open stays for when it is."""
+        batches = self._workspace.batches
+        kept = {s: v for s, v in batches.pairings.items() if s.exists() and (v is None or v.exists())}
+        if kept != batches.pairings:
+            batches.pairings = kept
+            self._workspace.save_soon()
+        return library.with_pairings(kept)
 
     def cancel_reading(self) -> None:
         """Stop the load after the file being read; what was read so far is kept and the rest shows as not read."""
@@ -436,7 +446,8 @@ class Folders(QObject):
             self._message = tr("status.cancelled")
         else:
             self._message = "" if load.items else tr("status.nothing_new")
-        self._workspace.model.add(load)
+        model = self._workspace.model
+        model.set_library(self._paired(model.library.merge(load)))
         if load.roots:
             self._recent = with_recent(self._recent, [str(root) for root in load.roots], self._clock())
             self.recent_changed.emit()

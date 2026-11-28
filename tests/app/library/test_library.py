@@ -160,3 +160,31 @@ def test_closed_removes_the_folder_with_everything_listed_from_it(sample_library
     assert closed.alternatives == ()  # the doubt was about an Alpha episode
     assert [f.path.name for f in closed.failures] == ["Beta S01E01.mkv"]
     assert closed.unpaired == ()
+
+
+def test_pairings_by_hand_are_laid_over_a_scan(sample_library: Library) -> None:
+    extra = sample_library.unpaired[0]
+    first = path_of(sample_library, "S01E01")
+    attached = sample_library.item(first).subtitles[0]
+    result = sample_library.with_pairings({extra.path: first, attached.path: None})
+    assert result.item(first).subtitles == (extra,)
+    assert result.unpaired == (attached,)
+    # Laid over a library that already holds them, they change nothing.
+    assert result.with_pairings({extra.path: first, attached.path: None}) == result
+
+
+def test_a_pairing_whose_file_or_video_the_library_lacks_is_passed_over(sample_library: Library) -> None:
+    first = path_of(sample_library, "S01E01")
+    pairings = {Path("lib/gone.srt"): first, sample_library.unpaired[0].path: Path("lib/gone.mkv")}
+    assert sample_library.with_pairings(pairings) == sample_library
+
+
+def test_a_pick_among_alternatives_settles_the_doubt_after_a_rescan(sample_library: Library) -> None:
+    video = path_of(sample_library, "S01E02")
+    alternative = alternative_of(sample_library, video)
+    attached = sample_library.item(video).subtitles[0]
+    picked = sample_library.pair_instead(video, alternative)
+    # What the window keeps for that pick: the chosen file to the video, the one it replaced unpaired.
+    result = sample_library.with_pairings({alternative.path: video, attached.path: None})
+    assert result == picked
+    assert result.mark(video) is Mark.NONE

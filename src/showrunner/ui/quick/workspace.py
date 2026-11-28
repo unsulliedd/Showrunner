@@ -28,7 +28,7 @@ from showrunner.app.library.library import Library, Mark
 from showrunner.app.profiles.profile import Profile
 from showrunner.app.profiles.store import ProfileStore
 from showrunner.app.settings.app_settings import load_settings
-from showrunner.core.media import MediaItem
+from showrunner.core.media import MediaItem, SubtitleFile
 from showrunner.stages.subtitles import AiModels
 from showrunner.stages.tracks import TrackRule, TracksOptions
 from showrunner.tools.dependencies.detect import DependencyStatus, State
@@ -38,7 +38,7 @@ from showrunner.ui.quick.facts import Heading, heading
 from showrunner.ui.quick.library import LibraryTree
 from showrunner.ui.quick.plans import LivePlanner
 from showrunner.ui.quick.review import ReviewInput, skipped, totals
-from showrunner.ui.quick.tracks import BatchView, Column, Received
+from showrunner.ui.quick.tracks import BatchView, Column, Received, code
 
 _log = logging.getLogger(__name__)
 
@@ -355,6 +355,44 @@ class Workspace(QObject):
             return None
         return self.view.cols[column], self.headers()[column]
 
+    # Subtitle files paired by hand
+
+    def pair_subtitle(self, subtitle: str, video: str) -> None:
+        """Give an unpaired subtitle file to a video."""
+        self._pair_by_hand(subtitle, lambda found: self.model.pair(found, Path(video)))
+
+    def unpair_subtitle(self, subtitle: str) -> None:
+        """Take a subtitle file from its video; it is listed as unpaired afterwards."""
+        self._pair_by_hand(subtitle, self.model.unpair)
+
+    def pair_subtitle_instead(self, subtitle: str, video: str) -> None:
+        """Pair one of the files the scan was unsure of with the video, in place of the one it chose."""
+        self._pair_by_hand(subtitle, lambda found: self.model.pair_instead(Path(video), found))
+
+    def _pair_by_hand(self, subtitle: str, change: Callable[[SubtitleFile], None]) -> None:
+        """Make a change of pairing and keep it with the workspace, so a rescan lays it over its own pairing: each file
+        whose video changed, and each that became unpaired, is kept by path."""
+        library = self.model.library
+        files = (*library.unpaired, *(s for a in library.alternatives for s in a.subtitles))
+        files += tuple(s for i in library.items for s in i.subtitles)
+        found = next((s for s in files if str(s.path) == subtitle), None)
+        if found is None or self.locked:
+            return
+        owners, unpaired = library.owners(), {s.path for s in library.unpaired}
+        change(found)
+        after = self.model.library
+        for path, owner in after.owners().items():
+            if owner != owners.get(path):
+                self.batches.pairings[path] = owner
+        for path in {s.path for s in after.unpaired} - unpaired:
+            self.batches.pairings[path] = None  # a doubt's file left over when another was picked
+        self.save_soon()
+        # The batch holds the items as they were: select it again, then give the focus back to the file it was on.
+        focus = self.focus.file.path if self.focus is not None else None
+        self.reselect()
+        if focus is not None and self.focus is None:
+            self.focus_file(str(focus))
+
     # What the places show
 
     def focus_file(self, path: str) -> None:
@@ -492,6 +530,7 @@ class Workspace(QObject):
             repr(self.statuses),
             groups,
             self.rules_revision,
+            tuple(i.subtitles for i in self.items),  # a pairing changed by hand plans the files again
         )
 
     def _on_planned(self, token: object, result: tuple[Preview, Preview]) -> None:
@@ -586,7 +625,21 @@ class Workspace(QObject):
         if self.view is None or self.key is None or focus is None:
             return {}
         own = self.batches.profile(BatchKey.file(focus).in_show(self.key))
-        return self.view.inspector(focus, own.for_stage("mux").original)
+        return self.view.inspector(focus, own.for_stage("mux").original) | {"pairing": self._pairing(focus)}
+
+    def _pairing(self, item: MediaItem) -> dict[str, Any]:
+        """The video's subtitle files, the files the scan was unsure of beside them, and the unpaired files near it."""
+        library, video = self.model.library, item.file.path
+
+        def listed(subtitles: Sequence[SubtitleFile]) -> list[dict[str, str]]:
+            return [{"path": str(s.path), "name": s.path.name, "code": code(s.language)} for s in subtitles]
+
+        return {
+            "video": str(video),
+            "paired": listed(item.subtitles),
+            "alternatives": listed([s for a in library.alternatives if a.video == video for s in a.subtitles]),
+            "unpaired": listed(library.unpaired_near((video,))),
+        }
 
     def _signal_shown(self) -> None:
         signal = _PLACE_SIGNALS.get(self.place)
