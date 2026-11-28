@@ -221,3 +221,45 @@ class Translator:
 def translator() -> type[Translator]:
     """A stand-in AI backend that translates numbered cues, for the tests of the translate step."""
     return Translator
+
+
+# The answer of a re-split to a window of this many cues and these words.
+type SplitAnswer = Callable[[int, list[str]], str]
+
+
+class Splitter:
+    """A stand-in model for re-split: reads the cues and the words from the request and answers with `answer`, by
+    default `last_cue`; `fail` gives the error, if any, of the request of this number, counted from 1."""
+
+    name = "fake"
+
+    @staticmethod
+    def last_cue(count: int, words: list[str]) -> str:
+        """The first word on the first cue, every other word on the last."""
+        blocks: list[list[str]] = [[] for _ in range(count)]
+        blocks[0], blocks[-1] = words[:1], words[1:]
+        return "\n".join(f"[{number}]\n{' '.join(block)}" for number, block in enumerate(blocks, start=1))
+
+    def __init__(self, answer: SplitAnswer | None = None, fail: Callable[[int], AiError | None] | None = None) -> None:
+        self.answer, self.fail = answer or self.last_cue, fail
+        self.asked: list[ChatRequest] = []
+
+    def models(self) -> list[str]:
+        return ["sample:9b"]
+
+    def version(self) -> str:
+        return "0"
+
+    def chat(self, request: ChatRequest, cancel: threading.Event | None = None) -> ChatAnswer:
+        self.asked.append(request)
+        if self.fail is not None and (error := self.fail(len(self.asked))) is not None:
+            raise error
+        # Each cue is its number, the reference's line, then the line of the words it has now.
+        now = re.findall(r"^\[\d+\]\n[^\n]*\n[^:\n]+:(.*)$", request.messages[0].content, re.MULTILINE)
+        return ChatAnswer(self.answer(len(now), " ".join(now).split()), 0.1)
+
+
+@pytest.fixture
+def splitter() -> type[Splitter]:
+    """A stand-in AI backend for the tests of re-split with AI."""
+    return Splitter

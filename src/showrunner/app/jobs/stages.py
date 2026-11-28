@@ -33,6 +33,8 @@ from showrunner.stages.subtitles.beside import (
 )
 from showrunner.stages.subtitles.clean import clean_runner
 from showrunner.stages.subtitles.read import ocr_runner, read_runner
+from showrunner.stages.subtitles.resplit_ai import read_report as read_resplit
+from showrunner.stages.subtitles.resplit_ai import resplit_runner
 from showrunner.stages.subtitles.sync import sync_runner
 from showrunner.stages.subtitles.translate import read_report, translate_runner
 from showrunner.stages.subtitles.work import Runner, StepWork
@@ -127,10 +129,12 @@ APPROVAL = StepKind.APPROVAL.value
 # The engines that need no program, by the kind of work they do; an engine registers here. The pipeline adds the ones
 # that need a program it found (`reading_runners`), and its stages plan only the work these can do, so a missing engine
 # leaves its subtitles out and nothing else.
-# Translation needs no program but a server that answers, which the plans check as the `AI` kind of work.
+# Translation and re-split with AI need no program but a server that answers, which the plans check as the `AI` kind of
+# work; re-split by timing needs nothing.
 RUNNERS: dict[StepKind, Runner] = {
     StepKind.CLEAN: clean_runner(RULES.book),
     StepKind.TRANSLATE: translate_runner(lambda: AI.backend, RULES.book),
+    StepKind.RESPLIT: resplit_runner(lambda: AI.backend),
 }
 # The Jobs phases of a file's subtitle step in the order they run; a file shows the ones its plan holds. "beside"
 # writes the subtitles that go beside the video, once their work is done.
@@ -457,7 +461,8 @@ class SubtitlesStage:
                     return f"{NOT_AVAILABLE}: {phase}"
                 given.output.parent.mkdir(parents=True, exist_ok=True)
                 runner(replace(given, progress=lambda fraction: report(phase, fraction)), cancel)
-                # A translation where windows fell back is not kept, so the next run asks for those windows again.
+                # A translation or re-split where windows fell back is not kept, so the next run asks for those windows
+                # again and reuses the answered ones.
                 if not _fell_back(given):
                     store.keep(given.output, inputs)
             report(phase, 1.0)
@@ -546,6 +551,8 @@ class SubtitlesStage:
 
 
 def _fell_back(work: StepWork) -> bool:
+    if work.step.kind is StepKind.RESPLIT:
+        return work.step.uses_ai and (split := read_resplit(work.output)) is not None and bool(split.by_timing)
     return (
         work.step.kind is StepKind.TRANSLATE and (found := read_report(work.output)) is not None and found.needs_review
     )

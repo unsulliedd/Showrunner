@@ -68,7 +68,7 @@ def test_the_file_list_says_what_the_last_sync_found(
     assert (plan["steps"].split(" → ")[0], plan["found"], plan["review"]) == ("sync", "", False)
     monkeypatch.setattr(subtitles, "kept_sync", lambda work, finished: report(needs_review=True))
     controller.set_subtitle_choice("sync", "ffsubsync")
-    controller.set_sync_setting("ffsubsync.unsure_below", "0.9")  # a change, so the place is built again
+    controller.set_setting("ffsubsync.unsure_below", "0.9")  # a change, so the place is built again
     settle(controller, qtbot)
     (plan,) = controller.subtitles["files"][0]["plan"]
     assert (plan["found"], plan["review"]) == ("moved -2.40 s · needs review: score 0.40", True)

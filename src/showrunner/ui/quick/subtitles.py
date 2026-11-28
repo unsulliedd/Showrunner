@@ -43,6 +43,8 @@ from showrunner.stages.subtitles import (
     choose_reference,
     reference_files,
 )
+from showrunner.stages.subtitles.resplit import AI as AI_WAY
+from showrunner.stages.subtitles.resplit import accepts, resplit_settings
 from showrunner.tools.cleanit import RuleBook, RuleSet
 from showrunner.tools.sync import ENGINES, IN_SYNC_BELOW, UNSURE_BELOW, Setting, SettingKind
 from showrunner.ui.i18n.catalog import tr, tr_plural
@@ -52,11 +54,14 @@ from showrunner.ui.quick.review import (
     ai_model,
     backend_name,
     group_text,
+    kept_resplit,
     kept_sync,
     kept_translation,
     left_as_it_was,
     missing_phases,
     reference_text,
+    resplit_found,
+    resplit_step,
     set_label,
     sync_found,
     translation_found,
@@ -91,6 +96,8 @@ CHOICES: dict[str, type[StrEnum]] = {
 }
 # The rows whose choices explain themselves in a tooltip; the engines' names and the two Lines choices need none.
 _CHOICE_TIPS = ("translate", "approval", "output")
+# The rows with settings under them, and the field the settings are kept in.
+_SETTINGS = {"sync": "sync_settings", "lines": "lines_settings"}
 # The value that cancels one received item of a per-item field.
 _NOT_HERE: dict[str, StrEnum] = {"languages": Wanted.NOT_HERE, "names": Wanted.NOT_HERE, "cleanup": RuleSetUse.PAUSED}
 # The value that sets or takes back one item of a per-item field.
@@ -190,8 +197,8 @@ class SubtitleSettings(QObject):
         received = self._received() if self._workspace.key is not None else None
         if received is not None:
             name = dict(ROWS)[row]
-            # The engine's settings are the Sync row's too, so following the parent there takes them back as well.
-            extra = {"sync_settings": received.sync_settings} if row == "sync" else {}
+            # A row's settings are the row's too, so following the parent there takes them back as well.
+            extra = {_SETTINGS[row]: getattr(received, _SETTINGS[row])} if row in _SETTINGS else {}
             self._set(**{name: getattr(received, name)}, **extra)
 
     def as_it_is(self, row: str) -> None:
@@ -224,40 +231,49 @@ class SubtitleSettings(QObject):
             values.pop(item, None)
         self._set(**{name: values})
 
-    def set_sync_setting(self, key: str, text: str) -> None:
-        """A field of the Sync row's engine settings edited, `key` being `<engine>.<setting>`. A number that is none, or
-        below zero, is not taken, and a decimal comma is read as a point. An emptied field gives the place back what it
-        receives there, or the engine's own default where it receives nothing."""
+    def set_setting(self, key: str, text: str) -> None:
+        """A field of a row's settings edited: the Sync row's engine settings (`<engine>.<setting>`) or the Lines row's
+        (`<way>.<setting>`). A number that is none, below zero or, for Lines, out of its range is not taken, and a
+        decimal comma is read as a point. An emptied field gives the place back what it receives there, or the default
+        where it receives nothing."""
         if self._workspace.key is None or self._workspace.locked:
             return
         text = text.strip()
-        kind = self._declared(key)
-        if kind is None:
+        declared = self._declared(key)
+        if declared is None:
             return
+        field, kind = declared
         if kind is SettingKind.NUMBER:
             text = text.replace(",", ".")  # a decimal comma, as many systems type it
             if text and not _is_number(text):
                 return
-        values = dict(self._options().sync_settings)
+        if field == "lines_settings" and not accepts(key, text):
+            return
+        values = dict(getattr(self._options(), field))
         received = self._received()
-        given = received.sync_settings.get(key) if received is not None else None
+        given = getattr(received, field).get(key) if received is not None else None
         if text:
             values[key] = text
         elif given:
             values[key] = given
         else:
             values.pop(key, None)
-        self._set(sync_settings=values)
+        self._set(**{field: values})
 
     @staticmethod
-    def _declared(key: str) -> SettingKind | None:
+    def _declared(key: str) -> tuple[str, SettingKind] | None:
+        """The options field a setting's key is kept in, and its kind; None for a key no row has."""
+        lines = dict(resplit_settings())
+        if key in lines:
+            return "lines_settings", lines[key].kind
         engine, _, name = key.partition(".")
         found = ENGINES.get(engine)
         if found is None:
             return None
         if name in (IN_SYNC_BELOW, UNSURE_BELOW):
-            return SettingKind.NUMBER
-        return next((s.kind for s in found.settings if s.key == name), None)
+            return "sync_settings", SettingKind.NUMBER
+        kind = next((s.kind for s in found.settings if s.key == name), None)
+        return ("sync_settings", kind) if kind is not None else None
 
     def pick_reference(self, key: str) -> None:
         """A choice of the Reference row's menu: Automatic, the audio, or one group of the batch's subtitle tracks."""
@@ -339,6 +355,8 @@ class SubtitleSettings(QObject):
             shown["value"] = value.value
             if row == "sync":
                 shown["settings"] = self._sync_settings(key, options)
+            elif row == "lines":
+                shown["settings"] = self._lines_settings(key, options)
         elif name in _NOT_HERE:
             shown["items"] = [self._item(key, name, item, state) for item, state in value.items()]
             shown["empty"] = tr("tracks.rule.as_it_is")
@@ -384,25 +402,47 @@ class SubtitleSettings(QObject):
         return {"text": text, "pick": pick}
 
     def _sync_settings(self, key: BatchKey, options: SubtitlesOptions) -> list[dict[str, Any]]:
-        """The fields under the Sync row: the two thresholds, then the chosen engine's own settings, each with its own
-        value, what it receives (or the engine's default) as the placeholder, and where it comes from."""
+        """The fields under the Sync row: the two thresholds, then the chosen engine's own settings."""
         engine = ENGINES.get(options.sync.value)
         if engine is None:
             return []
-        batches = self._workspace.batches
         common = [Setting(name, SettingKind.NUMBER, engine.defaults[name]) for name in (IN_SYNC_BELOW, UNSURE_BELOW)]
+        entries = [
+            (f"{engine.name}.{s.key}", s, f"subtitles.sync.{s.key if s in common else f'{engine.name}.{s.key}'}")
+            for s in (*common, *engine.settings)
+        ]
+        return self._setting_fields(key, "sync_settings", options.sync_settings, entries)
+
+    def _lines_settings(self, key: BatchKey, options: SubtitlesOptions) -> list[dict[str, Any]]:
+        """The fields under the Lines row: the timing's, which either way uses, then the AI way's own for With AI."""
+        if options.lines is Lines.AS_THEY_ARE:
+            return []
+        entries = []
+        for full, setting in resplit_settings():
+            if full.startswith(f"{AI_WAY}.") and options.lines is not Lines.WITH_AI:
+                continue
+            if not setting.default:
+                # The AI way's window follows translation's in Settings where the place sets none.
+                setting = replace(setting, default=str(load_settings().value.translate_window))
+            entries.append((full, setting, f"subtitles.lines.{full}"))
+        return self._setting_fields(key, "lines_settings", options.lines_settings, entries)
+
+    def _setting_fields(
+        self, key: BatchKey, field: str, values: dict[str, str], entries: list[tuple[str, Setting, str]]
+    ) -> list[dict[str, Any]]:
+        """Each setting as a field: its own value, what it receives (or its default) as the placeholder, and where it
+        comes from."""
+        batches = self._workspace.batches
         fields = []
-        for setting in (*common, *engine.settings):
-            full = f"{engine.name}.{setting.key}"
-            origin = batches.item_origin(key, STAGE, "sync_settings", full)
-            above = batches.item_origin(key.parent, STAGE, "sync_settings", full) if key.parent is not None else None
+        for full, setting, label in entries:
+            origin = batches.item_origin(key, STAGE, field, full)
+            above = batches.item_origin(key.parent, STAGE, field, full) if key.parent is not None else None
             if origin is not None and origin != key:
                 mark = {"from": tr(f"place.from.{origin.kind.value}"), "over": ""}
             else:
                 mark = {"from": "", "over": tr(f"place.over.{above.kind.value}") if above is not None else ""}
-            given = options.sync_settings.get(full, "")
+            given = values.get(full, "")
             own = origin == key
-            label = f"subtitles.sync.{setting.key if setting in common else f'{engine.name}.{setting.key}'}"
             shown: dict[str, Any] = {
                 "key": full,
                 "label": tr(label),
@@ -633,6 +673,14 @@ class SubtitleSettings(QObject):
                         steps.append(tr("subtitles.step.clean_reference"))
                     if step.kind is StepKind.TRANSLATE and step.model:
                         steps.append(tr("subtitles.step.translate_with", model=step.model))
+                    elif step.kind is StepKind.RESPLIT and step.uses_ai:
+                        steps.append(
+                            tr("subtitles.step.resplit_with", model=step.model)
+                            if step.model
+                            else tr("subtitles.step.resplit_ai")
+                        )
+                    elif step.kind is StepKind.RESPLIT:
+                        steps.append(tr("subtitles.step.resplit_timing"))
                     else:
                         steps.append(tr(f"subtitles.step.{step.kind.value}"))
                 if finished.waits:
@@ -651,6 +699,9 @@ class SubtitleSettings(QObject):
                 translated = kept_translation(work, finished) if done else None
                 found = [sync_found(report)] if report is not None else []
                 found += [text] if translated is not None and (text := translation_found(translated)) else []
+                resplit = kept_resplit(work, finished) if done else None
+                if resplit is not None and resplit.finished and (step := resplit_step(finished)) is not None:
+                    found.append(resplit_found(step, resplit))
                 plan.append(
                     {
                         "code": code(finished.language),
